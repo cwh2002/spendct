@@ -1,7 +1,20 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useAuth } from "@/lib/account/store";
+
+/**
+ * 会话恢复：只在浏览器挂载后执行一次（空依赖数组），
+ * 读 IndexedDB 校验上次会话并把用户放回内存 store。
+ * store 的 hydrate 自带一次执行守卫，StrictMode 双挂载安全。
+ */
+function AuthBootstrap() {
+  useEffect(() => {
+    void useAuth.getState().hydrate();
+  }, []);
+  return null;
+}
 
 /**
  * 客户端全局 Provider 挂载点（01 §5.2）：
@@ -21,5 +34,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
       }),
   );
 
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthBootstrap />
+      {children}
+    </QueryClientProvider>
+  );
 }

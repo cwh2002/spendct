@@ -3,12 +3,126 @@
 
 @theme {
   /* 设计令牌：同时被 Tailwind 工具类与 ECharts 主题读取（getComputedStyle 取 CSS 变量） */
-  --color-primary: oklch(0.62 0.19 260); /* 主色：信任蓝 */
-  --color-alert: oklch(0.63 0.21 25); /* 异常红 */
-  --color-warn: oklch(0.82 0.16 85); /* 低置信度黄 */
-  --color-ok: oklch(0.68 0.17 155); /* 健康绿 */
-  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-  --radius-card: 1rem;
+
+  /* 既有令牌（保留兼容，语义对齐 05 §3.1.2 状态色） */
+  --color-primary: oklch(0.62 0.19 260); /* 主色：信任蓝，对齐 brand-500 亮面 #2e7ce8 */
+  --color-alert: oklch(0.63 0.21 25); /* 异常红，对齐 critical */
+  --color-warn: oklch(0.82 0.16 85); /* 低置信度黄，对齐 warning */
+  --color-ok: oklch(0.68 0.17 155); /* 健康绿，对齐 good */
+
+  /* 品牌蓝延伸档（05 §3.1.1） */
+  --color-primary-soft: #d8e9fc; /* 主色浅底：导航 hover/选中底色 */
+  --color-brand-600: #1f63c9; /* 链接/文字按钮（白底 5.7:1） */
+  --color-brand-700: #1a55ad; /* 深蓝/按压态，亮暗同值 */
+  --color-btn-primary: #2563eb; /* 主按钮底（白字 5.2:1，亮暗同值） */
+  --color-btn-primary-hover: #1d4ed8; /* 主按钮悬停态 */
+  --color-accent: #f26b38; /* 活力橙点缀：演示 badge 等，不担任警示色 */
+  --color-health: #0fa87a; /* 健康青：Logo 心电图标、图表槽 3 */
+
+  /* 表面与描边（05 §3.1.1） */
+  --color-surface: #ffffff; /* 卡片/图表面 */
+  --color-surface-page: #f5f6f8; /* 页面底色 */
+  --color-surface-2: #eef0f4; /* 次级填充：折叠区/骨架 shimmer */
+  --color-border: #e8eaee; /* 网格/分隔线/卡片描边（line-hair） */
+  --color-border-strong: #c9cdd4; /* 坐标轴线（line-base） */
+
+  /* 文字（05 §3.1.1，对比度已实测） */
+  --color-ink: #16181d; /* 主文字 17.8:1 */
+  --color-ink-secondary: #52555c; /* 次级文字 7.3:1 */
+  --color-ink-muted: #8a8f99; /* 刻度/装饰 3.2:1，禁止作正文 */
+
+  /* 状态色固定值，永不做主题化（05 §3.1.2）；
+     -ink 后缀为同语义文字档（状态提示必须 色+图标+文字 成对出现） */
+  --color-good: #0ca30c;
+  --color-good-ink: #0a7a3e;
+  --color-warning: #fab219;
+  --color-warning-ink: #92400e;
+  --color-serious: #ec835a;
+  --color-serious-ink: #b5441e;
+  --color-critical: #d03b3b;
+  --color-critical-ink: #b91c1c;
+  --color-warn-soft: #fef3c7; /* OCR 低置信度单元格黄底 */
+  --color-up: #c2410c; /* 支出上涨（必须配向上箭头图标+数值） */
+  --color-down: #0b6b3c; /* 支出下降（必须配向下箭头图标+数值） */
+
+  /* 图表分类色板八槽（05 §3.1.3，顺序取用不跳槽，颜色跟实体不跟排名） */
+  --color-chart-1: #2e7ce8;
+  --color-chart-2: #f26b38;
+  --color-chart-3: #0fa87a;
+  --color-chart-4: #eda100;
+  --color-chart-5: #e87ba4;
+  --color-chart-6: #0b8f45;
+  --color-chart-7: #6a5ae0;
+  --color-chart-8: #e34948;
+
+  /* 圆角（05 §3.4） */
+  --radius-card: 1rem; /* 既有：营销页大卡 */
+  --radius-sm: 6px; /* 按钮/输入框/chip */
+  --radius-md: 10px; /* 图表容器/引用折叠条 */
+  --radius-lg: 14px; /* 洞察卡/订阅卡 */
+  --radius-xl: 20px; /* 弹层/浮层 */
+
+  /* 阴影（05 §3.4；暗色模式禁用投影，改用 surface-2 层级抬升+发丝边框） */
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 1px 3px rgba(16, 24, 40, 0.07), 0 4px 12px rgba(16, 24, 40, 0.05);
+  --shadow-lg: 0 8px 24px rgba(16, 24, 40, 0.1), 0 2px 6px rgba(16, 24, 40, 0.06);
+  --shadow-anchor: 0 0 0 3px rgba(46, 124, 232, 0.25); /* 图表锚点选中光环 */
+
+  /* 字体（05 §3.2） */
+  --font-sans:
+    system-ui, -apple-system, "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei",
+    "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+/*
+ * 暗色第二套色阶（05 §3.1.1：暗色不是自动翻转，而是独立验证过的第二套色阶）。
+ * 与亮面同名的变量在 html.dark 上重声明，工具类经 var() 引用自动切换。
+ * 未在此列出的令牌（状态色、主按钮底等）为亮暗同值，无需重声明。
+ */
+.dark {
+  color-scheme: dark;
+  --color-primary: #4c8ff0; /* brand-500 暗面 */
+  --color-primary-soft: #1a2b52; /* 主色浅底暗面：低亮度海军蓝 */
+  --color-brand-600: #6ba3f5; /* 暗色链接 7.1:1 */
+  --color-surface: #14161a; /* 图表面（暗色验证基准） */
+  --color-surface-page: #0e1013;
+  --color-surface-2: #1f2329;
+  --color-border: #23262c;
+  --color-border-strong: #3a3e46;
+  --color-ink: #eceef2;
+  --color-ink-secondary: #b9bdc7;
+  --color-ink-muted: #83878f;
+  --color-accent: #e06a2e; /* 活力橙暗面 */
+  --color-chart-1: #4c8ff0;
+  --color-chart-2: #e06a2e;
+  --color-chart-4: #c98500;
+  --color-chart-5: #d55181;
+  --color-chart-6: #0a8440;
+  --color-chart-7: #9085e9;
+  --color-chart-8: #e66767;
+  --color-warn-soft: #3d2f0d; /* 设计未给暗面，补低亮度黄底保证表格可读 */
+}
+
+:root {
+  color-scheme: light;
+
+  /* 裸名变量别名：ECharts 主题经 getComputedStyle 读取这批变量（05 §3.6），
+     指向 @theme 令牌后，暗色切换经 var() 重解析自动生效，无需维护两份 */
+  --surface-page: var(--color-surface-page);
+  --surface-card: var(--color-surface);
+  --surface-2: var(--color-surface-2);
+  --ink-primary: var(--color-ink);
+  --ink-secondary: var(--color-ink-secondary);
+  --ink-muted: var(--color-ink-muted);
+  --line-hair: var(--color-border);
+  --line-base: var(--color-border-strong);
+  --brand-500: var(--color-primary);
+  --brand-600: var(--color-brand-600);
+  --brand-700: var(--color-brand-700);
+  --btn-primary: var(--color-btn-primary);
+  --accent: var(--color-accent);
+  --health: var(--color-health);
 }
 
 html {
@@ -18,4 +132,12 @@ html {
 body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* 金额/比例/百分比等数字全部纵向对齐（05 §3.2），中文不受影响 */
+  font-variant-numeric: tabular-nums;
+}
+
+/* 焦点环统一规格（05 §6.1：2px brand-500 外环+2px 间隙，永不禁用 outline） */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
