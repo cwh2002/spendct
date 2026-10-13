@@ -1,10 +1,9 @@
 /**
  * 案例库单一来源（/learn 浏览产品与后续 RAG 引用共用，04 §2 案例 schema 的浏览版投影）：
- * 8 类共 24 条精选案例，每条附可核验来源（12315 / 消保法条文号 / 官方平台规则页）。
+ * 8 类共 60 条精选案例，每条附可核验来源（12315 / 消保法条文号 / 官方平台规则页）。
  * 内容纪律（04 §12）：来源必须可访问、法条引用现行有效条文、
  * 学生权益类填写 benefitTags（student_cert/edu_discount/campus_card/budget_substitute/rights_tip）。
- * 全量 150 条案例在 data/cases 维护（RAG 数据源），本文件是省赛窗口的浏览子集，
- * 后续扩容只在此追加，页面消费方零改动。
+ * 扩容只在此追加，页面消费方零改动。
  */
 
 export interface CaseRecord {
@@ -306,5 +305,397 @@ export const CASES: CaseRecord[] = [
     source: "CALIS 中国高等教育文献保障系统",
     sourceUrl: "https://www.calis.edu.cn/",
     benefitTags: ["campus_card", "budget_substitute"],
+  },
+
+  // —— 订阅陷阱 subscription_trap 续 ×4 ——
+  {
+    id: "st-005",
+    title: "点下「取消订阅」后下个月仍在扣费",
+    summary:
+      "不少用户在 App 内点了「取消」却仍被扣费，常见原因是取消流程未走完（最后一步确认页没点）或平台延迟同步。做法：取消时截图留证；再到微信/支付宝的「扣费服务」里核对签约状态是否已解除；发现取消后仍扣费，凭截图与扣费记录申请退款，平台拒绝则走 12315。",
+    category: "subscription_trap",
+    source: "黑猫投诉平台·自动续费类投诉公示",
+    sourceUrl: "https://tousu.sina.com.cn/",
+    legalBasis: "《消费者权益保护法》第 9 条：消费者享有自主选择商品或者服务的权利",
+    benefitTags: [],
+  },
+  {
+    id: "st-006",
+    title: "「免费试用」扣费时点早于试用期结束",
+    summary:
+      "部分应用的免费试用在到期前一两天就发起扣费，用户取消已来不及。防范：开通试用当天就在微信/支付宝的「扣费服务」里查看签约并设置日历提醒，在试用期结束前 2 天主动取消；若平台扣费时点早于约定的试用期届满日，属于违约扣费，可要求全额退还。",
+    category: "subscription_trap",
+    source: "中国消费者协会官网·消费维权报告",
+    sourceUrl: "https://www.cca.org.cn/",
+    legalBasis: "《消费者权益保护法实施条例》第 10 条（自动续费需在服务前与续费日前显著提示）",
+    benefitTags: [],
+  },
+  {
+    id: "st-007",
+    title: "学生价会员到期自动恢复原价，价差悄悄扩大",
+    summary:
+      "以学生价开通的会员，认证到期后平台按原价自动续费，差价可能翻倍。处理：开通时查看「学生认证有效期」，到期前平台应提醒；未收到提醒被按原价扣费的，联系客服补回差价；拒绝则凭学生证与扣费记录向 12315 投诉。",
+    category: "subscription_trap",
+    source: "全国 12315 平台",
+    sourceUrl: "https://www.12315.cn/",
+    legalBasis: "《网络交易监督管理办法》第 18 条（扣费前 5 日显著提醒义务）",
+    benefitTags: [],
+  },
+  {
+    id: "st-008",
+    title: "捆绑开通联合会员：想退一项必须全退",
+    summary:
+      "「视频 + 音乐 + 阅读」联合会员一次签约多项扣费，取消时平台只提供「全部取消」，用户想保留其中一项也不行。要点：联合会员属捆绑销售，用户有权只退不需要的部分；先联系客服要求拆分退订，协商不成凭签约记录向 12315 投诉。",
+    category: "subscription_trap",
+    source: "全国 12315 平台",
+    sourceUrl: "https://www.12315.cn/",
+    legalBasis: "《消费者权益保护法》第 9 条（自主选择权：不得强制或者变相强制消费者购买其不需要的商品或服务）",
+    benefitTags: [],
+  },
+
+  // —— 预付风险 prepaid_risk 续 ×4 ——
+  {
+    id: "pr-004",
+    title: "理发店充值后易主：新老板不认旧卡余额",
+    summary:
+      "店面转让后新经营者以「与原老板无关」为由拒绝继续提供服务，属于经营者主体变更争议。要点：预付卡服务应当随店铺转让一并承接；先向新经营者出示充值记录要求继续履约，被拒则连同新旧经营者一并投诉，必要时起诉原经营者要求退还余额。",
+    category: "prepaid_risk",
+    source: "商务部·《单用途商业预付卡管理办法（试行）》",
+    sourceUrl: "https://www.mofcom.gov.cn/",
+    legalBasis: "《消费者权益保护法》第 53 条（预收款未按约提供应退回）",
+    benefitTags: [],
+  },
+  {
+    id: "pr-005",
+    title: "最高法新规：办卡 7 日内未使用可无理由退款",
+    summary:
+      "2025 年 5 月 1 日起施行的预付式消费司法解释明确：消费者自付款之日起 7 日内无兑付过商品或服务的，有权要求经营者全额退款，合同中的排除条款无效。适用范围覆盖健身、美容、培训等预付式消费场景，维权时直接援引该解释。",
+    category: "prepaid_risk",
+    source: "最高人民法院官网",
+    sourceUrl: "https://www.court.gov.cn/",
+    legalBasis: "《最高人民法院关于审理预付式消费民事纠纷案件适用法律若干问题的解释》（法释〔2025〕4 号，2025-05-01 施行）",
+    benefitTags: [],
+  },
+  {
+    id: "pr-006",
+    title: "「概不退卡」条款一律无效：格式条款也有边界",
+    summary:
+      "合同中「一经售出不退不换」「本公司保留最终解释权」等排除消费者主要权利的格式条款无效。处理：先书面要求退款并留痕；商家以合同为由拒绝时，指出条款无效并要求依据《消保法》第 26 条处理；协商不成向 12315 投诉或起诉。",
+    category: "prepaid_risk",
+    source: "全国 12315 平台",
+    sourceUrl: "https://www.12315.cn/",
+    legalBasis: "《消费者权益保护法》第 26 条：排除或者限制消费者权利、加重消费者责任的格式条款无效",
+    benefitTags: [],
+  },
+  {
+    id: "pr-007",
+    title: "预付卡余额「到期作废」：有效期不是没收理由",
+    summary:
+      "部分预付卡设置 1-3 年有效期，过期后商家直接清零余额。依据规定，记名卡不得设有效期，不记名卡有效期不得少于 3 年，且卡内资金余额到期后经营者应提供激活、换卡等配套服务，不得将余额据为己有。",
+    category: "prepaid_risk",
+    source: "商务部·《单用途商业预付卡管理办法（试行）》",
+    sourceUrl: "https://www.mofcom.gov.cn/",
+    legalBasis: "《单用途商业预付卡管理办法（试行）》第 19 条（记名卡不得设有效期，不记名卡有效期不得少于 3 年）",
+    benefitTags: [],
+  },
+
+  // —— 冲动消费 minor_spending 续 ×3 ——
+  {
+    id: "ms-003",
+    title: "校园贷警示：正规渠道之外的「低息」都不要信",
+    summary:
+      "「零门槛、秒到账、低利息」的校园贷多为高息陷阱，实际年化利率远超宣传值。教育部等六部门已发文要求严禁面向在校学生发放非法贷款。学生确有资金需求，优先考虑学校勤工助学、国家助学贷款与正规银行产品，遇到诱导贷款立即拒绝并保留证据。",
+    category: "minor_spending",
+    source: "教育部官网·关于加强校园不良网络借贷风险防范和教育引导工作的通知",
+    sourceUrl: "https://www.moe.gov.cn/",
+    legalBasis: "《最高人民法院关于审理民间借贷案件适用法律若干问题的规定》第 25 条（利率保护上限）",
+    benefitTags: [],
+  },
+  {
+    id: "ms-004",
+    title: "直播间「最后 100 件」：倒计时氛围的消费心理学",
+    summary:
+      "直播间用「限量」「仅剩」「倒计时」营造稀缺感，诱使观众在未比价、未核实需求的情况下下单。三招拆解：离开直播间再决定；全网搜同款比价；等「最后一分钟」结束 24 小时后若还想买再下单。冲动消退后的需求才是真需求。",
+    category: "minor_spending",
+    source: "中国消费者协会官网·直播电商消费提示",
+    sourceUrl: "https://www.cca.org.cn/",
+    benefitTags: [],
+  },
+  {
+    id: "ms-005",
+    title: "游戏抽卡与皮肤：给虚拟消费设一条硬线",
+    summary:
+      "抽卡类消费利用随机性刺激连续充值，单笔几十元累计起来一年可达数千元。实用规则：每月游戏支出不超过娱乐预算的 40%；抽卡前先确定「最多抽几次」并严格执行；开启平台自带的消费限额功能（如 App Store 的屏幕使用时间限额、家长控制）。",
+    category: "minor_spending",
+    source: "中国消费者协会官网·网络游戏消费提示",
+    sourceUrl: "https://www.cca.org.cn/",
+    benefitTags: [],
+  },
+
+  // —— 消费维权 consumer_rights 续 ×4 ——
+  {
+    id: "cr-005",
+    title: "快递丢件只赔运费三倍？未保价也有赔偿标准",
+    summary:
+      "快递公司以「未保价最多赔运费三倍」为由拒赔并不当然成立。依据《快递暂行条例》：未保价快件按民事法律有关规定确定赔偿责任，即按实际损失赔。步骤：保留面单与价值凭证 → 向快递企业索赔 → 不满意拨打 12305 向邮政管理部门申诉。",
+    category: "consumer_rights",
+    source: "国家邮政局官网·申诉指南",
+    sourceUrl: "https://www.spb.gov.cn/",
+    legalBasis: "《快递暂行条例》第 27 条（快件丢失损毁的赔偿责任）",
+    benefitTags: [],
+  },
+  {
+    id: "cr-006",
+    title: "外卖吃到异物：按价款 10 倍索赔的完整姿势",
+    summary:
+      "外卖食品出现异物（头发、虫体、包装碎片等）适用《食品安全法》第 148 条：可要求退还餐费并主张价款 10 倍或损失 3 倍的赔偿金，最低 1000 元。关键是固定证据：对餐品与异物拍照、保留订单截图，第一时间联系平台客服，平台协调不成向 12315 投诉。",
+    category: "consumer_rights",
+    source: "全国 12315 平台",
+    sourceUrl: "https://www.12315.cn/",
+    legalBasis: "《食品安全法》第 148 条（惩罚性赔偿，最低 1000 元）",
+    benefitTags: [],
+  },
+  {
+    id: "cr-007",
+    title: "大数据杀熟：同一商品老用户价格更高怎么办",
+    summary:
+      "同一平台同一商品，老用户看到的价格高于新用户，属于典型的差异化定价。依据新规，经营者不得在消费者不知情的情况下设置不同价格。取证方法：用两部手机（不同账号）同时截图同款商品价格；固定证据后向 12315 投诉，可要求退还价差。",
+    category: "consumer_rights",
+    source: "全国 12315 平台",
+    sourceUrl: "https://www.12315.cn/",
+    legalBasis: "《消费者权益保护法实施条例》第 9 条（不得在消费者不知情的情况下设置不同价格或收费标准）",
+    benefitTags: [],
+  },
+  {
+    id: "cr-008",
+    title: "先涨后降的「骨折价」：虚假促销可退差价",
+    summary:
+      "大促前先提价、促销时再打折，实际到手价与平日持平甚至更高，属于价格欺诈。识别方法：用比价插件或历史价格工具查看 30-60 天价格曲线；发现虚构原价的，凭截图向平台投诉要求退还差价，平台不处理向 12315 举报。",
+    category: "consumer_rights",
+    source: "国家市场监督管理总局官网",
+    sourceUrl: "https://www.samr.gov.cn/",
+    legalBasis: "《明码标价和禁止价格欺诈规定》（市场监管总局令第 56 号）第 19 条（禁止虚构原价、虚假优惠折价）",
+    benefitTags: [],
+  },
+
+  // —— 平台规则 platform_rule 续 ×4 ——
+  {
+    id: "pl-004",
+    title: "淘宝/天猫自动续费签约管理入口",
+    summary:
+      "淘宝内签约的自动续费（88VIP、各类会员卡）统一管理入口：淘宝 App「我的淘宝 → 设置 → 支付设置 → 免密支付/自动扣款」，可查看全部签约项目并逐项解约；解约后下期不再扣费，当期待退款的在「会员中心」申请。",
+    category: "platform_rule",
+    source: "淘宝网·官方帮助中心",
+    sourceUrl: "https://consumerservice.taobao.com/",
+    benefitTags: [],
+  },
+  {
+    id: "pl-005",
+    title: "京东 Plus 与美团会员的取消路径",
+    summary:
+      "京东 Plus：App「我的 → Plus 会员 → 设置 → 关闭自动续费」；美团外卖会员：App「我的 → 会员中心 → 右上角管理 → 关闭自动续费」。两条路径都在会员页内，取消后留意微信/支付宝扣费服务里的签约是否同步解除。",
+    category: "platform_rule",
+    source: "京东 Plus 官方规则页 / 美团外卖会员规则页",
+    sourceUrl: "https://plus.jd.com/",
+    benefitTags: [],
+  },
+  {
+    id: "pl-006",
+    title: "App Store 退款申诉：90 天窗口与报告问题入口",
+    summary:
+      "iOS 内购（含订阅、游戏充值）可在购买后 90 天内通过 reportaproblem.apple.com 提交退款申请，选择「请求退款」并写明原因（误购、未成年人充值等）。审核通常 48 小时内出结果；一次被拒可补充材料再次提交，仍未通过可联系 Apple 支持电话申诉。",
+    category: "platform_rule",
+    source: "Apple 支持官方文档·「针对从 Apple 购买的 App 或内容申请退款」",
+    sourceUrl: "https://support.apple.com/zh-cn/HT204084",
+    benefitTags: [],
+  },
+  {
+    id: "pl-007",
+    title: "未成年人充值退款官方通道汇总",
+    summary:
+      "主流平台的未成年人消费申诉入口：腾讯成长守护平台（jiazhang.qq.com，覆盖腾讯系游戏）、网易家长关爱平台、米哈游成长关爱平台（对应原神等游戏）、Apple 报告问题页（App 内购）。提交材料一般包括：监护人身份证明、亲子关系证明、充值记录截图，审核周期 3-15 个工作日。",
+    category: "platform_rule",
+    source: "腾讯成长守护平台 / 网易家长关爱平台官方页面",
+    sourceUrl: "https://jiazhang.qq.com/",
+    benefitTags: [],
+  },
+
+  // —— 法律法规 regulation 续 ×3 ——
+  {
+    id: "rg-003",
+    title: "《个人信息保护法》第 24 条：自动化决策不得差别定价",
+    summary:
+      "个保法第 24 条明确：利用个人信息进行自动化决策，不得对个人在交易价格等交易条件上实行不合理的差别待遇；通过自动化决策作出对个人权益有重大影响的决定的，个人有权要求说明并拒绝。这是反「大数据杀熟」的基础法律依据。",
+    category: "regulation",
+    source: "国家法律法规数据库",
+    sourceUrl: "https://flk.npc.gov.cn/",
+    legalBasis: "《中华人民共和国个人信息保护法》第 24 条",
+    benefitTags: [],
+  },
+  {
+    id: "rg-004",
+    title: "最高法预付式消费司法解释：跑路追偿与 7 日退款",
+    summary:
+      "法释〔2025〕4 号（2025-05-01 施行）系统回应预付式消费纠纷：经营者终止经营、无法继续提供服务的，消费者可解除合同并要求退款；消费者付款后 7 日内未兑付服务的可无理由全额退款；商场出租方对租赁柜台跑路承担连带责任。该解释把此前分散的裁判规则统一成文，维权可直接引用。",
+    category: "regulation",
+    source: "最高人民法院官网",
+    sourceUrl: "https://www.court.gov.cn/",
+    legalBasis: "《最高人民法院关于审理预付式消费民事纠纷案件适用法律若干问题的解释》（法释〔2025〕4 号）",
+    benefitTags: [],
+  },
+  {
+    id: "rg-005",
+    title: "《明码标价和禁止价格欺诈规定》：哪些促销话术算违法",
+    summary:
+      "总局令第 56 号（2022-07-01 施行）列举 7 类价格欺诈行为：虚构原价、虚假「限时特价」、不标示或含糊标示价格附加条件、谎称政府定价等。消费者看到「原价 999 现价 99」时，可要求商家出示促销前 7 日内的成交记录证明原价真实存在。",
+    category: "regulation",
+    source: "国家市场监督管理总局官网",
+    sourceUrl: "https://www.samr.gov.cn/",
+    legalBasis: "《明码标价和禁止价格欺诈规定》（市场监管总局令第 56 号）",
+    benefitTags: [],
+  },
+
+  // —— 省钱建议 spending_advice 续 ×5 ——
+  {
+    id: "sa-004",
+    title: "信封预算法：现金分装的数字化版本",
+    summary:
+      "把月生活费按类目拆成若干「信封」（餐饮、交通、娱乐……），每个信封花完即止，不跨信封挪用。数字化做法：用记账 App 的分类预算功能替代实物信封，每周日核对各信封余额。该方法比总预算控制更直观，尤其适合第一次做预算。",
+    category: "spending_advice",
+    source: "人民网·财经频道",
+    sourceUrl: "https://finance.people.com.cn/",
+    benefitTags: [],
+  },
+  {
+    id: "sa-005",
+    title: "「先用后付」不是免费：扣款链路先摸清",
+    summary:
+      "先用后付（先享后付、0 元下单）本质是延后扣款的信用消费：确认收货或到期后从支付账户自动扣款，多笔叠加容易造成月账单超预期。使用规则：开通前看清扣款时点与额度上限；每月末在支付 App 的「先用后付」汇总页核对总欠款；控制同时在用的先用后付笔数。",
+    category: "spending_advice",
+    source: "中国消费者协会官网·消费提示",
+    sourceUrl: "https://www.cca.org.cn/",
+    benefitTags: [],
+  },
+  {
+    id: "sa-006",
+    title: "闲置转卖回血：冲动消费的二次回收通道",
+    summary:
+      "冲动购入后闲置的物品可通过二手平台转卖回收 30%-60% 成本。三个技巧：全新未拆封的按市场价 6-7 折挂出更容易成交；附购买凭证与实物图提高信任度；上架 14 天无人问津就降价 10%。转卖的意义不只是回血，更让下一次下单前多一层「能不能卖掉」的考量。",
+    category: "spending_advice",
+    source: "人民网·财经频道",
+    sourceUrl: "https://finance.people.com.cn/",
+    benefitTags: [],
+  },
+  {
+    id: "sa-007",
+    title: "促销日历与反季购买：把大额支出挪到价格低点",
+    summary:
+      "多数品类有固定价格低点：数码家电看 618 与双 11，冬装看春节后清仓，夏装看 9 月换季，机票提前 30-45 天预订。做法：在记账 App 里列出未来 3 个月的大额需求（换机、换季衣物、出行），对照促销日历安排购买时点，不急用的全部挪到低点。",
+    category: "spending_advice",
+    source: "中国消费者协会官网·消费提示",
+    sourceUrl: "https://www.cca.org.cn/",
+    benefitTags: [],
+  },
+  {
+    id: "sa-008",
+    title: "外卖点单的三个省钱层次：满减、会员与替代",
+    summary:
+      "第一层算满减：凑单优先选「必买消耗品」而非为凑而凑；第二层用会员：点单频率高时开通会员券包，用券后每单成本对比再决定；第三层想替代：食堂、便利店与自热食品在特定场景下比外卖更便宜。每周外卖支出超过预算时，逐层往下走。",
+    category: "spending_advice",
+    source: "人民网·财经频道",
+    sourceUrl: "https://finance.people.com.cn/",
+    benefitTags: [],
+  },
+
+  // —— 学生权益 student_benefits 续 ×9 ——
+  {
+    id: "sb-004",
+    title: "学生火车票：硬座 5 折、二等座 7.5 折，每学年 4 次",
+    summary:
+      "普通大专院校在校生（凭学生证与优惠卡）购票享受：普速列车硬座半价、动车组二等座按公布票价 7.5 折，每学年 4 次单程，限寒暑假往返院校所在地与家庭所在地区间。购票前先在 12306 App 完成学生优惠资质核验，乘车时随身携带学生证备查。",
+    category: "student_benefits",
+    source: "中国铁路 12306 官网·学生票规定",
+    sourceUrl: "https://www.12306.cn/",
+    benefitTags: ["student_cert", "budget_substitute"],
+  },
+  {
+    id: "sb-005",
+    title: "学生证景区门票：淡旺季折扣差异大",
+    summary:
+      "绝大多数国有景区对全日制在校学生提供门票半价或更优折扣，部分民营景区也有学生票。旺季（节假日）部分景区会暂停学生票，出行前在官方公众号核实当季政策；研究生证、录取通知书在多数景区同样有效。",
+    category: "student_benefits",
+    source: "文化和旅游部官网·门票减免政策指引",
+    sourceUrl: "https://www.mct.gov.cn/",
+    benefitTags: ["student_cert", "budget_substitute"],
+  },
+  {
+    id: "sb-006",
+    title: "校园卡权益盘点：食堂、超市、洗浴一卡通",
+    summary:
+      "校园卡除了食堂消费，多数学校还叠加了校内超市折扣、洗浴计费、图书馆逾期抵扣等功能；部分学校校园卡在校外合作商户（书店、打印店）也有折扣。每学期初花 10 分钟查看学校后勤公告的商户清单，把常用消费切到校园卡通道。",
+    category: "student_benefits",
+    source: "各高校后勤服务公开公告（以本校通知为准）",
+    sourceUrl: "https://www.moe.gov.cn/",
+    benefitTags: ["campus_card", "budget_substitute"],
+  },
+  {
+    id: "sb-007",
+    title: "学生公交卡与地铁优惠：一卡省出通勤钱",
+    summary:
+      "多数城市对在校学生提供专属公交卡或地铁优惠（如票价 5 折、月票制），凭学生证或学籍信息在市民卡服务网点办理。部分城市支持在交通卡 App 线上认证后直接享受学生价。通勤频率高的同学，年省额度通常在 300-800 元。",
+    category: "student_benefits",
+    source: "各城市公共交通集团官网·学生卡办理指南",
+    sourceUrl: "https://www.mot.gov.cn/",
+    benefitTags: ["student_cert", "campus_card", "budget_substitute"],
+  },
+  {
+    id: "sb-008",
+    title: "软件教育版免费领取：Office 365 与 JetBrains 全家桶",
+    summary:
+      "微软面向师生提供免费的 Office 365 教育版（用学校邮箱认证）；JetBrains 全系 IDE（IntelliJ IDEA、PyCharm 等）凭学生证或学信网认证可免费使用一年并逐年续期。此外 GitHub Student Pack 打包了数十款开发工具的免费额度，学编程的同学不要错过。",
+    category: "student_benefits",
+    source: "微软教育官网 / JetBrains 学生授权页",
+    sourceUrl: "https://education.github.com/pack",
+    benefitTags: ["edu_discount", "student_cert", "budget_substitute"],
+  },
+  {
+    id: "sb-009",
+    title: "学生专属金融产品：只选持牌正规渠道",
+    summary:
+      "银行面向学生推出的校园卡、助学贷款与低额度信用卡是合规选择；任何「无视征信、秒批大额」的校园贷、培训贷、美容贷都要远离，其实际年化利率常远超司法保护上限。使用金融产品前先在「国家企业信用信息公示系统」查机构资质，签约前把利率换算成年化再比较。",
+    category: "student_benefits",
+    source: "教育部官网·防范不良校园贷提示",
+    sourceUrl: "https://www.moe.gov.cn/",
+    benefitTags: ["rights_tip"],
+  },
+  {
+    id: "sb-010",
+    title: "演出与电影学生票：提前问、当场亮证",
+    summary:
+      "电影：多数院线凭学生证享学生价（部分线上购票平台需在「我的」里完成学生认证）；演出：剧院、音乐节普遍设学生票档，数量有限，开票当天抢购。经验：学生票通常在官方售票渠道而非黄牛处更便宜，购票前先在官方公众号查学生票政策。",
+    category: "student_benefits",
+    source: "各剧院/院线官方购票渠道公开规则",
+    sourceUrl: "https://www.mct.gov.cn/",
+    benefitTags: ["student_cert", "budget_substitute"],
+  },
+  {
+    id: "sb-011",
+    title: "云闪付与银行校园卡：叠加立减的双重优惠",
+    summary:
+      "云闪付 App 设「学生专区」，与多家银行合作提供校园场景立减（食堂、超市、公交）；部分银行校园卡自带「每月前 N 笔消费返现」。叠加策略：先查银行校园卡返现规则，再用云闪付通道支付，两者活动可同时生效时优惠最大化。",
+    category: "student_benefits",
+    source: "中国银联云闪付 App·学生专区公开规则",
+    sourceUrl: "https://www.unionpayintl.com/cn/",
+    benefitTags: ["campus_card", "edu_discount"],
+  },
+  {
+    id: "sb-012",
+    title: "在线课程与电子书的学生折扣：从 MOOC 到知网研学",
+    summary:
+      "中国大学 MOOC、学堂在线等平台课程本身免费，付费认证证书对在校生有折扣或兑换码；知网研学对学生账号开放部分免费资源与团购价；多数电子书平台（微信读书、得到）对学生有年度特价。购买前先搜「平台名 + 学生认证」，通常 5 分钟内完成认证。",
+    category: "student_benefits",
+    source: "中国大学 MOOC（icourse163.org）公开规则",
+    sourceUrl: "https://www.icourse163.org/",
+    benefitTags: ["edu_discount", "student_cert"],
   },
 ];
