@@ -1,0 +1,21 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* 设计令牌：同时被 Tailwind 工具类与 ECharts 主题读取（getComputedStyle 取 CSS 变量） */
+  --color-primary: oklch(0.62 0.19 260); /* 主色：信任蓝 */
+  --color-alert: oklch(0.63 0.21 25); /* 异常红 */
+  --color-warn: oklch(0.82 0.16 85); /* 低置信度黄 */
+  --color-ok: oklch(0.68 0.17 155); /* 健康绿 */
+  --font-sans: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --radius-card: 1rem;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
