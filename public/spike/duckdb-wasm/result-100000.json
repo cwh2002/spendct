@@ -1,0 +1,16 @@
+{
+  "capturedAt": "2026-10-13T09:34:17.032Z",
+  "engine": "chromium",
+  "cold": {
+    "wasmLoadMs": 819,
+    "importAggMs": 657,
+    "memoryMb": 13.6,
+    "aggRowCount": 12,
+    "totalAmount": 350909943
+  },
+  "hot": {
+    "wasmLoadMs": 757,
+    "importAggMs": 649,
+    "memoryMb": 13.6
+  }
+}
