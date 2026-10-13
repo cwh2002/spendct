@@ -26,7 +26,7 @@ const THEME_INIT_SCRIPT = `(function(){try{var t=localStorage.getItem("spendct:t
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning data-scroll-behavior="smooth">
       <body className="flex min-h-screen flex-col bg-slate-50 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100">
         {featureFlags.dark ? (
           <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />

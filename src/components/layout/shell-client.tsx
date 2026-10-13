@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { DemoConsole } from "@/components/demo/demo-console";
 import { TopNav } from "./top-nav";
 import { BottomTabBar } from "./bottom-tab-bar";
 
@@ -29,6 +30,8 @@ export function ShellClient({ footer, children }: ShellClientProps) {
       <main className="flex-1 pb-20 md:pb-0">{children}</main>
       {footer}
       <BottomTabBar />
+      {/* 演示控制台：? 键呼出（05 §7.3，评委提问时的应急武器） */}
+      <DemoConsole />
     </>
   );
 }
