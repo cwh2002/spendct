@@ -1,0 +1,469 @@
+"use client";
+
+import {
+  ChartColumn,
+  Inbox,
+  LayoutGrid,
+  MessageSquare,
+  Rows3,
+  Star,
+  Upload,
+  X,
+} from "lucide-react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Container } from "@/components/layout/container";
+import {
+  FilterBar,
+  applyInsightFilters,
+  DEFAULT_INSIGHT_FILTERS,
+  type InsightFilters,
+} from "@/components/insights/filter-bar";
+import {
+  FollowUpPanel,
+  type FollowUpAnchor,
+  type FollowUpPanelHandle,
+} from "@/components/insights/follow-up-panel";
+import { InsightCard, type InsightCardHandle } from "@/components/insights/insight-card";
+import { LedgerView } from "@/components/insights/ledger-view";
+import { readFavorites, toggleFavoriteLocal } from "@/lib/insights/favorites";
+import { DEMO_INSIGHTS, DEMO_STAGES } from "@/lib/demo-data";
+
+type ViewMode = "cards" | "gallery" | "ledger";
+
+const VIEW_OPTIONS: { key: ViewMode; label: string; icon: typeof Rows3 }[] = [
+  { key: "cards", label: "卡片流", icon: Rows3 },
+  { key: "gallery", label: "图表廊", icon: LayoutGrid },
+  { key: "ledger", label: "账本汇总", icon: ChartColumn },
+];
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-1.5 py-0.5 font-mono text-[10px] text-(--color-ink-secondary)">
+      {children}
+    </kbd>
+  );
+}
+
+/** 无体检结果空态：仅在本地清除演示开关（localStorage spendct:demo:off=1）时出现 */
+function EmptyState() {
+  return (
+    <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 rounded-(--radius-card) border border-dashed border-(--color-border-strong) px-6 py-16 text-center">
+      <span className="grid size-16 place-items-center rounded-full bg-(--color-surface-2)">
+        <Inbox className="size-7 text-(--color-ink-muted)" aria-hidden />
+      </span>
+      <div>
+        <h2 className="text-lg font-semibold">体检完成前，这里还没有洞察</h2>
+        <p className="mx-auto mt-1 max-w-sm text-sm leading-relaxed text-(--color-ink-secondary)">
+          上传账单并跑完六阶段体检，洞察会一条条出现在这里，等待你的确认、质疑与追问。
+        </p>
+      </div>
+      <Link
+        href="/upload"
+        className="inline-flex h-11 items-center gap-2 rounded-full bg-(--color-btn-primary) px-5 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover)"
+      >
+        <Upload className="size-4" aria-hidden />
+        去上传账单
+      </Link>
+    </div>
+  );
+}
+
+function NoMatch({ onReset }: { onReset(): void }) {
+  return (
+    <div className="flex min-h-[40vh] flex-col items-center justify-center gap-3 rounded-(--radius-card) border border-dashed border-(--color-border-strong) px-6 py-12 text-center">
+      <p className="text-sm font-medium">没有符合条件的洞察</p>
+      <p className="text-xs text-(--color-ink-secondary)">试试放宽阶段、日期或类别筛选</p>
+      <button
+        type="button"
+        onClick={onReset}
+        className="h-10 rounded-full border border-(--color-border) bg-(--color-surface) px-4 text-sm font-medium text-(--color-ink-secondary) transition-colors hover:border-(--color-border-strong)"
+      >
+        重置筛选
+      </button>
+    </div>
+  );
+}
+
+/** 骨架屏：Suspense fallback（useSearchParams 客户端渲染期间占位） */
+function InsightsSkeleton() {
+  return (
+    <div className="animate-pulse pt-6" aria-label="洞察页加载中">
+      <div className="flex items-center gap-3">
+        <div className="h-7 w-20 rounded-full bg-(--color-surface-2)" />
+        <div className="h-10 w-64 rounded-full bg-(--color-surface-2)" />
+      </div>
+      <div className="mt-3 h-11 w-full max-w-3xl rounded-full bg-(--color-surface-2)" />
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-80 rounded-(--radius-lg) bg-(--color-surface-2)" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function InsightsView() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // ?view=ledger 为主入口（顶部导航「账本」链接）；?tab=ledger 为旧参数兼容
+  const rawView = searchParams.get("view") ?? searchParams.get("tab") ?? "cards";
+  const view: ViewMode = rawView === "gallery" || rawView === "ledger" ? rawView : "cards";
+
+  const [filters, setFilters] = useState<InsightFilters>(DEFAULT_INSIGHT_FILTERS);
+  // 收藏与演示开关在初始 state 里同步读取：本子树经 Suspense 客户端渲染，无 SSR HTML 需要对齐；
+  // 隐私模式抛异常时 readFavorites 已兜底返回空列表，demoOff 用 typeof window 守卫
+  const [favorites, setFavorites] = useState<string[]>(() => readFavorites());
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
+  const [anchor, setAnchor] = useState<FollowUpAnchor | null>(null);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [focusIndex, setFocusIndex] = useState(-1);
+  // 本地「关闭演示数据」开关：置 1 后页面进入真实空态，用于验收空态设计
+  const [demoOff] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("spendct:demo:off") === "1";
+    } catch {
+      return false;
+    }
+  });
+
+  const cardRefs = useRef(new Map<string, InsightCardHandle>());
+  const panelRef = useRef<FollowUpPanelHandle>(null);
+
+  // 过滤 + withheld 卡置底（05 §1.5：低置信度卡不抢高位视线），排序稳定不破坏流式顺序
+  const visible = useMemo(() => {
+    const filtered = applyInsightFilters(DEMO_INSIGHTS, filters);
+    return [...filtered].sort((a, b) => Number(Boolean(a.withheld)) - Number(Boolean(b.withheld)));
+  }, [filters]);
+
+  // 焦点索引为原始值，渲染期钳到当前可见列表长度内（不在 effect 里同步，避免级联渲染）
+  const clampedFocus =
+    visible.length === 0 ? -1 : Math.min(Math.max(focusIndex, -1), visible.length - 1);
+
+  const setView = useCallback(
+    (next: ViewMode) => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("tab");
+      if (next === "cards") params.delete("view");
+      else params.set("view", next);
+      const qs = params.toString();
+      router.replace(`/insights${qs ? `?${qs}` : ""}`, { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  // 设置锚点并同步展开面板（桌面折叠态与移动端抽屉同口径）：面板开合跟着触发动作走
+  const openPanelForAnchor = useCallback((next: FollowUpAnchor) => {
+    setAnchor(next);
+    setPanelOpen(true);
+    setPanelCollapsed(false);
+  }, []);
+
+  const handleDelve = useCallback(
+    (id: string, label: string) => {
+      openPanelForAnchor({ id, label });
+    },
+    [openPanelForAnchor],
+  );
+
+  const handleToggleFavorite = useCallback((id: string) => {
+    setFavorites((prev) => toggleFavoriteLocal(prev, id));
+  }, []);
+
+  // 键盘快捷键（05 §5）：j/k 切卡、Enter 展开、t 数据表、/ 聚焦追问、Esc 取消锚点
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const target = e.target;
+      const inField =
+        target instanceof HTMLElement &&
+        ["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(target.tagName);
+      const hasModifier = e.metaKey || e.ctrlKey || e.altKey;
+
+      if (e.key === "Escape") {
+        if (anchor) setAnchor(null);
+        setFavoritesOpen(false);
+        setPanelOpen(false);
+        return;
+      }
+      if (e.key === "/" && !hasModifier) {
+        e.preventDefault();
+        setPanelOpen(true);
+        setPanelCollapsed(false);
+        requestAnimationFrame(() => panelRef.current?.focusInput());
+        return;
+      }
+      if (inField || hasModifier || view === "ledger" || visible.length === 0) return;
+
+      if (e.key === "j" || e.key === "k") {
+        e.preventDefault();
+        setFocusIndex((i) => {
+          if (i < 0) return 0;
+          return e.key === "j" ? Math.min(i + 1, visible.length - 1) : Math.max(i - 1, 0);
+        });
+      } else if (e.key === "Enter" && clampedFocus >= 0) {
+        e.preventDefault();
+        const card = visible[clampedFocus];
+        if (card) cardRefs.current.get(card.id)?.toggleExpand();
+      } else if (e.key === "t" && clampedFocus >= 0) {
+        e.preventDefault();
+        const card = visible[clampedFocus];
+        if (card) cardRefs.current.get(card.id)?.toggleTable();
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [anchor, view, visible, clampedFocus]);
+
+  // 卡片 ref 注册表：键盘事件经此驱动对应卡的展开/数据表操作
+  const setCardRef = useCallback((id: string) => {
+    return (node: InsightCardHandle | null) => {
+      if (node) cardRefs.current.set(id, node);
+      else cardRefs.current.delete(id);
+    };
+  }, []);
+
+  const favoriteInsights = useMemo(
+    () => DEMO_INSIGHTS.filter((insight) => favorites.includes(insight.id)),
+    [favorites],
+  );
+
+  return (
+    <div className="pt-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-xl font-bold tracking-tight">洞察</h1>
+
+        <div
+          role="group"
+          aria-label="视图切换"
+          className="inline-flex rounded-full border border-(--color-border) bg-(--color-surface) p-1"
+        >
+          {VIEW_OPTIONS.map((option) => {
+            const active = view === option.key;
+            const Icon = option.icon;
+            return (
+              <button
+                key={option.key}
+                type="button"
+                onClick={() => setView(option.key)}
+                aria-pressed={active}
+                className={`inline-flex h-11 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${
+                  active
+                    ? "bg-(--color-primary-soft) text-(--color-brand-600)"
+                    : "text-(--color-ink-secondary) hover:text-(--color-ink)"
+                }`}
+              >
+                <Icon className="size-4" aria-hidden />
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="relative ml-auto">
+          <button
+            type="button"
+            onClick={() => setFavoritesOpen((v) => !v)}
+            aria-pressed={favoritesOpen}
+            aria-label={`收藏夹（${favorites.length} 项）`}
+            className="inline-flex h-11 items-center gap-2 rounded-full border border-(--color-border) bg-(--color-surface) px-4 text-sm font-medium text-(--color-ink-secondary) transition-colors hover:border-(--color-border-strong) hover:text-(--color-ink)"
+          >
+            <Star
+              className={`size-4 ${favorites.length > 0 ? "fill-(--color-accent) text-(--color-accent)" : ""}`}
+              aria-hidden
+            />
+            收藏夹
+            {favorites.length > 0 ? (
+              <span className="rounded-full bg-(--color-primary-soft) px-2 py-0.5 text-xs font-semibold text-(--color-brand-600) tabular-nums">
+                {favorites.length}
+              </span>
+            ) : null}
+          </button>
+          {favoritesOpen ? (
+            <>
+              {/* 点击面板外区域关闭（Esc 亦关闭，见键盘监听） */}
+              <button
+                type="button"
+                aria-hidden
+                tabIndex={-1}
+                onClick={() => setFavoritesOpen(false)}
+                className="fixed inset-0 z-30 cursor-default"
+              />
+              <div
+                role="dialog"
+                aria-label="收藏夹"
+                className="absolute right-0 top-full z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-3 shadow-(--shadow-lg)"
+              >
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h2 className="text-sm font-semibold">收藏的洞察</h2>
+                  <button
+                    type="button"
+                    onClick={() => setFavoritesOpen(false)}
+                    aria-label="关闭收藏夹"
+                    className="grid size-8 place-items-center rounded-full text-(--color-ink-muted) transition-colors hover:bg-(--color-surface-2) hover:text-(--color-ink)"
+                  >
+                    <X className="size-4" aria-hidden />
+                  </button>
+                </div>
+                {favoriteInsights.length === 0 ? (
+                  <div className="py-6 text-center">
+                    <p className="text-sm text-(--color-ink-secondary)">还没有收藏任何洞察卡</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFavoritesOpen(false);
+                        if (view !== "cards") setView("cards");
+                      }}
+                      className="mt-3 h-10 rounded-full bg-(--color-primary) px-4 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover)"
+                    >
+                      去逛洞察卡流
+                    </button>
+                  </div>
+                ) : (
+                  <ul className="space-y-1">
+                    {favoriteInsights.map((insight) => (
+                      <li
+                        key={insight.id}
+                        className="flex items-start gap-2 rounded-(--radius-md) px-2 py-2 hover:bg-(--color-surface-2)"
+                      >
+                        <p className="min-w-0 flex-1 text-sm leading-snug">{insight.headline}</p>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFavorite(insight.id)}
+                          aria-label={`取消收藏：${insight.headline}`}
+                          className="grid size-8 shrink-0 place-items-center rounded-full text-(--color-ink-muted) transition-colors hover:text-(--color-critical-ink)"
+                        >
+                          <Star className="size-4 fill-(--color-accent) text-(--color-accent)" aria-hidden />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </>
+          ) : null}
+        </div>
+      </div>
+
+      {view !== "ledger" ? (
+        <div className="mt-3">
+          <FilterBar value={filters} onChange={setFilters} stages={DEMO_STAGES} resultCount={visible.length} />
+        </div>
+      ) : null}
+
+      {view !== "ledger" ? (
+        <p className="mt-2 hidden flex-wrap items-center gap-x-3 gap-y-1 text-xs text-(--color-ink-muted) md:flex">
+          <span>快捷键</span>
+          <span>
+            <Kbd>j</Kbd> / <Kbd>k</Kbd> 切换卡片
+          </span>
+          <span>
+            <Kbd>Enter</Kbd> 展开
+          </span>
+          <span>
+            <Kbd>t</Kbd> 数据表
+          </span>
+          <span>
+            <Kbd>/</Kbd> 追问
+          </span>
+          <span>
+            <Kbd>Esc</Kbd> 取消锚点
+          </span>
+        </p>
+      ) : null}
+
+      <div className="mt-5 flex flex-col gap-6 lg:flex-row lg:items-start">
+        <div className="min-w-0 flex-1">
+          {view === "ledger" ? (
+            <LedgerView onAnchor={openPanelForAnchor} />
+          ) : demoOff ? (
+            <EmptyState />
+          ) : visible.length === 0 ? (
+            <NoMatch onReset={() => setFilters(DEFAULT_INSIGHT_FILTERS)} />
+          ) : (
+            <div
+              className={
+                view === "gallery"
+                  ? "grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+                  : "grid gap-4 md:grid-cols-2"
+              }
+            >
+              {visible.map((insight, index) => (
+                <InsightCard
+                  key={insight.id}
+                  ref={setCardRef(insight.id)}
+                  insight={insight}
+                  index={index}
+                  compact={view === "gallery"}
+                  focused={clampedFocus === index}
+                  favorite={favorites.includes(insight.id)}
+                  onToggleFavorite={handleToggleFavorite}
+                  onDelve={handleDelve}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 追问面板：桌面为右侧固定列（可折叠），移动端收为右侧抽屉 */}
+        <aside
+          className={`fixed inset-y-0 right-0 z-50 flex w-[min(92vw,360px)] flex-col transition-transform duration-200 ease-out lg:sticky lg:top-[88px] lg:z-auto lg:h-[calc(100vh-96px)] lg:w-auto lg:translate-x-0 lg:transition-none ${
+            panelOpen ? "translate-x-0" : "translate-x-full"
+          }`}
+        >
+          <FollowUpPanel
+            ref={panelRef}
+            open={panelOpen}
+            collapsed={panelCollapsed}
+            anchor={anchor}
+            onClose={() => setPanelOpen(false)}
+            onToggleCollapsed={() => setPanelCollapsed((v) => !v)}
+            onCancelAnchor={() => setAnchor(null)}
+          />
+        </aside>
+        {panelOpen ? (
+          <button
+            type="button"
+            aria-hidden
+            tabIndex={-1}
+            onClick={() => setPanelOpen(false)}
+            className="fixed inset-0 z-40 bg-black/40 lg:hidden"
+          />
+        ) : null}
+      </div>
+
+      {/* 移动端：面板未打开时的悬浮入口（底部 tab bar 上方） */}
+      {!panelOpen ? (
+        <button
+          type="button"
+          onClick={() => setPanelOpen(true)}
+          aria-label="打开追问面板"
+          className="fixed bottom-24 right-4 z-40 grid size-13 place-items-center rounded-full bg-(--color-primary) text-white shadow-(--shadow-lg) transition-colors hover:bg-(--color-btn-primary-hover) lg:hidden"
+        >
+          <MessageSquare className="size-5" aria-hidden />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+export default function InsightsPage() {
+  return (
+    <Container wide>
+      {/* useSearchParams 需位于 Suspense 边界内（Next 16 预渲染要求），骨架屏作为 fallback */}
+      <Suspense fallback={<InsightsSkeleton />}>
+        <InsightsView />
+      </Suspense>
+    </Container>
+  );
+}

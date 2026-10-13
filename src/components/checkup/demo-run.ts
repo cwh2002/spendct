@@ -1,0 +1,270 @@
+/**
+ * 体检页 demo 演示态的播放驱动。
+ * 把 DEMO_STAGES 依次点亮（每阶段 700ms：running → succeeded），
+ * 并同步推送与真实管线同形状的 ThinkingEvent（确定性进度 / SQL / RAG 案例 / 叙事）。
+ * 明天真实管线接入后本文件整体退役：事件由 pipeline runner 经同一回调协议下发，
+ * 页面与全部子组件零改动（见 types.ts 契约注释）。
+ */
+
+import { DEMO_STAGES } from "@/lib/demo-data";
+import type { StageEvidence, StageState, ThinkingEvent } from "./types";
+
+const STAGE_MS = 700;
+
+/** 各阶段聚合 SQL（白名单校验通过的展示样张，与 03 模板库同源口径） */
+const DEMO_SQL: Record<string, string> = {
+  clean: `SELECT COUNT(*) AS total_rows,
+       COUNT(DISTINCT trade_no) AS unique_rows,
+       COUNT(*) - COUNT(DISTINCT trade_no) AS dup_rows
+FROM bills_raw
+WHERE ts BETWEEN '2025-10-01' AND '2026-09-30';`,
+  profile: `SELECT category,
+       COUNT(*) AS n,
+       SUM(amount_cents) AS total_cents,
+       ROUND(SUM(amount_cents) * 100.0 / SUM(SUM(amount_cents)) OVER (), 1) AS pct
+FROM bills
+GROUP BY category
+ORDER BY total_cents DESC;`,
+  anomaly: `SELECT merchant_ref,
+       COUNT(*) AS hits,
+       SUM(amount_cents) AS total_cents
+FROM bills
+WHERE EXTRACT(hour FROM ts) BETWEEN 0 AND 2
+GROUP BY merchant_ref
+ORDER BY total_cents DESC;`,
+  subscription: `SELECT merchant_ref, COUNT(*) AS hits,
+       ROUND(AVG(amount_cents)) AS avg_cents,
+       ROUND(AVG(day_gap)) AS gap_days
+FROM (
+  SELECT merchant_ref, ts,
+         DATEDIFF('day', LAG(ts) OVER (
+             PARTITION BY merchant_ref ORDER BY ts), ts) AS day_gap
+  FROM bills
+) t
+GROUP BY merchant_ref
+HAVING COUNT(*) >= 3 AND AVG(day_gap) BETWEEN 25 AND 40;`,
+  attribution: `SELECT category,
+       SUM(CASE WHEN month = '2026-10' THEN amount_cents END) AS cur_cents,
+       SUM(CASE WHEN month = '2026-09' THEN amount_cents END) AS prev_cents
+FROM bills
+WHERE month IN ('2026-09', '2026-10')
+GROUP BY category
+ORDER BY cur_cents - prev_cents DESC;`,
+  annual: `SELECT month,
+       SUM(amount_cents) AS total_cents,
+       COUNT(*) AS n
+FROM bills
+WHERE month >= '2025-10'
+GROUP BY month
+ORDER BY month ASC;`,
+};
+
+/** SQL 命中行数（与 DEMO_INSIGHTS 引用口径咬合） */
+const DEMO_HITS: Record<string, number> = {
+  clean: 10_000,
+  profile: 3_214,
+  anomaly: 23,
+  subscription: 19,
+  attribution: 6,
+  annual: 12,
+};
+
+/** 产出卡缩略：标题行与 DEMO_INSIGHTS 的 headline 对齐，不足部分用确定性子任务卡补足 */
+const DEMO_CARDS: Record<string, { title: string; ok: boolean }[]> = {
+  clean: [
+    { title: "账单解析摘要 · 10,000 行全部进入标准字段", ok: true },
+    { title: "去重统计 · 移除 12 条重复记录", ok: true },
+  ],
+  profile: [
+    { title: "餐饮是最大支出类目，占月均支出 34%", ok: true },
+    { title: "类目·时段·渠道画像", ok: true },
+    { title: "高频商户 Top 10", ok: true },
+    { title: "渠道构成（微信 62% / 支付宝 38%）", ok: true },
+  ],
+  anomaly: [
+    { title: "深夜消费 23 笔集中在 0–2 点，游戏充值为主", ok: true },
+    { title: "疑似重复扣费 2 笔，建议核对商户订单", ok: false },
+    { title: "退款异常扫描 · 无命中", ok: true },
+  ],
+  subscription: [
+    { title: "发现 3 项连续订阅扣费，合计 5,888 元/年", ok: true },
+    { title: "沉默订阅 1 项 · 近 90 天零使用", ok: true },
+    { title: "周期扣费明细表（3 商户 × 19 笔）", ok: true },
+    { title: "取消指引 · 来自案例库 rag:subscription_trap_07", ok: true },
+  ],
+  attribution: [
+    { title: "本月支出环比 +18%，主要来自购物节大促", ok: true },
+    { title: "类目增量拆解 · 购物 +312 元（81%）", ok: true },
+    { title: "一次性脉冲 vs 趋势 · 非趋势性上涨", ok: true },
+  ],
+  annual: [
+    { title: "年度账单关键词：「外卖自由」与「游戏通行证」", ok: true },
+    { title: "月度支出趋势 · 峰值出现在 10 月", ok: true },
+    { title: "外卖是你的第一消费场景", ok: true },
+    { title: "订阅层悄悄吃掉 5,888 元/年", ok: true },
+    { title: "消费在向「体验型」迁移", ok: true },
+    { title: "年度海报已生成", ok: true },
+  ],
+};
+
+/** RAG 命中案例（caseId 与 DEMO_INSIGHTS.citations 的 rag: 引用一致） */
+const DEMO_RAG: Record<string, { caseId: string; title: string; summary: string }[]> = {
+  profile: [
+    {
+      caseId: "rag:spending_advice_12",
+      title: "外卖占比偏高怎么办",
+      summary:
+        "案例：外卖占餐饮 58% 的用户设置「外卖周预算 + 自提提醒」，4 周后外卖支出下降 23%，月省 80–150 元。",
+    },
+  ],
+  subscription: [
+    {
+      caseId: "rag:subscription_trap_07",
+      title: "连续扣费 11 个月的视频会员",
+      summary:
+        "案例：视频会员连续扣费 11 个月未被察觉。用户通过 App 内「订阅管理」入口 3 步完成取消，平台自动退款最近 1 期。",
+    },
+  ],
+  annual: [
+    {
+      caseId: "rag:spending_advice_03",
+      title: "固定成本层不超预算 10%",
+      summary:
+        "建议：把订阅合计并入月度预算视图，固定成本层控制在月度预算 10% 以内，避免挤占弹性消费空间。",
+    },
+  ],
+};
+
+/** 确定性进度文本：全部来自真实计数口径，不放伪造百分比（05 §5.1） */
+const PROGRESS_TEXT: Record<string, string> = {
+  clean: "已清洗 3,214 / 10,000 行",
+  profile: "已聚合 12 类目 · 3,214 行",
+  anomaly: "已扫描 3,214 行 · 命中规则 6 条",
+  subscription: "已比对 1,247 个商户 · 周期模型 v2",
+  attribution: "已拆分 6 类目环比增量",
+  annual: "已汇总 12 个月 · 叙事草稿生成中",
+};
+
+/** 流式叙事文本（demo 为整段下发，打字机逐字揭示；真实管线为逐 token 增长） */
+const NARRATIVES: Record<string, string> = {
+  clean: "解析完成：10,000 行全部进入标准字段，字段映射置信度 98%，去重移除 12 条。",
+  profile: "你的消费画像成型：餐饮是最大支出类目，外卖占餐饮支出 58%，周末消费比工作日高 41%。",
+  anomaly: "发现 23 笔深夜消费，其中游戏充值与直播打赏占 71%，建议设置夜间支付冷静期。",
+  subscription: "命中 3 项连续订阅扣费，其中 1 项近 90 天零使用，属于典型的沉默订阅。",
+  attribution: "本月支出环比 +18%，购物类贡献增量的 81%，3 笔大额订单集中在促销日。",
+  annual: "年度叙事完成：外卖构成日常基本盘，订阅构成固定成本层，建议把两者纳入统一预算视图。",
+};
+
+/** 事件下发与阶段切换的回调协议：与真实管线 runner 保持一致 */
+export interface DemoRunCallbacks {
+  onStageChange: (stage: StageState) => void;
+  onEvent: (event: ThinkingEvent) => void;
+  onDone: () => void;
+}
+
+export interface DemoRun {
+  start(): void;
+  pause(): void;
+  resume(): void;
+  stop(): void;
+}
+
+/**
+ * 创建 demo 播放驱动。pause 只取消挂起的定时器；
+ * 当前阶段的 paused 状态覆盖由页面负责（与真实管线 UI 覆盖逻辑同层）。
+ */
+export function createDemoRun(cb: DemoRunCallbacks): DemoRun {
+  let timers: number[] = [];
+  let stageIndex = 0;
+  let evSeq = 0;
+  let running = false;
+
+  const clearTimers = () => {
+    for (const t of timers) window.clearTimeout(t);
+    timers = [];
+  };
+
+  const push = (kind: ThinkingEvent["kind"], text: string, meta?: string) => {
+    evSeq += 1;
+    cb.onEvent({ id: `demo-ev-${evSeq}`, kind, text, meta, ts: Date.now() });
+  };
+
+  const playStage = (i: number) => {
+    const demo = DEMO_STAGES[i];
+    if (!demo) {
+      running = false;
+      cb.onDone();
+      return;
+    }
+    cb.onStageChange({ id: demo.id, name: demo.name, status: "running", cards: 0, elapsedMs: 0 });
+
+    const at = (delay: number, fn: () => void) => {
+      timers.push(window.setTimeout(fn, delay));
+    };
+
+    at(0, () => push("progress", PROGRESS_TEXT[demo.id] ?? ""));
+    // 缓存命中标记：重复体检命中 stageCacheKey 秒出（07 §10），meta="cache" 驱动 ⚡ 渲染
+    at(60, () => push("progress", "缓存命中 0.4s", "cache"));
+    at(150, () => push("sql", DEMO_SQL[demo.id] ?? "", `sql:${demo.id}_summary`));
+    // 异常检测阶段演示一次模型降级，展示 DegradeToast 能力（评审演示点）
+    if (demo.id === "anomaly") {
+      at(220, () => push("degrade", "已从 DeepSeek 切换至 Qwen（SiliconFlow）"));
+    }
+    const rags = DEMO_RAG[demo.id] ?? [];
+    rags.forEach((r, idx) => {
+      at(280 + idx * 90, () => push("rag", `${r.caseId} ${r.title}`, r.summary));
+    });
+    at(430, () =>
+      push("evidence", `本阶段证据已就绪 · 命中 ${DEMO_HITS[demo.id]} 行`, String(DEMO_HITS[demo.id])),
+    );
+    at(520, () => push("narrative", NARRATIVES[demo.id] ?? ""));
+    at(STAGE_MS, () => {
+      cb.onStageChange({
+        id: demo.id,
+        name: demo.name,
+        status: "succeeded",
+        cards: demo.cards,
+        elapsedMs: demo.elapsedMs,
+      });
+      stageIndex += 1;
+      playStage(stageIndex);
+    });
+  };
+
+  return {
+    start() {
+      clearTimers();
+      stageIndex = 0;
+      running = true;
+      playStage(0);
+    },
+    pause() {
+      if (!running) return;
+      clearTimers();
+      running = false;
+    },
+    resume() {
+      if (running) return;
+      running = true;
+      playStage(stageIndex);
+    },
+    stop() {
+      clearTimers();
+      running = false;
+    },
+  };
+}
+
+/** 阶段证据抽屉的数据源（demo 态）；真实管线替换为 stage:evidence 事件聚合 */
+export function getDemoEvidence(stageId: string): StageEvidence | null {
+  const demo = DEMO_STAGES.find((s) => s.id === stageId);
+  const sql = DEMO_SQL[stageId];
+  if (!demo || !sql) return null;
+  return {
+    stageId,
+    sql,
+    hits: DEMO_HITS[stageId] ?? 0,
+    elapsedMs: demo.elapsedMs,
+    cards: DEMO_CARDS[stageId] ?? [],
+  };
+}
