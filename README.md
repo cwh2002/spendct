@@ -14,7 +14,7 @@
 
 | 模块 | 说明 |
 | --- | --- |
-| 六阶段体检 | 清洗 → 消费画像 → 异常检测 → 订阅陷阱扫描 → 环比归因 → 年度报告，流式事件实时可见（21 类协议事件） |
+| 六阶段体检 | 清洗 → 消费画像 → 异常检测 → 订阅陷阱扫描 → 环比归因 → 年度报告，流式事件实时可见（20 类协议事件） |
 | 洞察卡 | 每条结论带置信度、图表证据、SQL/RAG 引用，可确认 / 质疑 / 收藏 / 深挖；低置信度结论自动挂起 |
 | 订阅雷达 | 确定性规则（同商户 ≥3 笔、间隔 25–40 天、金额 ±1% 容差）揪出连续扣费，附下次扣费倒计时与取消指引 |
 | 预算中心 | 12 类目预算环 + 超支贴士 + 下月预测 + 一句话快速记账 |
@@ -35,7 +35,7 @@
          ▼                                        ▼
    六阶段管线引擎(状态机 + 断点续跑) ──► 洞察卡工厂 ──► reflect 发布闸门 ──► UI
          │
-         └─► 21 类协议事件流(实时渲染到体检页)
+         └─► 20 类协议事件流(实时渲染到体检页)
 ```
 
 - **AI 技术点**：Agent 六阶段工作流、反思自检闸门、模型降级链、RAG 案例检索（TF-IDF 本地 / ONNX 可选）、MCP 工具（和风天气）、LLM 生成 SQL 白名单拦截。
@@ -58,9 +58,9 @@ pnpm dev              # http://localhost:3000
 ```bash
 pnpm typecheck       # tsgo 全量类型检查
 pnpm lint            # ESLint
-pnpm test            # Vitest 单测
-pnpm test:e2e        # Playwright 冒烟
-pnpm build           # 生产构建（14+ 静态路由）
+pnpm test            # Vitest 单测（158 用例）
+pnpm test:e2e        # Playwright 端到端（13 页冒烟 + 示例账单全动线，15 用例）
+pnpm build           # 生产构建（17 路由：14 静态 + 2 API + not-found）
 ```
 
 ## 目录结构
@@ -74,12 +74,14 @@ src/
 │   ├── duckdb/           # DuckDB-WASM 单例 · 数据集初始化
 │   ├── import/           # CSV 解析 · 示例账单
 │   ├── sql-guard/        # SQL 白名单（窄文法 + 原因码）
-│   ├── pipeline/         # 六阶段管线引擎 · 模板卡工厂 · mock 数据
-│   ├── protocol/         # spendct协议@2（21 类事件）
+│   ├── pipeline/         # 六阶段管线引擎 · 模板卡工厂 · 跨页运行桥
+│   ├── protocol/         # spendct协议@2（20 类事件）
 │   ├── schema/           # transactions DDL · 13 视图 · 9 预计算表 · 洞察卡 schema
 │   ├── llm/              # 模型接入层（mock/live）· 叙事模板库
 │   └── ...               # demo-data · cases(60 条) · achievements · privacy-visibility
-tests/unit/               # 白名单/账户/导入/协议/引擎/卡片 schema 单测
+tests/
+├── unit/                 # 白名单/账户/导入/协议/引擎/卡片 schema/运行桥 单测
+└── e2e/                  # Playwright：全路由冒烟 · 关键动线 · 账户登录
 public/duckdb/            # 自托管 wasm + worker（sync-duckdb-wasm.mjs 同步）
 scripts/                  # 同步 · 密钥检查 · 验证脚本
 docs/                     # 8 份设计文档 + devlog + benchmarks + finance
