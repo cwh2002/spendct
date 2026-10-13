@@ -22,3 +22,7 @@ test-results/
 *.log
 .vercel
 .turbo
+
+# PDF 汇编素材（截图等，不入库）
+scripts/.shots/
+docs/pdf-build/spendct-guide.embedded.html

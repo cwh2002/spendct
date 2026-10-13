@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<title>消费CT · SpendCT 参赛说明</title>
+<style>
+  /* ═══════════ 印刷排版（A4 · 目标 24-26 页 ≤30） ═══════════ */
+  :root {
+    --brand: #1f63c9;
+    --brand-soft: #eaf2fc;
+    --ink: #17212f;
+    --ink-2: #3d4a5c;
+    --ink-3: #6b7686;
+    --line: #d8dfe8;
+    --bg-soft: #f5f8fb;
+    --good: #0f8a5f;
+  }
+  @page {
+    size: A4;
+    margin: 16mm 15mm 18mm 15mm;
+    @bottom-center {
+      content: "消费CT · SpendCT —— 参赛说明 · 第 " counter(page) " 页 / 共 " counter(pages) " 页";
+      font-size: 8.5pt;
+      color: #8a94a3;
+      font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.72;
+    color: var(--ink);
+  }
+  p { margin: 0 0 7pt; }
+  strong { color: var(--ink); }
+
+  /* ── 章节分页 ── */
+  .chapter { page-break-before: always; }
+  .chapter > h2 {
+    font-size: 15pt;
+    font-weight: 700;
+    color: var(--ink);
+    padding-bottom: 5pt;
+    border-bottom: 2.5pt solid var(--brand);
+    margin-bottom: 10pt;
+  }
+  .chapter > h2 .no {
+    color: var(--brand);
+    margin-right: 6pt;
+  }
+  h3 {
+    font-size: 11.5pt;
+    margin: 12pt 0 5pt;
+    color: var(--brand);
+  }
+  h3 .tag {
+    display: inline-block;
+    background: var(--brand-soft);
+    color: var(--brand);
+    border-radius: 3pt;
+    font-size: 9pt;
+    padding: 1pt 5pt;
+    margin-right: 5pt;
+    vertical-align: 1pt;
+  }
+  .lead {
+    font-size: 11pt;
+    color: var(--ink-2);
+    background: var(--bg-soft);
+    border-left: 3pt solid var(--brand);
+    padding: 7pt 10pt;
+    border-radius: 0 4pt 4pt 0;
+    margin-bottom: 9pt;
+  }
+  .kicker {
+    font-size: 9pt;
+    letter-spacing: 1.5pt;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    margin-bottom: 2pt;
+  }
+
+  /* ── 表格 ── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 6pt 0 10pt;
+    font-size: 9.5pt;
+  }
+  th {
+    background: var(--brand-soft);
+    color: var(--brand);
+    font-weight: 600;
+    text-align: left;
+    padding: 4.5pt 7pt;
+    border-bottom: 1.2pt solid var(--brand);
+    white-space: nowrap;
+  }
+  td {
+    padding: 4.5pt 7pt;
+    border-bottom: 0.6pt solid var(--line);
+    vertical-align: top;
+    color: var(--ink-2);
+  }
+  tr:nth-child(even) td { background: #fafcfe; }
+  td.good { color: var(--good); font-weight: 600; }
+
+  /* ── 截图 ── */
+  figure {
+    margin: 6pt 0 10pt;
+    border: 0.8pt solid var(--line);
+    border-radius: 4pt;
+    overflow: hidden;
+    background: #fff;
+  }
+  figure img { width: 100%; display: block; }
+  figcaption {
+    font-size: 8.8pt;
+    color: var(--ink-3);
+    padding: 4pt 8pt;
+    border-top: 0.6pt solid var(--line);
+    background: var(--bg-soft);
+  }
+  figcaption b { color: var(--ink-2); }
+  .two-col { display: flex; gap: 8pt; }
+  .two-col figure { flex: 1; min-width: 0; }
+  .avoid-break { page-break-inside: avoid; }
+
+  /* ── 架构图 ── */
+  .arch {
+    display: flex;
+    flex-direction: column;
+    gap: 4pt;
+    margin: 6pt 0 10pt;
+    font-size: 9pt;
+  }
+  .arch .row { display: flex; gap: 4pt; align-items: stretch; }
+  .arch .box {
+    flex: 1;
+    border: 0.8pt solid var(--line);
+    border-radius: 4pt;
+    padding: 5pt 7pt;
+    background: #fff;
+    text-align: center;
+  }
+  .arch .box b { display: block; font-size: 9.5pt; color: var(--brand); margin-bottom: 1.5pt; }
+  .arch .box span { color: var(--ink-3); font-size: 8.3pt; }
+  .arch .arrow { flex: 0 0 20pt; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 11pt; }
+  .arch .pill {
+    border: 1pt dashed var(--brand);
+    border-radius: 4pt;
+    padding: 5pt 7pt;
+    text-align: center;
+    font-size: 8.6pt;
+    color: var(--ink-2);
+    background: var(--brand-soft);
+  }
+
+  ul.tight { margin: 2pt 0 8pt 16pt; }
+  ul.tight li { margin-bottom: 3pt; color: var(--ink-2); }
+  ul.tight li b { color: var(--ink); }
+
+  .note {
+    font-size: 8.8pt;
+    color: var(--ink-3);
+    border: 0.6pt dashed var(--line);
+    border-radius: 4pt;
+    padding: 5pt 8pt;
+    margin: 6pt 0;
+  }
+
+  /* ── 封面 ── */
+  .cover {
+    height: 246mm;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    border: 1.5pt solid var(--brand);
+    border-radius: 8pt;
+    padding: 30pt;
+    background: linear-gradient(180deg, #f4f8fd 0%, #ffffff 55%, #eef4fc 100%);
+  }
+  .cover .logo-pill {
+    display: inline-block;
+    border: 1pt solid var(--brand);
+    color: var(--brand);
+    border-radius: 999pt;
+    padding: 4pt 14pt;
+    font-size: 10pt;
+    letter-spacing: 3pt;
+    margin-bottom: 26pt;
+  }
+  .cover h1 { font-size: 34pt; font-weight: 800; color: var(--ink); letter-spacing: 2pt; margin-bottom: 10pt; }
+  .cover .en { font-size: 12pt; color: var(--ink-3); letter-spacing: 4pt; margin-bottom: 22pt; }
+  .cover .slogan {
+    font-size: 15pt;
+    color: var(--brand);
+    font-weight: 600;
+    margin-bottom: 30pt;
+  }
+  .cover .meta { font-size: 10.5pt; color: var(--ink-2); line-height: 2.1; }
+  .cover .meta span { color: var(--ink-3); }
+  .cover .foot { margin-top: 34pt; font-size: 9pt; color: var(--ink-3); }
+
+  /* ── 目录 ── */
+  .toc ol { list-style: none; margin-top: 8pt; }
+  .toc li {
+    display: flex;
+    align-items: baseline;
+    margin-bottom: 7pt;
+    font-size: 10.5pt;
+  }
+  .toc li .t {
+    color: var(--ink);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .toc li .d {
+    flex: 1;
+    border-bottom: 1pt dotted var(--line);
+    margin: 0 6pt;
+    transform: translateY(-3pt);
+  }
+  .toc li a { text-decoration: none; color: var(--brand); font-weight: 600; }
+  .toc li a::after { content: target-counter(attr(href), page); }
+  .toc .sub { margin-left: 16pt; font-size: 9.5pt; }
+  .toc .sub .t { font-weight: 400; color: var(--ink-2); }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════ 封面 ════════════════════ -->
+<section class="cover">
+  <div class="logo-pill">传智杯 · AI WEB 网页开发挑战赛</div>
+  <h1>消费CT · SpendCT</h1>
+  <div class="en">AI BILL CHECKUP &amp; CONSUMPTION INSIGHTS</div>
+  <div class="slogan">「 给你的账单做一次体检 」</div>
+  <div class="meta">
+    赛道：AI WEB 网页开发挑战赛（track id=10037）<br />
+    作品形态：AI 账单体检与消费洞察平台 · Web 应用<br />
+    开发团队：独立开发（1 人队）<br />
+    提交日期：<span>2026 年 11 月</span>
+  </div>
+  <div class="foot">账单数据全程不出浏览器 —— 这是产品承诺，也是技术架构的第一性原理</div>
+</section>
+
+<!-- ════════════════════ 目录 ════════════════════ -->
+<section class="chapter toc">
+  <h2><span class="no">目录</span>CONTENTS</h2>
+  <ol>
+    <li><span class="t">1　项目背景与痛点</span><span class="d"></span><a href="#c1"></a></li>
+    <li><span class="t">2　产品概述与核心功能</span><span class="d"></span><a href="#c2"></a></li>
+    <li><span class="t">3　竞品对比与差异化</span><span class="d"></span><a href="#c3"></a></li>
+    <li><span class="t">4　系统架构</span><span class="d"></span><a href="#c4"></a></li>
+    <li><span class="t">5　隐私与数据安全（亮点）</span><span class="d"></span><a href="#c5"></a></li>
+    <li><span class="t">6　六阶段体检管线</span><span class="d"></span><a href="#c6"></a></li>
+    <li><span class="t">7　智能能力：LLM 与 RAG</span><span class="d"></span><a href="#c7"></a></li>
+    <li><span class="t">8　核心页面展示</span><span class="d"></span><a href="#c8"></a></li>
+    <li><span class="t">9　技术验证</span><span class="d"></span><a href="#c9"></a></li>
+    <li><span class="t">10　工程规范与研发流程</span><span class="d"></span><a href="#c10"></a></li>
+    <li><span class="t">11　展望与里程碑</span><span class="d"></span><a href="#c11"></a></li>
+    <li><span class="t">结语</span><span class="d"></span><a href="#c12"></a></li>
+    <li class="sub"><span class="t">附：项目仓库 / 在线演示 / 开发日志 / 设计文档索引</span><span class="d"></span><a href="#c13"></a></li>
+  </ol>
+  <p class="note">本文档为参赛说明摘要（≤30 页），完整设计与契约见仓库 docs/ 目录 8 份设计文档（01 架构 / 02 数据隐私 / 03 Agent 流水线 / 04 RAG-MCP / 05 UIUX / 06 路线图 / 07 权威契约 / 08 功能扩展）。</p>
+</section>
+
+<!-- ════════════════════ 1 背景与痛点 ════════════════════ -->
+<section class="chapter" id="c1">
+  <h2><span class="no">01</span>项目背景与痛点</h2>
+  <p class="kicker">WHY</p>
+  <p>年轻人的钱不是「记不清」，而是「看不见问题」。微信、支付宝、银行卡、信用卡的账单散落在多个入口；自动续费在几十块钱的量级上悄悄扣款；深夜冲动消费事后无感。传统记账工具回答了「钱花在哪」，却没有回答「账单有什么问题、下一步怎么办」。</p>
+
+  <h3><span class="tag">痛点</span>四类高频消费困境</h3>
+  <table>
+    <tr><th style="width:22%">痛点</th><th style="width:44%">典型场景</th><th>SpendCT 的回答</th></tr>
+    <tr><td><b>账单零散</b></td><td>微信 / 支付宝 / 银行卡多入口，月末对账靠翻聊天记录</td><td>多格式账单一键导入，浏览器内解析合并去重</td></tr>
+    <tr><td><b>订阅陷阱</b></td><td>自动续费低额高频，注销入口隐蔽，用户到退款时才察觉</td><td>确定性规则扫描连续扣费，附下次扣费倒计时与取消指引</td></tr>
+    <tr><td><b>冲动消费</b></td><td>深夜下单、直播抢购，事后复盘无抓手</td><td>异常检测阶段标记深夜 / 大额 / 高频异常，量化损失</td></tr>
+    <tr><td><b>预算失守</b></td><td>记账 App「记录有余、诊断不足」，预算形同虚设</td><td>12 类目预算环 + 超支贴士 + 下月预测 + 一句话记账</td></tr>
+  </table>
+
+  <h3><span class="tag">定位</span>目标用户与产品主张</h3>
+  <p><b>目标用户</b>：大学生与年轻上班族——消费场景丰富、财务经验不足、对隐私敏感、习惯「先看结论」。</p>
+  <div class="lead">定位一句话：<b>不是又一个记账工具，而是「体检 + 处方」</b>——像体检报告一样，先出结论与证据，再给可执行的改善动作。</div>
+  <ul class="tight">
+    <li><b>结果先于对话</b>：AI 先把体检结论写成带证据的洞察卡流（可审阅、可存档），用户带着具体问题点卡片追问，而不是从空白聊天窗开始；</li>
+    <li><b>结论可溯源</b>：每张洞察卡带置信度、图表证据与引用（聚合 SQL / 订阅规则 / 案例库 / 工具），低置信度结论自动挂起（宁缺毋滥）；</li>
+    <li><b>隐私可见</b>：账单明细只在浏览器内计算，服务端只转发脱敏聚合摘要，数据可见性对照表公开在产品内。</li>
+  </ul>
+</section>
+
+<!-- ════════════════════ 2 产品概述 ════════════════════ -->
+<section class="chapter" id="c2">
+  <h2><span class="no">02</span>产品概述与核心功能</h2>
+  <p class="kicker">WHAT</p>
+  <p>SpendCT 把微信、支付宝导出的账单 CSV 拖进浏览器，一条六阶段流水线自动完成<b>清洗 → 消费画像 → 异常检测 → 订阅陷阱扫描 → 环比归因 → 年度报告</b>，产出可确认、可质疑、可深挖的消费洞察卡。全过程实时可见、可暂停、可断点续跑。</p>
+
+  <h3><span class="tag">功能</span>功能总览</h3>
+  <table>
+    <tr><th style="width:20%">模块</th><th>说明</th></tr>
+    <tr><td><b>六阶段体检</b></td><td>清洗 → 画像 → 异常 → 订阅 → 归因 → 年度，流式事件实时可见（20 类协议事件），支持暂停 / 恢复 / 断点续跑</td></tr>
+    <tr><td><b>洞察卡流</b></td><td>每条结论带置信度、图表证据、SQL / RAG 引用，可确认 / 质疑 / 收藏 / 深挖；低置信度结论自动挂起</td></tr>
+    <tr><td><b>订阅雷达</b></td><td>确定性规则（同商户 ≥3 笔、间隔 25–40 天、金额 ±1% 容差）揪出连续扣费，附下次扣费倒计时与取消指引</td></tr>
+    <tr><td><b>预算中心</b></td><td>12 类目预算环 + 超支贴士 + 下月预测 + 一句话快速记账</td></tr>
+    <tr><td><b>年度报告</b></td><td>健康指数 + 四项对标指标 + 滚动叙事 + 1080×1920 海报导出</td></tr>
+    <tr><td><b>知识课堂</b></td><td>60 条可核验案例（订阅陷阱 / 预付风险 / 消费维权 / 学生权益），附法条与官方来源</td></tr>
+    <tr><td><b>本地账户</b></td><td>IndexedDB 账户体系（PBKDF2-SHA256 加盐哈希），注册 / 登录 / 个人中心 / 成就段位</td></tr>
+    <tr><td><b>数据主权</b></td><td>账单 CSV / JSON 一键导出、一键删除；数据可见性对照表公开在 /privacy</td></tr>
+  </table>
+
+  <h3><span class="tag">动线</span>用户旅程</h3>
+  <div class="arch">
+    <div class="row">
+      <div class="box"><b>① 导入</b><span>微信 / 支付宝 CSV 拖入<br />或一键加载示例账单</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><b>② 体检</b><span>六阶段流水线流式运行<br />思考过程实时可见</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><b>③ 洞察</b><span>洞察卡流 + 筛选 + 收藏<br />点卡片锚点追问</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><b>④ 行动</b><span>订阅取消指引 / 预算调整<br />年度报告海报分享</span></div>
+    </div>
+  </div>
+  <div class="two-col avoid-break">
+    <figure>
+      <img src="../scripts/.shots/01-home.png" alt="首页" />
+      <figcaption><b>图 1　首页</b> —— 三句话讲清产品：账单体检、数据不出浏览器、示例账单即点即用</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ════════════════════ 3 竞品对比 ════════════════════ -->
+<section class="chapter" id="c3">
+  <h2><span class="no">03</span>竞品对比与差异化</h2>
+  <p class="kicker">WHERE WE DIFFER</p>
+  <table>
+    <tr><th style="width:15%">产品</th><th style="width:17%">目标用户</th><th style="width:17%">数据来源</th><th style="width:17%">交互范式</th><th style="width:17%">隐私模型</th><th>AI 能力</th></tr>
+    <tr><td>Rocket Money</td><td>美国订阅管理人群</td><td>银行 Plaid 连接</td><td>订阅清单 + 建议（半自动）</td><td>云端全量账单</td><td>订阅识别 / 砍价代理</td></tr>
+    <tr><td>Cleo</td><td>欧美年轻人</td><td>银行连接</td><td>聊天窗（AI 人设对话）</td><td>云端</td><td>对话式财务问答</td></tr>
+    <tr><td>随手记</td><td>国内记账人群</td><td>手动 + 模板导入</td><td>账本列表</td><td>本地 + 云同步</td><td>基础分类</td></tr>
+    <tr><td>钱迹</td><td>极简记账用户</td><td>手动为主</td><td>账本 + 报表</td><td>本地</td><td>无</td></tr>
+    <tr><td><b>SpendCT（本作）</b></td><td><b>大学生 / 年轻上班族</b></td><td><b>微信 / 支付宝 CSV + 截图</b></td><td><b>AI 先体检 → 洞察卡流 → 锚点追问</b></td><td><b>明细不出浏览器，LLM 仅见聚合摘要</b></td><td><b>六阶段流水线 + 订阅雷达 + RAG</b></td></tr>
+  </table>
+
+  <p>对手三选一：要么云端全量账单（隐私弱），要么聊天窗（结论不可审阅），要么没有 AI。SpendCT 在<b>交互范式</b>与<b>隐私模型</b>两个维度同时不同：</p>
+  <ul class="tight">
+    <li><b>交互范式</b>：结果先于对话——AI 先把结论写成卡片流（可审阅、可存档、可纠错），用户带着具体问题点卡片追问，而不是从空白聊天窗开始；</li>
+    <li><b>隐私模型</b>：账单明细只在浏览器内计算（DuckDB-WASM），大模型只看到聚合后的摘要数字，任何一步都不需要上传账单原文。</li>
+  </ul>
+  <p class="note">竞品信息整理自各产品官网（2026-10），来源链接与完整对照表见 docs/competitor-benchmark.md。</p>
+</section>
+
+<!-- ════════════════════ 4 系统架构 ════════════════════ -->
+<section class="chapter" id="c4">
+  <h2><span class="no">04</span>系统架构</h2>
+  <p class="kicker">HOW IT WORKS</p>
+  <div class="arch">
+    <div class="row">
+      <div class="box"><b>账单 CSV</b><span>微信 v7/v8 · 支付宝 v10<br />GBK / UTF-8 嗅探</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><b>解析清洗层</b><span>表头映射 · 去重<br />12 类目词典 · 交易指纹</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><b>DuckDB-WASM</b><span>浏览器内列式引擎<br />13 视图 + 9 预计算表</span></div>
+    </div>
+    <div class="row">
+      <div class="pill">⬇ 白名单 SQL 聚合（窄文法预检 + 行数复检 + 3s 超时）</div>
+    </div>
+    <div class="row">
+      <div class="box"><b>六阶段管线引擎</b><span>状态机 · 20 类事件流<br />断点续跑 · 暂停恢复</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><b>洞察卡工厂 + reflect 闸门</b><span>模板卡 → 自检<br />置信度 ≥0.6 才发布</span></div>
+      <div class="arrow">→</div>
+      <div class="box"><b>展示层</b><span>Next.js 16 + React 19<br />ECharts · Tailwind 4</span></div>
+    </div>
+    <div class="row">
+      <div class="box"><b>LLM 接入层（服务端转发）</b><span>deepseek → qwen → 模板<br />只收发脱敏聚合摘要</span></div>
+      <div class="arrow">↔</div>
+      <div class="box"><b>RAG 案例库（本地）</b><span>60 条案例 · TF-IDF 检索<br />引用可溯源</span></div>
+      <div class="arrow">↔</div>
+      <div class="box"><b>账户层（本地）</b><span>IndexedDB · PBKDF2-SHA256<br />本地账户模式</span></div>
+    </div>
+  </div>
+
+  <h3><span class="tag">分层</span>技术选型</h3>
+  <table>
+    <tr><th style="width:18%">层</th><th style="width:46%">选型</th><th>职责</th></tr>
+    <tr><td><b>展示层</b></td><td>Next.js 16（App Router）+ React 19 + TypeScript（strict）+ Tailwind 4（CSS-first 令牌）+ ECharts 6 + Framer Motion</td><td>13 个路由页、暗色模式（图表经 CSS 变量桥接）、键盘快捷键</td></tr>
+    <tr><td><b>状态层</b></td><td>Zustand + TanStack Query + IndexedDB（idb）</td><td>跨页内存态（仅数据集哈希 + 运行摘要，不落行数据）</td></tr>
+    <tr><td><b>计算层</b></td><td>DuckDB-WASM 1.32（自托管于 public/duckdb，断网可用）</td><td>浏览器内解析、聚合、预计算——隐私架构的地基</td></tr>
+    <tr><td><b>智能层</b></td><td>DeepSeek-V3 / SiliconFlow Qwen / GLM-4V-Flash / Transformers.js（local-tfjs）</td><td>任务路由 + 三级降级链 + mock/live 双模式（零密钥可演示）</td></tr>
+    <tr><td><b>安全层</b></td><td>SQL 窄文法白名单（7 原因码）、金额全链路整数分、check-secrets 钩子</td><td>LLM 生成 SQL 只读可拦截、密钥永不入库</td></tr>
+    <tr><td><b>工程层</b></td><td>Vitest（单测）+ Playwright（e2e）+ tsgo + ESLint，依赖精确锁版本</td><td>契约先行、分层测试、提交规范（见第 10 章）</td></tr>
+  </table>
+</section>
+
+<!-- ════════════════════ 5 隐私与数据安全 ════════════════════ -->
+<section class="chapter" id="c5">
+  <h2><span class="no">05</span>隐私与数据安全（亮点）</h2>
+  <p class="kicker">PRIVACY BY ARCHITECTURE</p>
+  <p>传统账单工具需要把账单上传云端才能做分析。SpendCT 的隐私不是「承诺不偷看」，而是<b>架构上就没有上传通道</b>：解析、聚合、体检全部发生在浏览器内的 DuckDB-WASM 列式引擎里。</p>
+
+  <h3><span class="tag">对照表</span>每一步的数据可见性</h3>
+  <table>
+    <tr><th style="width:24%">环节</th><th style="width:42%">数据形态</th><th>去向</th></tr>
+    <tr><td>账单导入</td><td>原始 CSV（含交易明细）</td><td>仅浏览器内存，不落盘、不上传</td></tr>
+    <tr><td>六阶段聚合</td><td>SQL 分组聚合结果（9 预计算表 / 13 视图）</td><td>浏览器内</td></tr>
+    <tr><td>LLM 叙事 / 建议</td><td>聚合统计值（金额分箱脱敏 + 数据集哈希）</td><td>服务端转发，不存任何请求日志</td></tr>
+    <tr><td>字段映射 AI 兜底</td><td>表头 + 至多 1 条样本行（≤6KB 截断）</td><td>仅在探测链全失败且用户确认后发送</td></tr>
+    <tr><td>账户凭据</td><td>PBKDF2-SHA256 加盐哈希（15 万次迭代）</td><td>IndexedDB 本地</td></tr>
+    <tr><td>断点 / 缓存键</td><td>阶段进度 + 数据集哈希</td><td>localStorage 仅存键（红线：不落任何行数据与聚合明细）</td></tr>
+  </table>
+
+  <h3><span class="tag">红线</span>三条不可逾越的约束（07 权威契约 §17）</h3>
+  <ul class="tight">
+    <li><b>localStorage 红线</b>：不存任何行数据与聚合明细，只存哈希与进度键——刷新后数据随内存库消失，由断点条引导重新体检；</li>
+    <li><b>密钥红线</b>：API 密钥只走环境变量（.env.example 提供模板），`NEXT_PUBLIC_` 前缀禁用，pre-commit 的 check-secrets 钩子扫描历史防泄漏；</li>
+    <li><b>数据主权</b>：账单 CSV / JSON 一键导出、一键删除；删除后 IndexedDB 不留痕；数据可见性对照表直接公开在 /privacy 页面。</li>
+  </ul>
+
+  <h3><span class="tag">账户</span>本地账户模式</h3>
+  <p>账户体系完全本地化：注册 / 登录 / 会话全部在 IndexedDB 完成（PBKDF2-SHA256 加盐哈希），演示账户 <b>demo / demo123</b> 即开即用；个人中心提供成就段位、数据导出与删除入口。选择本地账户而非云端账户，是「账单数据不出浏览器」承诺的自然延伸——<b>没有账户服务器，就不存在账户数据泄露面</b>。</p>
+</section>
+
+<!-- ════════════════════ 6 六阶段管线 ════════════════════ -->
+<section class="chapter" id="c6">
+  <h2><span class="no">06</span>六阶段体检管线</h2>
+  <p class="kicker">THE PIPELINE</p>
+  <table>
+    <tr><th style="width:14%">阶段</th><th style="width:34%">职责</th><th style="width:30%">确定性依据</th><th>典型产物卡</th></tr>
+    <tr><td><b>① 清洗 clean</b></td><td>去重、退款标记、格式统一</td><td>交易指纹（sha256）+ 去重规则</td><td>数据质量卡（行数 / 覆盖期 / 重复率）</td></tr>
+    <tr><td><b>② 画像 profile</b></td><td>消费结构与习惯画像</td><td>类目 / 商户 / 月度三张统计表</td><td>类目占比、最大支出商户、周末消费特征</td></tr>
+    <tr><td><b>③ 异常 anomaly</b></td><td>深夜、大额、高频异常</td><td>分位数阈值 + 日汇总表</td><td>深夜消费总量、异常峰值事件</td></tr>
+    <tr><td><b>④ 订阅 subscription</b></td><td>连续扣费订阅识别</td><td>同商户 ≥3 笔、间隔 25–40 天、金额 ±1% 容差</td><td>订阅清单 + 年化金额 + 取消优先级</td></tr>
+    <tr><td><b>⑤ 归因 attribution</b></td><td>环比变化归因</td><td>月度环比（MoM）统计表</td><td>支出涨跌归因到类目 / 商户</td></tr>
+    <tr><td><b>⑥ 年度 annual</b></td><td>健康指数与年度总结</td><td>年度汇总表 + 四项对标</td><td>健康指数、年度叙事、报告海报</td></tr>
+  </table>
+
+  <h3><span class="tag">协议</span>状态机与事件流（spendct协议@2）</h3>
+  <p>管线是一台严格的状态机：每阶段 <b>pending → running → succeeded / skipped / failed</b>，阶段失败发 error 事件并降级继续（不中断整次体检）；运行可暂停（中止保留已产出卡）与断点续跑（从最近断点阶段重跑，阶段结果确定性保证产出一致）。</p>
+  <table>
+    <tr><th style="width:22%">事件组</th><th>事件（共 20 类）</th></tr>
+    <tr><td><b>运行边界（4）</b></td><td>run:start · run:complete · abort · checkpoint:saved</td></tr>
+    <tr><td><b>阶段（5）</b></td><td>stage:start · stage:thinking · stage:evidence · stage:complete · stage:skipped</td></tr>
+    <tr><td><b>洞察卡（3）</b></td><td>card:delta · card:complete · card:withheld</td></tr>
+    <tr><td><b>LLM（2）</b></td><td>llm:degraded · llm:repair</td></tr>
+    <tr><td><b>RAG / 工具 / 反思 / 缓存（6）</b></td><td>rag:retrieved · tool:start · tool:end · reflect:result · cache:hit · error（8 错误码判别联合）</td></tr>
+  </table>
+
+  <h3><span class="tag">闸门</span>SQL 白名单与发布闸门</h3>
+  <ul class="tight">
+    <li><b>确定性主体</b>：体检结论全部来自代码常量的白名单 SQL（9 预计算表 + 13 视图），LLM 只负责叙事与建议——结论可复现、可审计；</li>
+    <li><b>SQL 白名单</b>：追问场景 LLM 生成的 SQL 必须通过窄文法预检（7 原因码逐条解释拒绝理由），执行层行数复检 + 3s 超时中断，只读连接无写权限；</li>
+    <li><b>发布闸门（reflect）</b>：每张卡自检 confidence ≥ 0.6、阶段证据 ≥ 2 行、统计值非全零，全部通过才 published，否则 withheld 并明示原因——<b>宁缺毋滥</b>，低置信度结论不抢高位视线。</li>
+  </ul>
+  <div class="two-col avoid-break">
+    <figure>
+      <img src="../scripts/.shots/15-checkup-demo.png" alt="体检运行" />
+      <figcaption><b>图 2　体检运行</b> —— 六阶段步进器 + 思考过程面板（SQL / 证据 / RAG / 降级逐条可见）</figcaption>
+    </figure>
+    <figure>
+      <img src="../scripts/.shots/05-checkup-real.png" alt="真实管线运行" />
+      <figcaption><b>图 3　真实管线运行</b> —— 浏览器内 DuckDB-WASM 真实执行，事件流实时渲染</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ════════════════════ 7 LLM 与 RAG ════════════════════ -->
+<section class="chapter" id="c7">
+  <h2><span class="no">07</span>智能能力：LLM 与 RAG</h2>
+  <p class="kicker">THE BRAIN</p>
+  <p>智能层遵循一条原则：<b>模型只做「锦上添花」，不做「一锤定音」</b>。体检结论由确定性 SQL 给出，LLM 负责把聚合数字写成有洞察的叙事、生成可执行的建议、回答锚点追问——任何模型失败都不影响体检结果本身。</p>
+
+  <h3><span class="tag">路由</span>任务级模型路由与三级降级链</h3>
+  <table>
+    <tr><th style="width:30%">任务</th><th style="width:24%">主模型</th><th>降级链</th></tr>
+    <tr><td>六阶段叙事 / 洞察卡叙事</td><td>deepseek</td><td>qwen → 确定性模板叙事 + llm:degraded 横幅</td></tr>
+    <tr><td>锚点追问 plan / summarize</td><td>deepseek</td><td>qwen → 内置 DRILL_TEMPLATES 模板</td></tr>
+    <tr><td>字段映射 / 表头猜测</td><td>qwen</td><td>规则映射 → AI 兜底（用户确认后）</td></tr>
+    <tr><td>截图 OCR（后续）</td><td>glm4v</td><td>GLM-4V-Flash 网关，失败提示重试</td></tr>
+  </table>
+  <ul class="tight">
+    <li><b>mock / live 双模式</b>：三个密钥全空时服务端强制 mock 模式——演示、测试、断网全链路可用；配置密钥后切 live；</li>
+    <li><b>指数退避</b>：上游限流时按退避策略切换，过程通过 llm:degraded 事件在思考面板如实展示（不伪造进度）；</li>
+    <li><b>反思自检</b>：卡片叙事经 L2 裁判模型自检（reflect 事件），自检不过即挂起。</li>
+  </ul>
+
+  <h3><span class="tag">RAG</span>本地案例检索与可溯源引用</h3>
+  <ul class="tight">
+    <li><b>案例库 60 条</b>：订阅陷阱、预付风险、消费维权、学生权益四类，每条带法条出处与官方来源链接，检索默认走本地 TF-IDF（零依赖、公网可部署）；</li>
+    <li><b>MCP 工具</b>：和风天气工具（雨天外卖溢价提醒等场景），契约化调用；</li>
+    <li><b>引用可溯源</b>：每张卡的引用五类形态——数据表 / 视图（sql）、规则（rule）、案例（rag）、工具（tool）、个人锚点（personal），UI 中逐条可展开核对。</li>
+  </ul>
+</section>
+
+<!-- ════════════════════ 8 页面展示 ════════════════════ -->
+<section class="chapter" id="c8">
+  <h2><span class="no">08</span>核心页面展示</h2>
+  <p class="kicker">THE PRODUCT</p>
+
+  <h3><span class="tag">8.1</span>账户体系</h3>
+  <div class="two-col avoid-break">
+    <figure>
+      <img src="../scripts/.shots/02-login.png" alt="登录" />
+      <figcaption><b>图 4　登录</b> —— 沉浸式卡片 + 信任条（数据不出浏览器承诺）</figcaption>
+    </figure>
+    <figure>
+      <img src="../scripts/.shots/03-register.png" alt="注册" />
+      <figcaption><b>图 5　注册</b> —— 密码强度实时反馈 + 本地账户模式说明</figcaption>
+    </figure>
+  </div>
+
+  <h3><span class="tag">8.2</span>账单上传与字段映射</h3>
+  <figure class="avoid-break">
+    <img src="../scripts/.shots/04-upload.png" alt="上传" />
+    <figcaption><b>图 6　上传</b> —— 三种入口（截图 OCR / CSV / 示例账单）· 置信度评估 · 字段映射确认 · 重复记录提示，全流程本地解析</figcaption>
+  </figure>
+
+  <h3><span class="tag">8.3</span>洞察卡流</h3>
+  <div class="two-col avoid-break">
+    <figure>
+      <img src="../scripts/.shots/06-insights-real.png" alt="洞察真实卡" />
+      <figcaption><b>图 7　洞察卡流（真实体检结果）</b> —— 阶段 / 置信度 / 日期 / 类别四维筛选，图表证据 + 引用 + 确认 / 质疑 / 深挖</figcaption>
+    </figure>
+    <figure>
+      <img src="../scripts/.shots/11-insights-dark.png" alt="暗色模式" />
+      <figcaption><b>图 8　暗色模式</b> —— 图表颜色经 CSS 变量桥接，暗色切换零 JS 主题表</figcaption>
+    </figure>
+  </div>
+
+  <h3><span class="tag">8.4</span>订阅雷达 · 年度报告 · 预算中心</h3>
+  <div class="two-col avoid-break">
+    <figure>
+      <img src="../scripts/.shots/07-subscriptions.png" alt="订阅管理" />
+      <figcaption><b>图 9　订阅雷达</b> —— 连续扣费清单 + 下次扣费倒计时 + 取消指引</figcaption>
+    </figure>
+    <figure>
+      <img src="../scripts/.shots/08-report.png" alt="年度报告" />
+      <figcaption><b>图 10　年度报告</b> —— 健康指数 + 四项对标 + 滚动叙事</figcaption>
+    </figure>
+  </div>
+  <div class="two-col avoid-break">
+    <figure>
+      <img src="../scripts/.shots/14-budget.png" alt="预算中心" />
+      <figcaption><b>图 11　预算中心</b> —— 12 类目预算环 + 超支贴士 + 下月预测</figcaption>
+    </figure>
+    <figure>
+      <img src="../scripts/.shots/12-me.png" alt="个人中心" />
+      <figcaption><b>图 12　个人中心</b> —— 成就段位 + 数据导出 / 删除（数据主权入口）</figcaption>
+    </figure>
+  </div>
+
+  <h3><span class="tag">8.5</span>设置 · 课堂 · 隐私</h3>
+  <div class="two-col avoid-break">
+    <figure>
+      <img src="../scripts/.shots/13-settings.png" alt="设置" />
+      <figcaption><b>图 13　设置</b> —— 账户安全 / 通知偏好 / 数据管理</figcaption>
+    </figure>
+    <figure>
+      <img src="../scripts/.shots/09-learn.png" alt="知识课堂" />
+      <figcaption><b>图 14　知识课堂</b> —— 60 条可核验案例，法条与官方来源可点开</figcaption>
+    </figure>
+  </div>
+  <div class="two-col avoid-break">
+    <figure>
+      <img src="../scripts/.shots/10-privacy.png" alt="隐私" />
+      <figcaption><b>图 15　隐私页</b> —— 数据可见性对照表公开在产品内，「隐私可见」的落地页</figcaption>
+    </figure>
+    <div style="flex:1"></div>
+  </div>
+</section>
+
+<!-- ════════════════════ 9 技术验证 ════════════════════ -->
+<section class="chapter" id="c9">
+  <h2><span class="no">09</span>技术验证</h2>
+  <p class="kicker">EVIDENCE</p>
+  <h3><span class="tag">基准</span>DuckDB-WASM 浏览器内性能（1 万行账单档）</h3>
+  <table>
+    <tr><th style="width:30%">指标</th><th style="width:20%">验收阈值</th><th style="width:20%">实测（Chromium）</th><th>判定</th></tr>
+    <tr><td>WASM 冷加载</td><td>&lt; 4000 ms</td><td>874 ms</td><td class="good">通过（余量 4.6×）</td></tr>
+    <tr><td>WASM 热加载</td><td>&lt; 1500 ms</td><td>784 ms</td><td class="good">通过（余量 1.9×）</td></tr>
+    <tr><td>1 万行导入 + 聚合</td><td>&lt; 2000 ms</td><td>456 ms</td><td class="good">通过（余量 4.4×）</td></tr>
+    <tr><td>内存占用</td><td>&lt; 400 MB</td><td>10.1 MB</td><td class="good">通过（余量 40×）</td></tr>
+    <tr><td>压力档（10 万行）导入 + 聚合</td><td>—（扩展参考）</td><td>657 ms</td><td class="good">通过</td></tr>
+  </table>
+  <p class="note">口径：与正式管线同源加载自托管 /duckdb/ 产物（mvp wasm + worker），聚合结果逐类目校验无丢行；对照组 Edge 155 同档全过。复现：docs/benchmarks.md + scripts/run-spike-benchmark.mjs。</p>
+
+  <h3><span class="tag">测试</span>分层测试矩阵</h3>
+  <table>
+    <tr><th style="width:34%">层</th><th style="width:22%">数量</th><th>覆盖</th></tr>
+    <tr><td><b>单元测试（Vitest）</b></td><td class="good">158 用例 / 10 文件</td><td>SQL 白名单、账户、导入清洗、事件协议、管线引擎、卡片 schema、运行桥、LLM 层</td></tr>
+    <tr><td><b>端到端（Playwright）</b></td><td class="good">15 用例</td><td>13 页冒烟（0 console error）+ 示例账单全动线（上传 → 真实管线 → 洞察真实卡，32.2s）+ 账户登录</td></tr>
+    <tr><td><b>静态质量</b></td><td class="good">0 错误</td><td>tsgo 全量类型检查、ESLint、生产构建 17 路由（14 静态 + 2 API）</td></tr>
+  </table>
+  <p>关键设计验证：订阅规则在真实 DuckDB 引擎上命中 / 排除断言通过（demo 数据集含 3 个订阅商户周期扣费）；引擎单测用 fake conn 驱动全部 20 类事件与 8 错误码路径，不依赖 wasm 环境。</p>
+</section>
+
+<!-- ════════════════════ 10 工程规范 ════════════════════ -->
+<section class="chapter" id="c10">
+  <h2><span class="no">10</span>工程规范与研发流程</h2>
+  <p class="kicker">CRAFT</p>
+  <ul class="tight">
+    <li><b>契约先行</b>：07 权威契约是单一事实源（阶段清单 / 事件协议 / DDL / SQL 白名单 / 发布闸门全部逐字落地并有单测钉死），设计文档与实现冲突时以契约为准；</li>
+    <li><b>提交规范</b>：`&lt;type&gt;(&lt;scope&gt;): 描述`（feat / test / docs / fix…），提交历史即开发叙事，配合 docs/devlog/ 逐日开发日志；</li>
+    <li><b>锁版本依赖</b>：全部依赖精确版本（无 ^），自托管 DuckDB-WASM 产物入库，postinstall 自动同步——评审环境断网也能完整复现；</li>
+    <li><b>演示控制台</b>：按 `?` 键呼出（重放流水线 / 跳最后阶段 / 注入错误 / 暗色切换 / 断网模拟 / 恢复断点），为评审演示提供确定性兜底；</li>
+    <li><b>安全工程化</b>：密钥只走环境变量 + check-secrets 钩子；上传文件大小 / 类型双校验；`?next` 回跳参数白名单消毒；金额全链路整数分（浮点不进库）。</li>
+  </ul>
+  <h3><span class="tag">流程</span>三天冲刺节奏（实际执行）</h3>
+  <table>
+    <tr><th style="width:16%">日期</th><th style="width:38%">目标</th><th>产出</th></tr>
+    <tr><td><b>D1 · 10/13</b></td><td>应用框架层</td><td>13 路由页 + 本地账户体系 + 全局壳（暗色 / 移动底栏）+ DuckDB 服务层 + 演示控制台</td></tr>
+    <tr><td><b>D2 · 10/14</b></td><td>核心管线全链路</td><td>数据 schema / 事件协议 / 六阶段引擎 / LLM 层 + 六页面真实接线 + e2e 验收套件固化</td></tr>
+    <tr><td><b>D3 · 10/15</b></td><td>收尾与交付物</td><td>全动线手工验收、本文档汇编、演示视频、部署、README / env 模板复核</td></tr>
+  </table>
+</section>
+
+<!-- ════════════════════ 11 展望 ════════════════════ -->
+<section class="chapter" id="c11">
+  <h2><span class="no">11</span>展望与里程碑</h2>
+  <p class="kicker">WHAT'S NEXT</p>
+  <table>
+    <tr><th style="width:20%">里程碑</th><th style="width:24%">目标</th><th>要点</th></tr>
+    <tr><td><b>M1 · 上线内测</b></td><td>公网可访问 + 真实用户账单</td><td>Vercel 部署、live 模型接入、反馈闭环（确认 / 质疑沉淀进评测集）</td></tr>
+    <tr><td><b>M2 · 多账户与 OCR</b></td><td>覆盖更多账单形态</td><td>截图 OCR（GLM-4V-Flash）、多账户合并（家庭账本）、账单比对</td></tr>
+    <tr><td><b>M3 · 订阅代理</b></td><td>从「识别」到「代办」</td><td>订阅比价与砍价代理、自动提醒、一键退订指引打通</td></tr>
+  </table>
+  <h3><span class="tag">扩展</span>功能扩展清单（节选）</h3>
+  <ul class="tight">
+    <li><b>账单合并</b>：情侣 / 室友共同账单的合并体检与 AA 分摊；</li>
+    <li><b>AI 预算教练</b>：基于历史画像的预算方案生成与周度复盘；</li>
+    <li><b>小票 OCR</b>：线下消费凭证识别入账，覆盖无电子账单场景；</li>
+    <li><b>社区案例贡献</b>：用户贡献订阅陷阱案例，RAG 案例库众包增长。</li>
+  </ul>
+</section>
+
+<!-- ════════════════════ 结语 ════════════════════ -->
+<section class="chapter" id="c12">
+  <h2><span class="no">12</span>结语</h2>
+  <div class="lead">
+    消费CT 想做的，是让每一个年轻人的账单都值得被认真对待——<b>体检出问题，处方给动作，数据留本地</b>。
+  </div>
+  <p>从「账单零散」到「体检 + 处方」，从「云上分析」到「明细不出浏览器」，从「空白聊天窗」到「可审阅的洞察卡流」——SpendCT 在交互范式与隐私模型两个维度上给出了自己的答案。项目的每一行代码、每一条契约、每一个测试，都记录在公开仓库的提交历史与开发日志里。</p>
+  <p>感谢评委的时间与关注。</p>
+
+  <h3><span class="tag">附录</span>仓库与文档索引</h3>
+  <table id="c13">
+    <tr><th style="width:26%">项</th><th>内容</th></tr>
+    <tr><td><b>仓库</b></td><td>公开仓库（完整提交历史）· MIT 许可</td></tr>
+    <tr><td><b>在线演示</b></td><td>Vercel 部署（零密钥 mock 模式，演示账户 demo / demo123）</td></tr>
+    <tr><td><b>环境模板</b></td><td>.env.example（密钥全空，标注 07 契约 §12 唯一清单）</td></tr>
+    <tr><td><b>设计文档</b></td><td>docs/01 架构 · 02 数据隐私 · 03 Agent 流水线 · 04 RAG-MCP · 05 UIUX · 06 路线图 · 07 权威契约 · 08 功能扩展</td></tr>
+    <tr><td><b>工程证据</b></td><td>docs/benchmarks.md（性能基准）· docs/devlog/（开发日志）· tests/unit + tests/e2e（测试矩阵）</td></tr>
+    <tr><td><b>演示视频</b></td><td>5-8 分钟 · 1080p（docs/demo-script.md 剧本 S1-S8）</td></tr>
+  </table>
+</section>
+
+</body>
+</html>
