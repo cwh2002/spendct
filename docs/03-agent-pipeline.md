@@ -1137,11 +1137,11 @@ stage:v1:${datasetTxHash}:${stageId}                                       // �
 
 ## 9. 流式事件协议
 
-**唯一来源 = 07 §2 spendct协议@2（`src/lib/protocol/events.ts`，21 类事件，SSE 单类型源）**。本文删除自拟 PipelineEvent（#3/#28），只保留本文旧语义 → 协议事件的映射与 UI 语义：
+**唯一来源 = 07 §2 spendct协议@2（`src/lib/protocol/events.ts`，20 类事件，SSE 单类型源）**。本文删除自拟 PipelineEvent（#3/#28），只保留本文旧语义 → 协议事件的映射与 UI 语义：
 
 ```ts
 // src/lib/protocol/events.ts 只 import（07 §0.4 唯一常量文件）
-export type ProtocolEvent = import('../protocol/events').SpendctEvent;   // 21 类事件：run:start / run:complete /
+export type ProtocolEvent = import('../protocol/events').SpendctEvent;   // 20 类事件：run:start / run:complete /
 // error / abort / stage:start / stage:thinking / stage:evidence / stage:complete / stage:skipped /
 // card:delta / card:complete / card:withheld / llm:degraded / llm:repair / rag:retrieved /
 // tool:start / tool:end / reflect:result / cache:hit / checkpoint:saved

@@ -88,7 +88,7 @@ export type PipelineStatus = "idle" | "running" | "reflecting" | "completed" | "
 
 协议名 **spendct协议@2**（自 01 §6.1 spendct协议@1 扩充升版）。SSE 传输，每事件一个 JSON 对象，公共字段 `{ t: 事件名, ts: 毫秒时间戳, runId }`，可携带 `stage`、`cardId`。`src/lib/protocol/events.ts` 为唯一类型源，含序列化→解析 round-trip 与乱序/断流单测夹具（#3）。
 
-**完整事件集（21 类，任何文档不得自造事件名）：**
+**完整事件集（20 类，任何文档不得自造事件名）：**
 
 ```ts
 // —— 运行级 ——
@@ -124,7 +124,7 @@ export type PipelineStatus = "idle" | "running" | "reflecting" | "completed" | "
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
 - 四套互不兼容协议（#3、#28）：01 10 类（点号命名）、03 ~20 类（pipeline.start/stage.sql.start/…）、05 连字符（stage-start/sql-running/…）、06 冒号另起一套（thought/artifact/pipeline:done）。
-- 裁决理由：保留 01 §6.1 的点号命名（唯一已命名协议、已被多文档引用），吸收 03 的 sql/rag/tool/reflect/degrade 语义（#3 fixHint），05 的 checkpoint/llm-fallback 语义并入 `checkpoint:saved`/`llm:degraded`。03 的 `stage.sql.start` 细粒度事件由 `stage:thinking`+`stage:evidence` 承载，事件总数收敛到 21。05/06 的自拟协议删除，改 import 引用。
+- 裁决理由：保留 01 §6.1 的点号命名（唯一已命名协议、已被多文档引用），吸收 03 的 sql/rag/tool/reflect/degrade 语义（#3 fixHint），05 的 checkpoint/llm-fallback 语义并入 `checkpoint:saved`/`llm:degraded`。03 的 `stage.sql.start` 细粒度事件由 `stage:thinking`+`stage:evidence` 承载，事件总数收敛到 20（实现核对：运行级 4 + 阶段级 5 + 卡片级 3 + LLM 2 + RAG/工具/反思/缓存 6）。05/06 的自拟协议删除，改 import 引用。
 
 ---
 

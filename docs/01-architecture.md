@@ -205,7 +205,7 @@ export async function mountPersistence(db: duckdb.AsyncDuckDB): Promise<"opfs" |
 │  └───────────────┬───────────────────────────────▲───────────────────┘                     │
 │                  │ ② 脱敏聚合摘要（金额分箱/merchantRef m_8hex/行 ≤200）│ ⑤ SSE 事件流        │
 │                  ▼                                                       │ spendct协议@2        │
-│  ┌───────────────────────────────┐   ┌───────────────────────────────┐  │ (21 类事件，契约 §2) │
+│  ┌───────────────────────────────┐   ┌───────────────────────────────┐  │ (20 类事件，契约 §2) │
 │  │ Zustand 流水线状态机（6 切片）  │   │ TanStack Query（RAG/MCP/health）│  │                     │
 │  │ + IndexedDB/LS 检查点（§5.3）  │   └───────────────┬───────────────┘  │                     │
 │  └───────────────────────────────┘                   │                 │                     │
@@ -238,7 +238,7 @@ export async function mountPersistence(db: duckdb.AsyncDuckDB): Promise<"opfs" |
 | ② | 六阶段确定性 SQL 预计算 | 9 张六阶段预计算表 + `v_*` 聚合视图 → 脱敏聚合摘要 JSON（金额分箱、`merchantRef = m_` + 8 位盐化 hex、行 ≤200、禁明细列，契约 §5/§7）；08 扩展：预算预计算表 `budget_vs_actual`/`forecast_monthly` 同注册 ALLOWED_RELATIONS（修订案 A2，确定性 SQL 常量生成，LLM 只写叙事不产数字） | 作为 LLM 上下文的唯一数据来源 |
 | ③ | 阶段请求 | `{ runId, stage, datasetTxHash, canonicalData }`；客户端缓存键 `stage:v1:${datasetTxHash}:${stageId}` / `llm:v1:${promptVersion}:${modelId}:${sha256(canonicalData).slice(0,16)}`（契约 §10） | `POST /api/pipeline/stage` → 客户端缓存命中则直接回放，不花 token；**无服务端缓存** |
 | ④ | RAG/MCP 请求 | 检索 query（订阅雷达触发） | `/api/rag` → 代理 MCP 容器 `GET /retrieve`（bge-m3 查询嵌入 + bge-reranker 重排均为 **onnxruntime-node 容器内本地推理，运行时零嵌入 API**，契约 §16；级联：SQL 元数据过滤 → dense top-30 → rerank top-5 → 引用 ≤3）→ 容器不可用或 `EMBEDDING_PROVIDER=tfidf-only` 时浏览器 TF-IDF 兜底 |
-| ⑤ | 流式响应 | `spendct协议@2` 事件（§6.1，21 类，契约 §2） | 浏览器状态机 → 洞察卡渐进渲染 |
+| ⑤ | 流式响应 | `spendct协议@2` 事件（§6.1，20 类，契约 §2） | 浏览器状态机 → 洞察卡渐进渲染 |
 | ⑥ | 锚点追问 | `SelectionContext`（anchor/slice≤50 行/tableMeta/chartType/history≤6，契约 §18）+ 追问上下文 | `/api/followup`（useChat）→ 模型调 `run_browser_sql`/`duckdb_meta` 工具 → **工具在浏览器 DuckDB 沙箱执行**，结果回传（每答必落图：新图/新表/新卡三选一，由 `chartSpec` 落位） |
 | ⑦ | 反思自检（发布前闸门，非第七阶段） | 候选卡 JSON + 阶段 stats | L1 规则自检（零成本，永远执行）→ L2 judge = **qwen 主 + deepseek 降级 → 跳过 L2**（契约 §20）→ `status=published` 仅当 L1/L2 pass 且 confidence ≥0.6 且显著性达标，否则 `withheld` 进人工复核区（宁缺毋滥） |
 | ⑧ | 扩展 AI 短任务（08 §7） | quick-entry / budget-advice / forecast / tip-personalize 单次 JSON（zod 判别联合，无 SSE） | `POST /api/ai/task` → `src/server/ai/*` 同一出口（修订案 A6）→ 三层闭环 + 模板兜底；annual-story 年度故事走既有 `/api/pipeline/stage`（annual 阶段输出增强，零新端点） |
@@ -510,7 +510,7 @@ export interface SpendCTState {
 
 - **协议名与版本**：`spendct协议@2`（自 01 旧版 @1 扩充升版）。SSE 传输，每事件一个 JSON 对象，公共字段 `{ t: 事件名, ts: 毫秒时间戳, runId }`，可携带 `stage`、`cardId`。**主流程（`POST /api/pipeline/stage`）与锚点追问（`POST /api/followup`）使用同一协议**。
 - **唯一类型源**：`src/lib/protocol/events.ts`（含序列化→解析 round-trip 与乱序/断流单测夹具）；服务端 `src/server/ai/streams.ts` 按同一定义序列化。任何文档/代码不得自造事件名。
-- **完整事件集（21 类，07 契约 §2 全文为准）**：
+- **完整事件集（20 类，07 契约 §2 全文为准）**：
   - 运行级：`run:start`（含 datasetTxHash、source: "upload"|"sample"、stageOrder）、`run:complete`（cards、elapsedMs、degraded?）、`error`（code/message/stage?/retryable）、`abort`（reason）；
   - 阶段级：`stage:start`、`stage:thinking`（流式思考文案，承载思考流——状态机不设 streaming/paused 中间态）、`stage:evidence`（确定性 SQL 产物就绪：tableId/sqlHash/rowCount/elapsedMs）、`stage:complete`（artifactCount/cards）、`stage:skipped`（reason）；
   - 卡片级：`card:delta`（zod 安全的增量补丁）、`card:complete`（校验通过的完整卡）、`card:withheld`（反思未过 → 人工复核区）；

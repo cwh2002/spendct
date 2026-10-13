@@ -564,7 +564,7 @@ export type InsightCardData = InsightCard; // UI 渲染别名
 
 ```ts
 // src/lib/protocol/events.ts —— 事件协议唯一来源（07 §2 spendct协议@2，SSE，#3/#28）
-// 21 类事件（任何文档不得自造事件名），公共字段 { t, ts, runId }：
+// 20 类事件（任何文档不得自造事件名），公共字段 { t, ts, runId }：
 // run:start / run:complete / error / abort / stage:start / stage:thinking / stage:evidence /
 // stage:complete / stage:skipped / card:delta / card:complete / card:withheld /
 // llm:degraded / llm:repair / rag:retrieved / tool:start / tool:end / reflect:result /
