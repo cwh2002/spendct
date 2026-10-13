@@ -62,9 +62,13 @@ function buildInsightChartOption(insight: DemoInsight): ECOption {
       return buildLineOption(data);
     case "donut":
       return buildDonutOption(data);
-    case "bar":
-      // 柱状数据按分存储（与 DEMO_SUBSCRIPTIONS 同口径），展示换算为元
-      return buildBarOption(data, { formatValue: (v) => formatYuan(v), unit: " 元" });
+    case "bar": {
+      // 金额口径按分存储（与 DEMO_SUBSCRIPTIONS 同口径），展示换算为元；
+      // 笔数/行数等聚合计数口径（真实管线卡携带 chartUnit）原样展示
+      const unit = insight.chartUnit ?? "元";
+      const formatValue = unit === "元" ? (v: number) => formatYuan(v) : (v: number) => String(v);
+      return buildBarOption(data, { formatValue, unit: ` ${unit}` });
+    }
   }
 }
 
@@ -73,7 +77,10 @@ function buildTableRows(insight: DemoInsight): { label: string; value: string; n
   const rows = insight.chartLabels.map((label, i) => {
     const raw = insight.chartData[i] ?? 0;
     if (insight.chartKind === "bar") {
-      return { label, value: `${formatYuan(raw)} 元` };
+      // 与图表同口径：金额列换算为元，计数列（笔/行）原样展示
+      const unit = insight.chartUnit ?? "元";
+      const value = unit === "元" ? `${formatYuan(raw)} 元` : `${raw} ${unit}`;
+      return { label, value };
     }
     if (insight.chartKind === "donut") {
       return { label, value: `${raw}%` };
@@ -83,7 +90,11 @@ function buildTableRows(insight: DemoInsight): { label: string; value: string; n
     return { label, value: `${raw} ${unit}` };
   });
   if (insight.chartKind === "bar") {
-    rows.push({ label: "口径", value: "金额单位分，已换算为元" });
+    const unit = insight.chartUnit ?? "元";
+    rows.push({
+      label: "口径",
+      value: unit === "元" ? "金额单位分，已换算为元" : `聚合计数，单位 ${unit}`,
+    });
   }
   return rows;
 }

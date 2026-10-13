@@ -5,8 +5,9 @@
  *
  * 链路：选择入口（OCR 占位 / CSV 文件 / 示例账单）→ 文本就绪 →
  * parseBillCsv 嗅探（格式/置信度/字段映射/警告）→ 预览人工确认 →
- * stripDuplicates + buildCleanCsv → getDuckDB + importBillCsv →
- * registerImportedBook（账本登记 + 激活键）→ 跳转体检。
+ * stripDuplicates + buildCleanCsv → getDuckDB + importBillCsv（预览表）→
+ * registerImportedBook（账本登记 + 激活键）→ 管线数据集装配
+ * （cleanBillRows → hashCleanRows → initDataset → usePipeline.setDataset）→ 跳转体检。
  *
  * 两个外部约束：
  * 1. 本文件读 useSearchParams（?sample=1 自动演示、?next= 回跳），
@@ -41,12 +42,15 @@ import {
 import { Container } from "@/components/layout/container";
 import { ResumeBanner } from "@/components/home/resume-banner";
 import { useAuth } from "@/lib/account/store";
+import { initDataset } from "@/lib/duckdb/dataset";
 import { getDuckDB, importBillCsv } from "@/lib/duckdb/service";
 import { featureFlags } from "@/lib/feature-flags";
 import { registerImportedBook } from "@/lib/import/active-book";
+import { cleanBillRows, hashCleanRows } from "@/lib/import/clean-input";
 import { buildCleanCsv, parseBillCsv, stripDuplicates } from "@/lib/import/parse-csv";
 import { generateSampleCsv, SAMPLE_BILL_FILE_NAME, SAMPLE_ROW_COUNT } from "@/lib/import/sample-bill";
 import type { ParseResult } from "@/lib/import/types";
+import { usePipeline } from "@/lib/pipeline/store";
 
 /* ---------------- 常量与纯工具 ---------------- */
 
@@ -574,7 +578,7 @@ export function UploadWorkspace() {
     }
   }, [sampleRequested, handleSample]);
 
-  /** 导入主链路：去重 → 标准 CSV → DuckDB → 账本登记 → 跳转 */
+  /** 导入主链路：去重 → 标准 CSV → DuckDB 预览表 → 账本登记 → 管线数据集装配 → 跳转 */
   async function startImport() {
     const { result, importStatus, fileName } = state;
     if (!result || result.rows.length === 0 || importStatus === "importing") return;
@@ -593,6 +597,26 @@ export function UploadWorkspace() {
         userId,
         rowCount: imported.rowCount,
       });
+
+      // 管线数据集装配（07 §3 完整 schema）。
+      // 两层导入职责不同、表名相同是设计意图：importBillCsv 用 read_csv_auto
+      // 建 6 列 transactions 表，只服务预览与 T3/T4 验收路径；initDataset
+      // 内部先 dropDataset 清掉这张同名预览表，再按 18 列 DDL 重建并补齐
+      // 13 视图与 9 预计算表，完整 schema 服务六阶段管线引擎。
+      // 预览表只是装配前的临时产物，装配完成即被替换。
+      try {
+        const cleaned = await cleanBillRows(deduped, fileName || "未命名账单");
+        const datasetTxHash = await hashCleanRows(cleaned);
+        await initDataset(conn, cleaned);
+        usePipeline.getState().setDataset(datasetTxHash, "upload");
+      } catch (assemblyErr) {
+        // 降级边界：装配任一步失败都不阻断跳转。检查页侧 verifySchema 会因
+        // schema 缺失报错并给出「重新导入」提示，用户重导一次即可恢复；
+        // 这里仅 console.warn 留痕，保持现有「已导入」成功口径，
+        // 避免用户误以为账单本体导入失败（预览表路径并未出错）。
+        console.warn("[upload] 管线数据集装配失败，降级为仅预览导入：", assemblyErr);
+      }
+
       setState((prev) => ({
         ...prev,
         stage: "success",

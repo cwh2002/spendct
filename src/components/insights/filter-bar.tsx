@@ -23,7 +23,21 @@ export const DEFAULT_INSIGHT_FILTERS: InsightFilters = {
   category: "all",
 };
 
-export const INSIGHT_CATEGORIES = ["餐饮", "购物", "交通", "娱乐", "居住", "其他", "订阅"] as const;
+/** 12 类目全枚举（07 §3 类目枚举）：演示卡 meta 只覆盖其中 7 类，真实卡按同清单映射 */
+export const INSIGHT_CATEGORIES = [
+  "餐饮",
+  "交通",
+  "购物",
+  "娱乐",
+  "居住",
+  "通讯",
+  "医疗",
+  "教育",
+  "人情",
+  "金融",
+  "订阅",
+  "其他",
+] as const;
 
 const DATE_RANGES: { key: DateRangeKey; label: string }[] = [
   { key: "all", label: "全部" },
@@ -46,12 +60,24 @@ const DEMO_INSIGHT_META: Record<string, { category: string; publishedDaysAgo: nu
   "ins-6": { category: "购物", publishedDaysAgo: 12 },
 };
 
-/** 四维筛选（阶段 / 置信度 / 日期 / 类别）的真实过滤逻辑，页面与收藏夹共用 */
-export function applyInsightFilters(insights: DemoInsight[], filters: InsightFilters): DemoInsight[] {
+/** 筛选元数据：类别与发布天数。真实卡由调用方提供 lookup，演示卡用本地映射表 */
+export interface InsightMeta {
+  category: string;
+  publishedDaysAgo: number;
+}
+
+/** 四维筛选（阶段 / 置信度 / 日期 / 类别）的真实过滤逻辑，页面与收藏夹共用。
+ *  metaLookup 供真实管线卡使用（id 为 cardId）；缺省时退回演示卡元数据表。
+ *  真实卡无发布时间语义，约定 publishedDaysAgo = 0（本次体检刚产出，日期筛选全放行）。 */
+export function applyInsightFilters(
+  insights: DemoInsight[],
+  filters: InsightFilters,
+  metaLookup?: (id: string) => InsightMeta | undefined,
+): DemoInsight[] {
   return insights.filter((insight) => {
     if (filters.stage !== "all" && insight.stageId !== filters.stage) return false;
     if (!filters.showLow && insight.confidence <= 2) return false;
-    const meta = DEMO_INSIGHT_META[insight.id];
+    const meta = metaLookup?.(insight.id) ?? DEMO_INSIGHT_META[insight.id];
     if (filters.category !== "all" && meta?.category !== filters.category) return false;
     if (filters.range !== "all") {
       const daysAgo = meta?.publishedDaysAgo ?? 0;

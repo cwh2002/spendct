@@ -114,6 +114,8 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
   let controller: AbortController | null = null;
   let conn: AsyncDuckDBConnection | null = null;
   let running = false;
+  // 排水期间的恢复请求登记位：pause 后引擎返回前用户点了 resume（running 尚未复位）
+  let resumeRequested = false;
 
   const nextSeq = makeEventSeq();
   const push = (kind: ThinkingEvent["kind"], text: string, meta?: string) => {
@@ -236,6 +238,17 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
     }
   };
 
+  /** 收口：复位 running。中止排水期间若收到过 resume 请求，立即自动重跑一轮（不触发 onDone） */
+  const finish = () => {
+    running = false;
+    if (resumeRequested) {
+      resumeRequested = false;
+      void execute();
+      return;
+    }
+    cb.onDone();
+  };
+
   /** 主流程：装载数据 → 跑引擎 → 收口。任何装载失败都发失败态并终止（无卡可产出） */
   const execute = async () => {
     if (running) return;
@@ -280,13 +293,11 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
         cards: result.cards.filter((card) => card.status === "published"),
         degraded: result.degraded ?? [],
       });
-      running = false;
-      cb.onDone();
+      finish();
     } catch (err) {
-      running = false;
       const message = err instanceof Error ? err.message : String(err);
       push("tool", `体检引擎装载失败 · ${message}`);
-      cb.onDone();
+      finish();
     }
   };
 
@@ -299,10 +310,13 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
       controller?.abort();
     },
     resume() {
-      // 断点续跑：数据仍在内存库，从最近断点阶段重跑（阶段结果确定性，产出一致）
-      if (!running) void execute();
+      // 断点续跑：数据仍在内存库，从最近断点阶段重跑（阶段结果确定性，产出一致）。
+      // 引擎仍在排水（running 未复位）时先登记请求，收口后自动重跑，恢复请求不被吞
+      if (running) resumeRequested = true;
+      else void execute();
     },
     stop() {
+      resumeRequested = false;
       controller?.abort();
       running = false;
       controller = null;

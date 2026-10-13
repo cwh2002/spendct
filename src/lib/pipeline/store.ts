@@ -34,7 +34,7 @@ export interface PipelineState {
   setDataset(datasetTxHash: string, source: "upload" | "sample"): void;
   /** 体检运行结束后由 runner 写入（run:complete 事件载荷） */
   setRun(summary: LastRunSummary): void;
-  /** 数据集被清空/换掉时复位（目前仅在重新导入时被 setDataset 覆盖） */
+  /** 数据集被清空/换掉时复位（重新导入走 setDataset，同样清掉旧运行结果） */
   clear(): void;
 }
 
@@ -44,7 +44,8 @@ export const usePipeline = create<PipelineState>()((set) => ({
   lastRun: null,
 
   setDataset(datasetTxHash, source) {
-    set({ datasetTxHash, source });
+    // 换数据集 = 旧数据集上的体检结果作废，避免 /insights 等页读到上一份账单的卡
+    set({ datasetTxHash, source, lastRun: null });
   },
 
   setRun(summary) {

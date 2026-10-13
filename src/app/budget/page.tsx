@@ -21,6 +21,10 @@ import { chartInk, cssVar, EChart } from "@/components/charts/e-chart";
 import type { ECOption } from "@/components/charts/e-chart";
 import { Container } from "@/components/layout/container";
 import { DEMO_BUDGET, DEMO_FORECAST } from "@/lib/demo-data";
+import { getDuckDB } from "@/lib/duckdb/service";
+import { mockBudgetAdvice, type MockBudgetAdvice } from "@/lib/llm/mock-narratives";
+import { usePipeline } from "@/lib/pipeline/store";
+import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
 /** 12 类唯一枚举（07 §3）：与 quick-entry zod schema 的 CATEGORIES 同口径，后续统一到 src/lib/schema */
 const CATEGORIES_12 = [
@@ -219,6 +223,228 @@ function gradientOf(category: string): string {
   return `linear-gradient(90deg, var(--color-chart-${a}), var(--color-chart-${b}))`;
 }
 
+/* —— 真实数据动线（波 4：真实优先 + demo 兜底） —— */
+
+/**
+ * 白名单确定性聚合 SQL（07 §6 窄文法，代码常量、零用户输入拼接）：
+ * - 月度支出：v_monthly_summary 近 12 月。白名单禁止日期函数与算术，
+ *   日期窗口无法在 SQL 内表达，用 ORDER BY month DESC + LIMIT 12 取最近 12 行，
+ *   JS 侧回排升序；
+ * - 分类支出：v_category_monthly 按（类目 × 月）聚合，ORDER BY month DESC + LIMIT 48
+ *   （12 类 × 4 月 = 48 行，50 行结果上限内），JS 侧截最近 3 个自然月（≈90 天）
+ *   后按类目求和。
+ * 列按位置读取（SELECT 列表顺序即 Object.values 顺序，与管线引擎 spec.ts 同口径；
+ * 白名单文法不支持 AS 别名，聚合列名为 DuckDB 默认名）。
+ */
+const SQL_MONTHLY_LAST_12M =
+  "SELECT month, SUM(expense_cents) FROM v_monthly_summary GROUP BY month ORDER BY month DESC LIMIT 12";
+
+const SQL_CATEGORY_MONTHLY_RECENT =
+  "SELECT category, month, SUM(expense_cents) FROM v_category_monthly GROUP BY category, month ORDER BY month DESC LIMIT 48";
+
+/** 分类支出窗口：最近 3 个自然月（≈90 天；白名单语法内可达的最近似口径） */
+const CATEGORY_WINDOW_MONTHS = 3;
+/** 预测历史长度：近 6 月真实支出 */
+const FORECAST_HISTORY_MONTHS = 6;
+/** 预测外推长度：未来 3 月（与 DEMO_FORECAST 长度一致） */
+const FORECAST_HORIZON_MONTHS = 3;
+
+/** 真实月度支出行（v_monthly_summary 聚合结果） */
+interface RealMonthRow {
+  /** YYYY-MM（本地时区，与 date_iso 的月份语义对齐） */
+  monthKey: string;
+  expenseCents: number;
+}
+
+/** 真实数据装载结果：null = 该模块查询失败或无数据，页面回退 demo 对应字段 */
+interface RealBudgetData {
+  /** 近 12 月月度支出（升序） */
+  monthly: RealMonthRow[] | null;
+  /** 类目 → 近 90 天支出（分） */
+  category90d: Record<string, number> | null;
+  /** 90 天窗口实际覆盖的自然月数（数据不足 3 个月时按实际月数折算月均） */
+  categoryWindowMonths: number;
+}
+
+const EMPTY_REAL_DATA: RealBudgetData = {
+  monthly: null,
+  category90d: null,
+  categoryWindowMonths: CATEGORY_WINDOW_MONTHS,
+};
+
+/** 预测序列：demo 与真实两条动线共用形状 */
+interface ForecastView {
+  months: string[]; // YYYY-MM
+  valuesCents: number[];
+  method: string;
+  /** 是否来自真实数据外推（决定文案与免责声明口径） */
+  real: boolean;
+  /** 参与拟合的历史月数（demo 为 0） */
+  historyMonths: number;
+  /** 线性趋势斜率：分/月（demo 为 0） */
+  slopeCentsPerMonth: number;
+}
+
+/** 选中月份的预算视图（真实与 demo 动线共用渲染形状） */
+interface MonthBudgetView {
+  categories: Array<{ category: string; budgetCents: number; actualCents: number }>;
+  totalBudgetCents: number;
+  totalActualCents: number;
+}
+
+/** DuckDB 聚合金额 → 分：BIGINT 在 wasm 各版本可能返回 bigint/number/string，统一收口 */
+function rowCents(value: unknown): number {
+  if (typeof value === "number") return Math.round(value);
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "string") return Math.round(Number(value) || 0);
+  return 0;
+}
+
+/** DuckDB TIMESTAMP（JS Date 或字符串）→ YYYY-MM（本地口径，与管线 fmtMonth 一致） */
+function monthKeyOf(value: unknown): string {
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === "number"
+        ? new Date(value)
+        : typeof value === "string"
+          ? new Date(value)
+          : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** "YYYY-MM" → 本地月初 Date；非法输入返回 null */
+function parseMonthKey(key: string): Date | null {
+  const match = /^(\d{4})-(\d{2})$/.exec(key);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  if (month < 1 || month > 12) return null;
+  return new Date(year, month - 1, 1);
+}
+
+/** 月份键平移 offset 个月（跨年自动进位），解析失败时原样返回 */
+function shiftMonthKey(key: string, offset: number): string {
+  const base = parseMonthKey(key);
+  if (!base) return key;
+  return monthKeyOf(new Date(base.getFullYear(), base.getMonth() + offset, 1));
+}
+
+/**
+ * 近 6 月真实支出 → 未来 3 月线性趋势外推（确定性算法，替代 DEMO_FORECAST 固定系数）。
+ * 口径：x = 月序号（0..n-1），y = 月支出（分），最小二乘拟合 y = a + b·x，
+ * 外推 y(x_last + k)，k = 1..3。边界：
+ * - 历史不足 2 个月：b = 0，退化为近期均值（recent_mean）；
+ * - 外推值为负：截断为 0（支出不可能为负，防线性趋势退化）；
+ * - 历史为空（查询失败）：返回 null，由调用方兜底 DEMO_FORECAST。
+ */
+function extrapolateForecast(history: RealMonthRow[]): ForecastView | null {
+  const base = history.slice(-FORECAST_HISTORY_MONTHS);
+  if (base.length === 0) return null;
+  const n = base.length;
+  const meanX = (n - 1) / 2;
+  const meanY = base.reduce((sum, row) => sum + row.expenseCents, 0) / n;
+  let denominator = 0;
+  let numerator = 0;
+  for (let i = 0; i < n; i += 1) {
+    const dx = i - meanX;
+    denominator += dx * dx;
+    numerator += dx * ((base[i]?.expenseCents ?? 0) - meanY);
+  }
+  const slope = denominator > 0 ? numerator / denominator : 0;
+  const lastKey = base[n - 1]?.monthKey ?? "";
+  const months: string[] = [];
+  const valuesCents: number[] = [];
+  for (let k = 1; k <= FORECAST_HORIZON_MONTHS; k += 1) {
+    const predicted = meanY + slope * (n - 1 - meanX + k);
+    months.push(shiftMonthKey(lastKey, k));
+    valuesCents.push(Math.max(0, Math.round(predicted)));
+  }
+  return {
+    months,
+    valuesCents,
+    method: n >= 2 ? "linear_trend_6m" : "recent_mean",
+    real: true,
+    historyMonths: n,
+    slopeCentsPerMonth: Math.round(slope),
+  };
+}
+
+/**
+ * 真实动线分类行组装（分类预算覆盖模块口径）：
+ * - 已用 actualCents = 近 90 天支出 ÷ 窗口自然月数（「本月支出速率」的月均估计；
+ *   不用残缺当月行、不用 90 天总额——页面预算单位是「每月」，总额会与月预算错口径）；
+ * - 预算 budgetCents = 本地覆盖 ?? DEMO_BUDGET 同类目默认 ?? 月均基线（向上取整到元）。
+ *   预算本身暂无真实数据源（budgets 表本轮无写入方），演示默认档延续为可编辑起点，
+ *   用户编辑经 overrides 持久化覆盖（07 §17 允许项）；
+ * - 类目集合 = 近 90 天有支出的类目 ∪ 用户已设覆盖的类目（预算覆盖口径）；
+ * - 各分类预算占比 = budgetCents / 总预算；覆盖值 = 已用 / 预算（使用率），渲染层计算。
+ */
+function buildRealCategories(
+  category90d: Record<string, number>,
+  windowMonths: number,
+  overrides: Record<string, number>,
+): MonthBudgetView["categories"] {
+  const demoBudget = new Map(DEMO_BUDGET.categories.map((c) => [c.category, c.budgetCents]));
+  const names = new Set([...Object.keys(category90d), ...Object.keys(overrides)]);
+  const divisor = Math.max(windowMonths, 1);
+  return [...names]
+    .map((category) => {
+      const monthlyAvg = Math.round((category90d[category] ?? 0) / divisor);
+      const baseline = Math.ceil(monthlyAvg / 100) * 100;
+      return {
+        category,
+        budgetCents: overrides[category] ?? demoBudget.get(category) ?? baseline,
+        actualCents: monthlyAvg,
+      };
+    })
+    .filter((row) => row.actualCents > 0 || row.budgetCents > 0);
+}
+
+/* —— 超支贴士（budget-advice 任务） —— */
+
+type AdviceAction = MockBudgetAdvice["actions"][number];
+
+/** 超支贴士生成态：budget-advice 任务（真实动线专用；demo 动线维持模板文案） */
+interface AdviceState {
+  status: "loading" | "streaming" | "done";
+  headline: string;
+  advice: string;
+  actions: AdviceAction[];
+  /** mock：/api/ai/task 服务端模板 JSON；live：/api/ai/chat 流式；local：本地模板兜底 */
+  source: "mock" | "live" | "local";
+}
+
+/**
+ * live 流式文本无结构化字段：headline 用阈值规则句（与 mock 同口径），
+ * actions 按 severity 推导（ok 无动作 / warn 看明细 / over 调预算+看明细）。
+ */
+function actionsForSeverity(severity: Severity): AdviceAction[] {
+  if (severity === "ok") return [];
+  if (severity === "warn") return ["view_detail"];
+  return ["adjust_budget", "view_detail"];
+}
+
+/**
+ * live 流式提示词（确定性拼装，数字全部来自当前页面聚合数据）：
+ * 不携带明细行与身份信息（02 §1.2 脱敏口径），金额展示层转元与模型交互。
+ */
+function buildAdvicePrompt(view: MonthBudgetView, ratio: number): string {
+  const lines = view.categories
+    .filter((c) => c.budgetCents > 0)
+    .map(
+      (c) =>
+        `${c.category}：已用 ¥${fmtYuan(c.actualCents, 0)} / 预算 ¥${fmtYuan(c.budgetCents, 0)}（${fmtPct(c.actualCents, c.budgetCents)}%）`,
+    );
+  return [
+    "以下是本月预算执行数据（金额单位：元）。",
+    `总预算 ¥${fmtYuan(view.totalBudgetCents, 0)}，已用 ¥${fmtYuan(view.totalActualCents, 0)}，使用率 ${Math.round(ratio * 100)}%。`,
+    ...lines,
+    "请基于以上数字给出简洁的中文预算建议，只给方向性建议，不虚构输入之外的数字。",
+  ].join("\n");
+}
+
 /* —— 子组件 —— */
 
 interface ToastState {
@@ -414,12 +640,94 @@ function BudgetContent() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  // 选中月份的分类数据：未来月实际值按系数外推，预算叠加本地覆盖值
-  const month = useMemo(() => {
+  // —— 真实数据动线（波 4：真实优先 + demo 兜底） ——
+  // 最近一次体检运行结果（内存态）：null = 尚无体检记录（含刷新后内存丢失），
+  // 整页维持 DEMO_BUDGET / DEMO_FORECAST 动线不动
+  const lastRun = usePipeline((s) => s.lastRun);
+  const [realData, setRealData] = useState<RealBudgetData>(EMPTY_REAL_DATA);
+  // demo 动线（无体检记录）时忽略残留装载结果：渲染期派生，避免在 effect 内同步 setState 重置
+  const liveRealData = lastRun ? realData : EMPTY_REAL_DATA;
+
+  // 真实数据装载：lastRun 存在时读 DuckDB 聚合视图（与体检同一单例连接、同一内存数据集）。
+  // 任一模块查询失败 → 该模块保持 null → 对应模块兜底 DEMO_BUDGET / DEMO_FORECAST（模块级降级）
+  useEffect(() => {
+    if (!lastRun) return; // demo 动线：不查库
+    let cancelled = false;
+    void (async () => {
+      const loaded: RealBudgetData = { ...EMPTY_REAL_DATA };
+      try {
+        // 数据集在本次会话内由体检管线装入内存库（sample 自动 initDataset，
+        // upload 由上传页完成），这里只做只读聚合；连接初始化失败 → 两模块兜底 demo
+        const conn = await getDuckDB();
+        try {
+          const result = await runWhitelistedAggregate(conn, SQL_MONTHLY_LAST_12M);
+          const rows = (result.rows as Record<string, unknown>[])
+            .map((row) => {
+              const values = Object.values(row);
+              return { monthKey: monthKeyOf(values[0]), expenseCents: rowCents(values[1]) };
+            })
+            .filter((row) => row.monthKey !== "")
+            .reverse(); // SQL 侧 month DESC → 升序
+          if (rows.length > 0) loaded.monthly = rows;
+        } catch {
+          // 月度查询失败 → monthly 保持 null，预测模块兜底 DEMO_FORECAST
+        }
+        try {
+          const result = await runWhitelistedAggregate(conn, SQL_CATEGORY_MONTHLY_RECENT);
+          const rows = (result.rows as Record<string, unknown>[])
+            .map((row) => {
+              const values = Object.values(row);
+              return {
+                category: String(values[0] ?? ""),
+                monthKey: monthKeyOf(values[1]),
+                expenseCents: rowCents(values[2]),
+              };
+            })
+            .filter((row) => row.category !== "" && row.monthKey !== "");
+          // JS 侧截最近 3 个自然月（≈90 天）并按类目求和；数据不足 3 个月按实际月数
+          const windowKeys: string[] = [];
+          const byCategory: Record<string, number> = {};
+          for (const row of rows) {
+            if (!windowKeys.includes(row.monthKey)) {
+              if (windowKeys.length < CATEGORY_WINDOW_MONTHS) {
+                windowKeys.push(row.monthKey);
+              } else {
+                continue; // 更早的月份（month DESC 序）落在窗口外
+              }
+            }
+            byCategory[row.category] = (byCategory[row.category] ?? 0) + row.expenseCents;
+          }
+          if (windowKeys.length > 0 && Object.values(byCategory).some((v) => v > 0)) {
+            loaded.category90d = byCategory;
+            loaded.categoryWindowMonths = windowKeys.length;
+          }
+        } catch {
+          // 分类查询失败 → category90d 保持 null，分类预算模块兜底 DEMO_BUDGET
+        }
+      } catch {
+        // getDuckDB 初始化失败：双模块兜底 demo，页面照常可用
+      }
+      if (!cancelled) setRealData(loaded);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lastRun]);
+
+  // 选中月份的分类数据：真实动线用近 90 天月均支出（预算 = 覆盖 ?? 演示默认 ?? 月均基线），
+  // demo 动线用 DEMO_BUDGET；未来月实际值按系数外推（两条动线同规则），预算叠加本地覆盖值
+  const month = useMemo<MonthBudgetView>(() => {
     const factor = MONTH_FACTORS[monthOffset] ?? 1;
-    const categories = DEMO_BUDGET.categories.map((c) => ({
+    const source = liveRealData.category90d
+      ? buildRealCategories(liveRealData.category90d, liveRealData.categoryWindowMonths, overrides)
+      : DEMO_BUDGET.categories.map((c) => ({
+          category: c.category,
+          budgetCents: overrides[c.category] ?? c.budgetCents,
+          actualCents: c.actualCents,
+        }));
+    const categories = source.map((c) => ({
       category: c.category,
-      budgetCents: overrides[c.category] ?? c.budgetCents,
+      budgetCents: c.budgetCents,
       actualCents: Math.round(c.actualCents * factor),
     }));
     const totalBudgetCents = categories.reduce((sum, c) => sum + c.budgetCents, 0);
@@ -434,7 +742,23 @@ function BudgetContent() {
       return ratioB - ratioA;
     });
     return { categories: sorted, totalBudgetCents, totalActualCents };
-  }, [monthOffset, overrides]);
+  }, [monthOffset, overrides, liveRealData]);
+
+  // 下月预测：真实动线用近 6 月真实支出线性趋势外推，demo 动线用 DEMO_FORECAST 固定外推
+  const forecastView = useMemo<ForecastView>(() => {
+    if (liveRealData.monthly) {
+      const real = extrapolateForecast(liveRealData.monthly);
+      if (real) return real;
+    }
+    return {
+      months: [...DEMO_FORECAST.months],
+      valuesCents: [...DEMO_FORECAST.valuesCents],
+      method: DEMO_FORECAST.method,
+      real: false,
+      historyMonths: 0,
+      slopeCentsPerMonth: 0,
+    };
+  }, [liveRealData]);
 
   const ratio = month.totalBudgetCents > 0 ? month.totalActualCents / month.totalBudgetCents : 0;
   const severity = severityOf(ratio);
@@ -578,11 +902,12 @@ function BudgetContent() {
     };
   }, [month]);
 
-  // 下月预测：单系列折线（标题即系列名，不加图例），y 轴缩放起点避免形状失真
+  // 下月预测：单系列折线（标题即系列名，不加图例），y 轴缩放起点避免形状失真；
+  // 数据源为 forecastView（真实外推或 DEMO_FORECAST），其余渲染规则不变
   const forecastOption = useCallback((): ECOption => {
     const t = chartInk();
     const lineColor = cssVar("--color-chart-1");
-    const labels = DEMO_FORECAST.months.map((mStr) => `${Number(mStr.split("-")[1] ?? "")}月`);
+    const labels = forecastView.months.map((mStr) => `${Number(mStr.split("-")[1] ?? "")}月`);
     return {
       grid: { left: 8, right: 8, top: 12, bottom: 0, containLabel: true },
       tooltip: {
@@ -610,7 +935,7 @@ function BudgetContent() {
         {
           name: "预测月支出",
           type: "line",
-          data: DEMO_FORECAST.valuesCents.map((c) => c / 100),
+          data: forecastView.valuesCents.map((c) => c / 100),
           smooth: true,
           symbol: "circle",
           symbolSize: 7,
@@ -620,22 +945,176 @@ function BudgetContent() {
         },
       ],
     };
-  }, []);
+  }, [forecastView]);
 
   const forecastAvgYuan = Math.round(
-    DEMO_FORECAST.valuesCents.reduce((sum, v) => sum + v, 0) / DEMO_FORECAST.valuesCents.length / 100,
+    forecastView.valuesCents.reduce((sum, v) => sum + v, 0) /
+      Math.max(forecastView.valuesCents.length, 1) /
+      100,
   );
 
-  // 超支贴士：demo 模板文案，数字按当前数据实时计算（budget-advice 任务接入后替换为模型生成）
+  // 超支贴士：demo 动线用模板文案（数字按当前数据实时计算）；真实动线接 budget-advice
+  // 任务生成（先 /api/ai/task 模板 JSON，live 模式转 /api/ai/chat 流式，本地模板兜底）
   const dining = month.categories.find((c) => c.category === "餐饮");
   const diningPct = dining ? fmtPct(dining.actualCents, dining.budgetCents) : 0;
   const adviceVisible = severity === "over" && !adviceDismissed;
+  // 贴士生成结果按「生成键」缓存：月份或数据视图变化即失效（渲染期派生），
+  // 避免在 effect 内同步 setState 重置旧贴士，也避免切换月份时闪旧文案
+  const [adviceRun, setAdviceRun] = useState<{ key: string; state: AdviceState } | null>(null);
+  const adviceKey = `${monthOffset}:${month.totalActualCents}:${month.totalBudgetCents}`;
+  const advice = adviceRun && adviceRun.key === adviceKey && adviceVisible ? adviceRun.state : null;
+
+  // 贴士「调整预算」按钮目标：当前视图超支金额最大的类目（缺省餐饮）
+  const adviceTargetCategory = useMemo(() => {
+    let target = "餐饮";
+    let maxOver = Number.NEGATIVE_INFINITY;
+    for (const c of month.categories) {
+      const over = c.actualCents - c.budgetCents;
+      if (over > maxOver) {
+        maxOver = over;
+        target = c.category;
+      }
+    }
+    return target;
+  }, [month]);
+
+  // 贴士生成链：demo 动线不生成；真实动线贴士可见时执行。
+  // 链路口径：resolveLlmMode 的判定由两个 route 在服务端完成——
+  // ① POST /api/ai/task（08 §⑦ 唯一承载端点）：mock → mockBudgetAdvice(ratio) JSON 同步返回，
+  //    live → 结构化输出 T49 未接入返回 501，转流式；
+  // ② POST /api/ai/chat：live 走 streamLlmText，text/plain 原始流逐 chunk 解码追加；
+  // ③ 网络硬故障 → 本地同步 mockBudgetAdvice(ratio)（mock-narratives 纯函数客户端安全；
+  //    无密钥场景服务端 resolveLlmMode 已判 mock，不会走到这里）
+  useEffect(() => {
+    if (!adviceVisible || !lastRun) return; // demo 动线：模板文案维持现状
+    const controller = new AbortController();
+    let active = true;
+
+    const finishLocal = () => {
+      if (!active) return;
+      const local = mockBudgetAdvice(ratio);
+      setAdviceRun({
+        key: adviceKey,
+        state: {
+          status: "done",
+          headline: local.headline,
+          advice: local.advice,
+          actions: local.actions,
+          source: "local",
+        },
+      });
+    };
+
+    void (async () => {
+      setAdviceRun({
+        key: adviceKey,
+        state: {
+          status: "loading",
+          headline: "正在生成 AI 建议…",
+          advice: "",
+          actions: [],
+          source: "mock",
+        },
+      });
+      try {
+        const taskRes = await fetch("/api/ai/task", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ task: "budget-advice", input: { ratio } }),
+          signal: controller.signal,
+        });
+        if (taskRes.ok) {
+          const payload = (await taskRes.json()) as {
+            ok?: boolean;
+            data?: Partial<MockBudgetAdvice>;
+          };
+          const data = payload?.data;
+          if (data && typeof data.headline === "string" && typeof data.advice === "string") {
+            if (!active) return;
+            setAdviceRun({
+              key: adviceKey,
+              state: {
+                status: "done",
+                headline: data.headline,
+                advice: data.advice,
+                actions: Array.isArray(data.actions)
+                  ? data.actions.filter(
+                      (a): a is AdviceAction =>
+                        a === "adjust_budget" || a === "view_detail" || a === "dismiss",
+                    )
+                  : [],
+                source: "mock",
+              },
+            });
+            return;
+          }
+        }
+        // live 流式：逐 chunk 解码追加到贴士文本（真实 token 流，非定时器动画）
+        const chatRes = await fetch("/api/ai/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            task: "budget-advice",
+            messages: [{ role: "user", content: buildAdvicePrompt(month, ratio) }],
+          }),
+          signal: controller.signal,
+        });
+        if (!chatRes.ok || !chatRes.body) throw new Error("预算建议流不可用");
+        if (!active) return;
+        setAdviceRun({
+          key: adviceKey,
+          state: {
+            status: "streaming",
+            headline: mockBudgetAdvice(ratio).headline,
+            advice: "",
+            actions: actionsForSeverity(severity),
+            source: "live",
+          },
+        });
+        const reader = chatRes.body.getReader();
+        const decoder = new TextDecoder();
+        let accumulated = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          accumulated += decoder.decode(value, { stream: true });
+          if (!active) return;
+          setAdviceRun((prev) =>
+            prev && prev.key === adviceKey && prev.state.status === "streaming"
+              ? { key: adviceKey, state: { ...prev.state, advice: accumulated } }
+              : prev,
+          );
+        }
+        if (!active) return;
+        setAdviceRun((prev) =>
+          prev && prev.key === adviceKey && prev.state.status === "streaming"
+            ? { key: adviceKey, state: { ...prev.state, status: "done" } }
+            : prev,
+        );
+      } catch {
+        finishLocal();
+      }
+    })();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [adviceVisible, lastRun, month, ratio, severity, adviceKey]);
 
   return (
     <Container wide className="py-8 md:py-10">
       {/* 页头 */}
       <header className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight text-(--color-ink) md:text-3xl">预算中心</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-bold tracking-tight text-(--color-ink) md:text-3xl">预算中心</h1>
+          {/* 数据源徽标：诚实标注真实/演示动线（05 §5.1 不放假数据），真实动线在本次会话内跟随体检结果 */}
+          <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] text-(--color-ink-muted)">
+            {lastRun
+              ? `真实数据 · ${lastRun.source === "sample" ? "示例账单" : "上传账单"}`
+              : "演示数据"}
+          </span>
+        </div>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--color-ink-secondary)">
           月度分类预算 + 一句话快速记账 + 超支提示 + 下月预测。预算与手动账单只保存在你的浏览器本地。
         </p>
@@ -841,7 +1320,11 @@ function BudgetContent() {
               </div>
 
               {monthOffset > 0 ? (
-                <p className="mt-2 text-xs text-(--color-ink-muted)">未来月为演示外推数据（实际值 ×0.9 逐月衰减）</p>
+                <p className="mt-2 text-xs text-(--color-ink-muted)">
+                  {lastRun
+                    ? "未来月为外推数据（基于近 90 天月均支出 ×0.9 逐月衰减）"
+                    : "未来月为演示外推数据（实际值 ×0.9 逐月衰减）"}
+                </p>
               ) : null}
 
               <div className="mt-4 flex flex-col items-center gap-6 sm:flex-row">
@@ -906,11 +1389,27 @@ function BudgetContent() {
                 ariaLabel="未来三个月支出预测折线图"
               />
 
-              <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
-                近三月季节基线外推：未来三个月月均支出约 ¥{forecastAvgYuan.toLocaleString("zh-CN")}
-                ，11 月受购物节影响略高、1 月回落。预测只反映季节模式，不含一次性事件。
-              </p>
-              <p className="mt-2 text-xs text-(--color-ink-muted)">朴素季节外推，仅作参考，不构成建议</p>
+              {forecastView.real ? (
+                <>
+                  <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
+                    基于近 {forecastView.historyMonths} 个月真实支出的线性趋势外推：未来三个月月均支出约 ¥
+                    {forecastAvgYuan.toLocaleString("zh-CN")}
+                    {forecastView.slopeCentsPerMonth === 0
+                      ? "，走势基本持平"
+                      : `，趋势${forecastView.slopeCentsPerMonth > 0 ? "月增" : "月减"} ¥${fmtYuan(Math.abs(forecastView.slopeCentsPerMonth), 0)}`}
+                    。外推只延续历史斜率，不含一次性事件与你的计划变更。
+                  </p>
+                  <p className="mt-2 text-xs text-(--color-ink-muted)">线性趋势外推，仅作参考，不构成建议</p>
+                </>
+              ) : (
+                <>
+                  <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
+                    近三月季节基线外推：未来三个月月均支出约 ¥{forecastAvgYuan.toLocaleString("zh-CN")}
+                    ，11 月受购物节影响略高、1 月回落。预测只反映季节模式，不含一次性事件。
+                  </p>
+                  <p className="mt-2 text-xs text-(--color-ink-muted)">朴素季节外推，仅作参考，不构成建议</p>
+                </>
+              )}
             </div>
           </section>
         </div>
@@ -977,7 +1476,8 @@ function BudgetContent() {
           </div>
         </section>
 
-        {/* 超支贴士（模板文案，budget-advice 任务接入中） */}
+        {/* 超支贴士：demo 动线模板文案维持现状；真实动线接 budget-advice 任务
+            （mock 模板 JSON / live 流式逐字 / 本地模板兜底，状态诚实标注） */}
         <AnimatePresence>
           {adviceVisible ? (
             <motion.section
@@ -993,38 +1493,101 @@ function BudgetContent() {
                     超支贴士
                   </h2>
                   <span className="rounded-full border border-(--color-border) px-2 py-0.5 font-(--font-mono) text-[11px] text-(--color-ink-muted)">
-                    budget-advice 任务接入中
+                    {!lastRun
+                      ? "budget-advice 任务接入中"
+                      : !advice || advice.status !== "done"
+                        ? `budget-advice · ${advice && advice.source === "live" ? "live · " : ""}生成中`
+                        : `budget-advice · ${advice.source === "live" ? "live" : "模板"}`}
                   </span>
                 </div>
-                <p className="mt-3 text-sm leading-relaxed text-(--color-ink)">
-                  餐饮类已用 {diningPct}%，主要增量来自外卖。建议将外卖预算拆出单独上限，或启用周五自带餐计划
-                </p>
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditTarget("餐饮")}
-                    className="inline-flex h-10 items-center gap-1.5 rounded-full bg-(--color-primary-soft) px-4 text-sm font-medium text-(--color-brand-600) transition-colors hover:bg-(--color-primary-soft)/70 dark:text-(--color-brand-600)"
-                  >
-                    调整预算
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => showToast("明细查看即将在账本页上线")}
-                    className="inline-flex h-10 items-center rounded-full border border-(--color-border) px-4 text-sm font-medium text-(--color-ink-secondary) transition-colors hover:bg-(--color-surface-2)"
-                  >
-                    查看明细
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdviceDismissed(true)}
-                    className="inline-flex h-10 items-center rounded-full px-3 text-sm font-medium text-(--color-ink-muted) transition-colors hover:text-(--color-ink-secondary)"
-                  >
-                    忽略
-                  </button>
-                </div>
-                <p className="mt-3 text-[11px] text-(--color-ink-muted)">
-                  当前为模板文案；budget-advice 任务接入后由预算建议模型按你的数据生成建议。
-                </p>
+                {lastRun ? (
+                  advice ? (
+                    <>
+                      <p className="mt-3 text-sm font-medium text-(--color-ink)">
+                        {advice.status === "loading" ? "正在生成 AI 建议…" : advice.headline}
+                      </p>
+                      <p className="mt-2 text-sm leading-relaxed text-(--color-ink)">
+                        {advice.advice}
+                        {advice.status === "streaming" ? "▍" : null}
+                      </p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        {advice.actions.includes("adjust_budget") ? (
+                          <button
+                            type="button"
+                            onClick={() => setEditTarget(adviceTargetCategory)}
+                            className="inline-flex h-10 items-center gap-1.5 rounded-full bg-(--color-primary-soft) px-4 text-sm font-medium text-(--color-brand-600) transition-colors hover:bg-(--color-primary-soft)/70 dark:text-(--color-brand-600)"
+                          >
+                            调整预算
+                          </button>
+                        ) : null}
+                        {advice.actions.includes("view_detail") ? (
+                          <button
+                            type="button"
+                            onClick={() => showToast("明细查看即将在账本页上线")}
+                            className="inline-flex h-10 items-center rounded-full border border-(--color-border) px-4 text-sm font-medium text-(--color-ink-secondary) transition-colors hover:bg-(--color-surface-2)"
+                          >
+                            查看明细
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => setAdviceDismissed(true)}
+                          className="inline-flex h-10 items-center rounded-full px-3 text-sm font-medium text-(--color-ink-muted) transition-colors hover:text-(--color-ink-secondary)"
+                        >
+                          忽略
+                        </button>
+                      </div>
+                      <p className="mt-3 text-[11px] text-(--color-ink-muted)">
+                        建议由 budget-advice 任务按你的预算数据生成；服务不可用时自动回退内置模板，数字只来自你的账单聚合。
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-3 text-sm leading-relaxed text-(--color-ink)">正在生成 AI 建议…</p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setAdviceDismissed(true)}
+                          className="inline-flex h-10 items-center rounded-full px-3 text-sm font-medium text-(--color-ink-muted) transition-colors hover:text-(--color-ink-secondary)"
+                        >
+                          忽略
+                        </button>
+                      </div>
+                    </>
+                  )
+                ) : (
+                  <>
+                    <p className="mt-3 text-sm leading-relaxed text-(--color-ink)">
+                      餐饮类已用 {diningPct}%，主要增量来自外卖。建议将外卖预算拆出单独上限，或启用周五自带餐计划
+                    </p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setEditTarget("餐饮")}
+                        className="inline-flex h-10 items-center gap-1.5 rounded-full bg-(--color-primary-soft) px-4 text-sm font-medium text-(--color-brand-600) transition-colors hover:bg-(--color-primary-soft)/70 dark:text-(--color-brand-600)"
+                      >
+                        调整预算
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => showToast("明细查看即将在账本页上线")}
+                        className="inline-flex h-10 items-center rounded-full border border-(--color-border) px-4 text-sm font-medium text-(--color-ink-secondary) transition-colors hover:bg-(--color-surface-2)"
+                      >
+                        查看明细
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdviceDismissed(true)}
+                        className="inline-flex h-10 items-center rounded-full px-3 text-sm font-medium text-(--color-ink-muted) transition-colors hover:text-(--color-ink-secondary)"
+                      >
+                        忽略
+                      </button>
+                    </div>
+                    <p className="mt-3 text-[11px] text-(--color-ink-muted)">
+                      当前为模板文案；budget-advice 任务接入后由预算建议模型按你的数据生成建议。
+                    </p>
+                  </>
+                )}
               </div>
             </motion.section>
           ) : null}

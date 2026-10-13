@@ -109,6 +109,8 @@ export interface DemoInsight {
   headline: string;
   narrative: string;
   chartKind: "timeseries" | "donut" | "bar";
+  /** 展示单位（真实管线卡按度量字段推断）：元 = 金额按分换算展示，笔/行 = 聚合计数原样展示；缺省按元 */
+  chartUnit?: "元" | "笔" | "行";
   chartData: number[];
   chartLabels: string[];
   citations: string[];

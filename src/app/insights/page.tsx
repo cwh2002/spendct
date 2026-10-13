@@ -26,6 +26,7 @@ import {
   applyInsightFilters,
   DEFAULT_INSIGHT_FILTERS,
   type InsightFilters,
+  type InsightMeta,
 } from "@/components/insights/filter-bar";
 import {
   FollowUpPanel,
@@ -34,8 +35,13 @@ import {
 } from "@/components/insights/follow-up-panel";
 import { InsightCard, type InsightCardHandle } from "@/components/insights/insight-card";
 import { LedgerView } from "@/components/insights/ledger-view";
+import { DEMO_INSIGHTS, DEMO_STAGES, type DemoInsight } from "@/lib/demo-data";
+import { getDuckDB } from "@/lib/duckdb/service";
 import { readFavorites, toggleFavoriteLocal } from "@/lib/insights/favorites";
-import { DEMO_INSIGHTS, DEMO_STAGES } from "@/lib/demo-data";
+import { STAGE_DISPLAY_NAMES } from "@/lib/pipeline/stage";
+import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
+import type { InsightCard as RunInsightCard } from "@/lib/schema/insight-card";
+import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
 type ViewMode = "cards" | "gallery" | "ledger";
 
@@ -111,6 +117,187 @@ function InsightsSkeleton() {
   );
 }
 
+// ─────────────────── 真实运行卡 → 页面卡模型（真实优先 + demo 兜底） ───────────────────
+
+/** 图表数据的异步回填单元：labels 与 values 一一对应 */
+interface ChartResultEntry {
+  labels: string[];
+  values: number[];
+}
+
+/**
+ * 引擎置信度（0-1 数值）→ 卡面四档（● 点数，与演示卡同口径）。
+ * 换算边界：≥0.9 → 4 档、≥0.8 → 3 档、≥0.7 → 2 档、其余 → 1 档。
+ * 发布线为 0.6（07 §20 闸门），已发布卡最低 1 档，不会出现 0 档。
+ */
+function mapConfidence(confidence: number): DemoInsight["confidence"] {
+  if (confidence >= 0.9) return 4;
+  if (confidence >= 0.8) return 3;
+  if (confidence >= 0.7) return 2;
+  return 1;
+}
+
+/**
+ * 引擎图表七类 → 卡组件三类（组件只支持三态，07 组件契约）：
+ * line→timeseries（折线）、pie→donut（环形）；
+ * 其余 bar/histogram/table/scatter/heatmap 统一降为 bar（柱状）。
+ */
+function mapChartKind(
+  chartType: RunInsightCard["evidence"]["chart"]["chartType"],
+): DemoInsight["chartKind"] {
+  if (chartType === "line") return "timeseries";
+  if (chartType === "pie") return "donut";
+  return "bar";
+}
+
+/** 度量字段 → 展示单位：金额列（*_cents）为元、行数（*_rows）为行、其余聚合为笔数 */
+function mapChartUnit(measureField: string | undefined): DemoInsight["chartUnit"] {
+  if (!measureField) return undefined;
+  if (measureField.includes("cents")) return "元";
+  if (measureField.includes("rows")) return "行";
+  return "笔";
+}
+
+/**
+ * 引用 → 人类可读文案。ref 契约格式（07 §4 CitationSchema）：
+ * sql:table|view:<id> / rule:<id> / rag:<caseId> / tool:<toolName> / personal:<anomalyId>。
+ */
+function formatCitation(source: RunInsightCard["sources"][number]): string {
+  const { kind, ref } = source;
+  const rest = ref.startsWith(`${kind}:`) ? ref.slice(kind.length + 1) : ref;
+  switch (kind) {
+    case "sql": {
+      // sql 引用带关系类型段：table → 「数据表」、view → 「视图」，其余形态原样兜底
+      if (rest.startsWith("table:")) return `数据表 ${rest.slice(6)}`;
+      if (rest.startsWith("view:")) return `视图 ${rest.slice(5)}`;
+      return `数据表 ${rest}`;
+    }
+    case "rule":
+      return `规则 ${rest}`;
+    case "rag":
+      return `案例 ${rest}`;
+    case "tool":
+      return `工具 ${rest}`;
+    case "personal":
+      return `个人锚点 ${rest}`;
+    default:
+      return ref;
+  }
+}
+
+/** 行内取值兜底为数值：兼容 DuckDB BIGINT 返回的 bigint 与 number/string 形态 */
+function toFiniteNumber(value: unknown): number {
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/** 分组维度值 → 展示标签：month 维度截为 YYYY-MM，其余日期形态保留完整日期 */
+function formatDimValue(value: unknown, dimField: string): string {
+  if (value instanceof Date) {
+    const iso = value.toISOString().slice(0, 10);
+    return dimField === "month" ? iso.slice(0, 7) : iso;
+  }
+  if (typeof value === "bigint") return String(Number(value));
+  return String(value ?? "");
+}
+
+/**
+ * 统计值兜底解析：stats.value 是格式化展示串（可能带 ¥、千分位、%、pp 后缀），
+ * 只保留数字、小数点与负号后转数值；解析失败记 0（仅用于退化图的渲染）。
+ */
+function parseStatNumber(raw: string): number {
+  const parsed = Number(raw.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * 按卡内图表规格拼确定性聚合 SQL（07 §6 硬约束下的合法路径）。
+ * 表名/维度/度量全部来自引擎产出的卡（代码常量或经 schema 校验的草稿），
+ * 无任何用户输入；执行仍走 runWhitelistedAggregate 预检作双保险。
+ * 口径说明：白名单文法不支持「ORDER BY 2」位置序号，聚合列排序须写完整
+ * SUM(<度量>) 表达式（语义等价）；方向取 chart.sortBy，缺省降序取头部；
+ * 行数上限取 chart.topN，缺省 8。
+ */
+function buildCardChartSql(chart: RunInsightCard["evidence"]["chart"]): string {
+  // schema 保证至少 1 个度量（ChartSpecSchema.min(1)），此处为防御兜底
+  const measure = chart.measureFields[0] ?? "amount_cents";
+  const direction = chart.sortBy === "asc" ? "ASC" : "DESC";
+  const limit = chart.topN ?? 8;
+  return (
+    `SELECT ${chart.dimField}, SUM(${measure}) ` +
+    `FROM ${chart.tableId} ` +
+    `GROUP BY ${chart.dimField} ` +
+    `ORDER BY SUM(${measure}) ${direction} ` +
+    `LIMIT ${limit}`
+  );
+}
+
+/**
+ * 聚合行 → 图表数据。白名单文法子集不支持 AS 别名，聚合列名由 DuckDB
+ * 自动生成，故按 SELECT 位置取值（第 0 列分组维度、第 1 列聚合值），
+ * 与引擎 EvidenceResult 的按位取值口径一致（见 stages/spec.ts）。
+ */
+function rowsToChartData(rows: unknown[], dimField: string): ChartResultEntry {
+  const records = rows as Record<string, unknown>[];
+  return {
+    labels: records.map((row) => formatDimValue(Object.values(row)[0], dimField)),
+    values: records.map((row) => toFiniteNumber(Object.values(row)[1])),
+  };
+}
+
+/**
+ * 查询失败/白名单拒绝时的退化数据：用 evidence.stats 的 label/value 兜底，
+ * 图表仍可渲染（降级口径：stats 是引擎产出该卡时已算好的摘要统计）。
+ */
+function statsFallbackChartData(card: RunInsightCard): ChartResultEntry {
+  return {
+    labels: card.evidence.stats.map((stat) => stat.label),
+    values: card.evidence.stats.map((stat) => parseStatNumber(stat.value)),
+  };
+}
+
+/**
+ * 真实卡的类别推断：在 headline + narrative 里找最先命中的 12 类目词，
+ * 全部未命中归「其他」。类别筛选因此对真实卡生效（与演示卡元数据表同口径）。
+ */
+function inferCardCategory(card: DemoInsight): string {
+  const text = `${card.headline}${card.narrative}`;
+  const keyword = [
+    "餐饮",
+    "交通",
+    "购物",
+    "娱乐",
+    "居住",
+    "通讯",
+    "医疗",
+    "教育",
+    "人情",
+    "金融",
+    "订阅",
+  ].find((item) => text.includes(item));
+  return keyword ?? "其他";
+}
+
+/** 运行时 InsightCard → 页面卡模型（对齐 DEMO_INSIGHTS 字段语义） */
+function mapRunCard(card: RunInsightCard): DemoInsight {
+  return {
+    id: card.cardId,
+    stageId: card.stage,
+    stageName: STAGE_DISPLAY_NAMES[card.stage].name,
+    confidence: mapConfidence(card.confidence),
+    headline: card.headline,
+    narrative: card.narrative,
+    chartKind: mapChartKind(card.evidence.chart.chartType),
+    chartUnit: mapChartUnit(card.evidence.chart.measureFields[0]),
+    // 图表数据异步回填：查询中保持空数组，成功/退化后由 chartResults 覆盖
+    chartData: [],
+    chartLabels: [],
+    citations: card.sources.map(formatCitation),
+  };
+}
+
 function InsightsView() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -141,11 +328,87 @@ function InsightsView() {
   const cardRefs = useRef(new Map<string, InsightCardHandle>());
   const panelRef = useRef<FollowUpPanelHandle>(null);
 
-  // 过滤 + withheld 卡置底（05 §1.5：低置信度卡不抢高位视线），排序稳定不破坏流式顺序
+  // 真实优先 + demo 兜底：lastRun 为空（本会话尚未跑完体检）时维持演示数据路径
+  const lastRun = usePipeline((s) => s.lastRun);
+
+  // 真实卡的图表数据回填表：以 lastRun 对象身份打标，运行切换后旧批次整体失效
+  // （不做 effect 内同步清空，避免级联渲染；读取侧按 run 身份比对即可）
+  const [chartResults, setChartResults] = useState<{
+    run: LastRunSummary | null;
+    entries: Record<string, ChartResultEntry>;
+  }>({ run: null, entries: {} });
+
+  // 真实卡图表数据加载：取 DuckDB 单例连接后逐卡执行白名单聚合。
+  // 查询失败或白名单拒绝时仅该卡退化到 stats 兜底，不阻断其他卡；
+  // 只在 lastRun 存在时执行，demo 路径不触碰 DuckDB（演示卡自带静态图表数据）。
+  useEffect(() => {
+    if (!lastRun) return;
+    let cancelled = false;
+
+    // 异步回填（await 之后的 setState 不受 effect 内同步 setState 规则约束）；
+    // 若期间运行已切换（对象身份变化），整批丢弃从新运行重新累积
+    const applyResult = (cardId: string, entry: ChartResultEntry) => {
+      if (cancelled) return;
+      setChartResults((prev) => ({
+        run: lastRun,
+        entries: prev.run === lastRun ? { ...prev.entries, [cardId]: entry } : { [cardId]: entry },
+      }));
+    };
+
+    void (async () => {
+      let conn: Awaited<ReturnType<typeof getDuckDB>>;
+      try {
+        conn = await getDuckDB();
+      } catch {
+        // 单例初始化失败（Worker 被拦截/资源耗尽）：整批直接走 stats 退化
+        for (const card of lastRun.cards) {
+          applyResult(card.cardId, statsFallbackChartData(card));
+        }
+        return;
+      }
+      for (const card of lastRun.cards) {
+        if (cancelled) return;
+        try {
+          const result = await runWhitelistedAggregate(conn, buildCardChartSql(card.evidence.chart));
+          applyResult(card.cardId, rowsToChartData(result.rows, card.evidence.chart.dimField));
+        } catch {
+          // 白名单拒绝/查询超时/数据集缺失：退化到 stats 兜底，图表仍可渲染
+          applyResult(card.cardId, statsFallbackChartData(card));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [lastRun]);
+
+  // 卡流数据源：lastRun 存在时映射真实卡（图表数据由 chartResults 逐卡回填，
+  // 回填前为空数组占位），否则维持演示卡原路径（本路径一行不改）
+  const cards = useMemo(() => {
+    if (!lastRun) return DEMO_INSIGHTS;
+    const entries = chartResults.run === lastRun ? chartResults.entries : {};
+    return lastRun.cards.map((card) => {
+      const mapped = mapRunCard(card);
+      const filled = entries[card.cardId];
+      return filled ? { ...mapped, chartData: filled.values, chartLabels: filled.labels } : mapped;
+    });
+  }, [lastRun, chartResults]);
+
+  // 过滤 + withheld 卡置底（05 §1.5：低置信度卡不抢高位视线），排序稳定不破坏流式顺序。
+  // 真实卡的筛选元数据经第三参传入：类别由 headline/narrative 关键词推断，
+  // 发布时间无语义约定为 0 天前（本次体检刚产出），日期筛选全放行
   const visible = useMemo(() => {
-    const filtered = applyInsightFilters(DEMO_INSIGHTS, filters);
+    const metaLookup = lastRun
+      ? (id: string): InsightMeta | undefined => {
+          const card = cards.find((item) => item.id === id);
+          if (!card) return undefined;
+          return { category: inferCardCategory(card), publishedDaysAgo: 0 };
+        }
+      : undefined;
+    const filtered = applyInsightFilters(cards, filters, metaLookup);
     return [...filtered].sort((a, b) => Number(Boolean(a.withheld)) - Number(Boolean(b.withheld)));
-  }, [filters]);
+  }, [cards, filters, lastRun]);
 
   // 焦点索引为原始值，渲染期钳到当前可见列表长度内（不在 effect 里同步，避免级联渲染）
   const clampedFocus =
@@ -233,9 +496,10 @@ function InsightsView() {
     };
   }, []);
 
+  // 收藏夹与卡流同源（真实卡 id=cardId 与演示卡 id 天然兼容同一套收藏键）
   const favoriteInsights = useMemo(
-    () => DEMO_INSIGHTS.filter((insight) => favorites.includes(insight.id)),
-    [favorites],
+    () => cards.filter((insight) => favorites.includes(insight.id)),
+    [cards, favorites],
   );
 
   return (
