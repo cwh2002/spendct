@@ -23,6 +23,7 @@ test-results/
 .vercel
 .turbo
 
-# PDF 汇编素材（截图等，不入库）
+# PDF 汇编素材与演示视频中间产物（截图、分段、旁白，不入库）
 scripts/.shots/
+scripts/.video/
 docs/pdf-build/spendct-guide.embedded.html
