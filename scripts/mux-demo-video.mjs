@@ -66,7 +66,9 @@ const probeOut = execFileSync(
 );
 const outTimes = [...probeOut.matchAll(/out_time_ms=(\d+)/g)];
 if (outTimes.length === 0) throw new Error("无法读取拼接后视频时长");
-const totalMs = Math.floor(Number(outTimes[outTimes.length - 1][1]) / 1000);
+// ffmpeg -progress 的 out_time_ms 字段名带 ms、实际单位是微秒（已知行为），
+// 除以 1e6 才是秒；此前按毫秒换算导致 apad 多铺出约一倍静音
+const totalSec = Number(outTimes[outTimes.length - 1][1]) / 1_000_000;
 
 const filterParts = [];
 const inputs = ["-i", `${VIDEO_DIR}video-only.mp4`];
@@ -78,10 +80,10 @@ for (let i = 0; i < placements.length; i++) {
 const mixIns = placements.map((_, i) => `[a${i}]`).join("");
 const filter = [
   ...filterParts,
-  `${mixIns}amix=inputs=${placements.length}:normalize=0:duration=longest,apad=pad_dur=${Math.ceil(totalMs / 1000) + 2}[aout]`,
+  `${mixIns}amix=inputs=${placements.length}:normalize=0:duration=longest,apad=whole_dur=${Math.ceil(totalSec * 10) / 10}[aout]`,
 ].join(";");
 
-console.log(`铺旁白 ${placements.length} 条（全片 ${(totalMs / 1000).toFixed(1)}s）并合流…`);
+console.log(`铺旁白 ${placements.length} 条（全片 ${totalSec.toFixed(1)}s）并合流…`);
 ffmpeg([
   ...inputs,
   "-filter_complex", filter,
@@ -95,11 +97,13 @@ ffmpeg([
 // ── 4) 校验 ──────────────────────────────────────────────────────
 const finalProbe = execFileSync(
   FFMPEG,
-  ["-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1", "-i", OUT, "-f", "null", "-"],
+  ["-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1", "-i", OUT, "-map", "0", "-f", "null", "-"],
   { encoding: "utf8" },
 );
 const finalTimes = [...finalProbe.matchAll(/out_time_ms=(\d+)/g)];
-const finalSec = Math.floor(Number(finalTimes[finalTimes.length - 1][1]) / 1000);
+// 与 totalSec 同源：-map 0 让 out_time 覆盖音视频两轨的末位时间，
+// 若音频轨被误铺长，这里读出的时长会同步放大，直接暴露问题
+const finalSec = Number(finalTimes[finalTimes.length - 1][1]) / 1_000_000;
 const sizeMb = (readFileSync(OUT).length / 1024 / 1024).toFixed(1);
 console.log(`\n✓ 成片：${OUT}`);
 console.log(`  时长 ${Math.floor(finalSec / 60)}'${String(Math.round(finalSec % 60)).padStart(2, "0")}"，体积 ${sizeMb} MB`);
