@@ -15,15 +15,33 @@ import {
   serializeEvent,
 } from "@/lib/protocol/events";
 import type { SpendctEvent } from "@/lib/protocol/events";
+import type { InsightCard } from "@/lib/schema/insight-card";
 
 const RUN_ID = "run_20261013_demo";
 const BASE_TS = 1_726_000_000_000;
 
-/** 占位卡对象：card:complete 的 card 字段在 insight-card.ts 落地前为宽松 Record */
-const PLACEHOLDER_CARD = {
+/** card:complete 的卡载荷：合法运行时卡（07 §4 insight-card@v1） */
+const FIXTURE_CARD: InsightCard = {
   cardId: "card_profile_1_1",
-  headline: "餐饮类目占比最高",
+  stage: "profile",
+  status: "draft",
+  headline: "餐饮类目占比最高，连续三个月领跑",
+  narrative: "近 90 天餐饮支出占总支出的 36%，高于历史均值 8 个百分点。",
   confidence: 0.82,
+  significance: "占比偏离历史均值 1.5 倍标准差",
+  evidence: {
+    chart: {
+      tableId: "profile_category_stats",
+      chartType: "bar",
+      title: "近 90 天分类支出排行",
+      dimField: "category",
+      measureFields: ["expense_cents"],
+    },
+    stats: [{ label: "餐饮", value: "128530", unit: "分" }],
+  },
+  sources: [{ kind: "sql", ref: "sql:table:profile_category_stats" }],
+  actions: ["confirm", "dispute", "drill"],
+  disclaimer: "本结论基于账单聚合数据，金额已脱敏，仅供参考",
 };
 
 /** 07 §2 清单逐条对应的合法事件样本（每事件名一份） */
@@ -91,7 +109,7 @@ function contractEventFixtures(): SpendctEvent[] {
       cardId: "card_profile_1_1",
       delta: { narrative: "餐饮占" },
     },
-    { t: "card:complete", ts: ts(10), runId: RUN_ID, stage: "profile", card: PLACEHOLDER_CARD },
+    { t: "card:complete", ts: ts(10), runId: RUN_ID, stage: "profile", card: FIXTURE_CARD },
     {
       t: "card:withheld",
       ts: ts(11),

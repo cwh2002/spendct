@@ -62,9 +62,8 @@ export const MODEL_IDS = ["deepseek", "qwen", "glm4v", "local-tfjs"] as const;
 export type ModelId = (typeof MODEL_IDS)[number];
 
 // 卡片类型（card:complete 的 card 字段）：全仓唯一来源是 src/lib/schema/insight-card.ts
-// （07 契约 §4，并行任务实现）。该文件落地前先以宽松 Record 占位，
-// 落地后改为：import type { InsightCard } from "@/lib/schema/insight-card"。
-type InsightCard = Record<string, unknown>;
+// （07 契约 §4）。协议层直接复用运行时卡 Schema，不复制校验逻辑。
+import { InsightCardSchema } from "@/lib/schema/insight-card";
 
 // —— 公共字段 ——
 const tsField = z.number().int().nonnegative();
@@ -176,7 +175,7 @@ export const CardCompleteEventSchema = z.object({
   ts: tsField,
   runId: runIdField,
   stage: stageField,
-  card: z.record(z.string(), z.unknown()) as z.ZodType<InsightCard>,
+  card: InsightCardSchema,
 });
 export type CardCompleteEvent = z.infer<typeof CardCompleteEventSchema>;
 

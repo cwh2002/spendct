@@ -60,7 +60,8 @@ export const TRANSACTION_COLUMNS = [
 interface TransactionBase {
   /** 交易唯一键：解析期为 rawId = F{sha256-8}#L{行号}，清洗后为 sha256 前 16 位 hex */
   tx_id: string;
-  account_id: string;
+  /** 归属账户；游客导入的账本为 null（DDL VARCHAR 本就可空） */
+  account_id: string | null;
   /** 原始交易时间，ISO 字符串（DuckDB TIMESTAMP 可直接解析） */
   ts: string;
   /** YYYY-MM-DD */
