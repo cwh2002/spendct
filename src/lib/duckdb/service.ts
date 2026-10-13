@@ -1,7 +1,7 @@
 /**
  * DuckDB-WASM 浏览器单例服务（T2×T1 集成，07 契约 §8 加载方式）。
  *
- * 三个硬约束：
+ * 四个硬约束：
  * 1. 只允许动态 import：@duckdb/duckdb-wasm 包体大且强依赖 Worker/WebAssembly，
  *    静态 import 会让 SSR 与首包直接失败。调用方（上传页）用 next/dynamic 的
  *    ssr:false 包裹组件，或在用户交互事件里触发 getDuckDB()；本模块禁止被
@@ -10,6 +10,12 @@
  *    dbPromise 缓存的是 Promise 本身，并发调用只会初始化一次；
  * 3. 与 spike 同源同路径：/duckdb/ 自托管产物 + mvp 包 + pthreadWorker:null
  *    （无 COOP/COEP 头时的单线程模式），基准数字见 docs/benchmarks.md。
+ * 4. 扩展同样自托管：transactions 的 _meta 列为 JSON 类型，依赖 json 扩展
+ *    （json 又会按需拉起 icu 依赖）。wasm 的自动安装默认向
+ *    extensions.duckdb.org 发起第三方请求，破坏「零第三方请求」承诺且依赖
+ *    外网可用性。initDuckDB 把 custom_extension_repository 指向
+ *    /duckdb/extensions（同源静态目录，目录结构见该目录下 README），
+ *    之后 LOAD 与按需依赖加载全部命中本站文件，扩展加载不出站点。
  */
 import type { AsyncDuckDB, AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
@@ -27,7 +33,7 @@ let dbInstance: AsyncDuckDB | null = null;
 async function initDuckDB(): Promise<AsyncDuckDBConnection> {
   const duckdb = await import("@duckdb/duckdb-wasm");
   // 只声明 mvp：selectBundle 返回的 bundle 即
-  // { mainModule, mainWorker, pthreadWorker: null }，与 public/spike/duckdb-wasm 一致
+  // { mainModule, mainWorker, pthreadWorker: null }，产物路径与 /duckdb/ 自托管一致
   const bundle = await duckdb.selectBundle({
     mvp: {
       mainModule: "/duckdb/duckdb-mvp.wasm",
@@ -42,6 +48,7 @@ async function initDuckDB(): Promise<AsyncDuckDBConnection> {
   try {
     await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
     const conn = await db.connect();
+    await loadJsonExtension(conn);
     dbInstance = db;
     return conn;
   } catch (err) {
@@ -49,6 +56,26 @@ async function initDuckDB(): Promise<AsyncDuckDBConnection> {
     await db.terminate().catch(() => {});
     throw err;
   }
+}
+
+/**
+ * 自托管加载 json 扩展及其依赖 icu（见模块头约束 4）。
+ *
+ * wasm 引擎的自动安装按「仓库地址 + 引擎版本 + 平台 + 文件名」拼下载
+ * URL，这里把仓库指到本站的 /duckdb/extensions 静态目录：LOAD json 与
+ * icu 的按需依赖加载全部变成同源请求，不发任何第三方请求，外网断开时
+ * 同样可用。目录版本号须与打包引擎版本一致（升级 duckdb-wasm 时检查
+ * public/duckdb/extensions 下的 README）。
+ */
+async function loadJsonExtension(conn: AsyncDuckDBConnection): Promise<void> {
+  // location.origin 覆盖本地开发与线上部署两种同源场景（本模块只经动态
+  // import 在浏览器里执行，访问 location 安全）
+  await conn.query(
+    `SET custom_extension_repository='${location.origin}/duckdb/extensions'`,
+  );
+
+  // json 显式加载；icu 作为其依赖会在使用时按需拉起，同样命中本站文件
+  await conn.query("LOAD json");
 }
 
 /** 获取单例连接。初始化失败时 dbPromise 复位，允许下次调用重试（网络抖动场景） */
