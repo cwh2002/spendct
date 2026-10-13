@@ -1,0 +1,24 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# next.js
+.next/
+out/
+build/
+
+# env —— 密钥只走环境变量，本地 .env 永不入库（01 §4）
+.env
+.env.*
+!.env.example
+
+# testing
+coverage/
+playwright-report/
+test-results/
+
+# misc
+.DS_Store
+*.log
+.vercel
+.turbo

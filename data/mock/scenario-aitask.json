@@ -1,0 +1,88 @@
+{
+  "_meta": {
+    "file": "data/mock/scenario-aitask.json",
+    "spec": "01 §7-6 扩展功能 mock（08 方案原则一：一切可被 sample-data 一键演示）；schema 单一来源 07 §12（QuickEntrySchema / BudgetAdviceSchema / ForecastNarrativeSchema / TipPersonalizeSchema）",
+    "purpose": "DEMO_MODE=mock 时 /api/ai/task（07 §13 A6）的确定性回放剧本；S5.5 录制运行模式 = DEMO_MODE=mock + 本剧本 + sample-data 预跑预热（06 §6.2 S5.5）",
+    "principle": "mock 与 live 走完全相同的 zod 校验路径，只有数据源不同（01 §7-6）；quick-entry 不走手动表单兜底分支，保证 S5.5「一句话 → zod 确认卡」镜头成立",
+    "playbackRules": {
+      "match": "quick-entry 按 demoLines[].text 与请求 payload.text 逐条匹配；budget-advice / forecast / tip-personalize 忽略 payload 固定回放（确定性）",
+      "quick-entry 占位符": "result.entry.ts 中的 {today} 替换为请求 payload.today、{yesterday} 替换为其前一日（ISO 8601 datetime 字符串，替换在 zod 校验之前完成）",
+      "unmatched": "quick-entry 未命中任何话术时返回 { parseable: false, reason: \"演示剧本未命中，请使用剧本内话术\" }（DegradeToast 说明）",
+      "annual-story": "不在本文件——annual-story 复用 data/mock/scenario-checkup.json 的 annual 阶段剧本（01 §7-6）",
+      "sync": "tip-personalize 的 caseId 必须真实存在于 data/cases/manifest.json（04 §2 id 格式 /^C\\d{3}$/）；T52a 案例库入库后、E2/S5.5 录制前按清单核对，防止「引用白名单校验」在 mock 下异常"
+    }
+  },
+  "quick-entry": {
+    "demoLines": [
+      {
+        "text": "中午食堂花了 15",
+        "result": {
+          "parseable": true,
+          "entry": {
+            "amountCents": 1500,
+            "direction": "expense",
+            "category": "餐饮",
+            "merchant": "食堂",
+            "ts": "{today}"
+          }
+        }
+      },
+      {
+        "text": "收到红包 88",
+        "result": {
+          "parseable": true,
+          "entry": {
+            "amountCents": 8800,
+            "direction": "income",
+            "category": "人情",
+            "ts": "{today}"
+          }
+        }
+      },
+      {
+        "text": "昨天地铁 4 元",
+        "result": {
+          "parseable": true,
+          "entry": {
+            "amountCents": 400,
+            "direction": "expense",
+            "category": "交通",
+            "merchant": "地铁",
+            "ts": "{yesterday}"
+          }
+        }
+      }
+    ],
+    "negative": {
+      "text": "帮我看看这个月花得怎么样",
+      "result": {
+        "parseable": false,
+        "reason": "非记账文本（问句），建议改用账单体检或锚点追问"
+      }
+    }
+  },
+  "budget-advice": {
+    "result": {
+      "severity": "over",
+      "headline": "餐饮预算已用超 100%",
+      "advice": "本月餐饮已用 ¥832，超出预算 ¥32；建议将未来 5 天日均控制在 ¥20 以内，或调整本月预算",
+      "actions": ["adjust_budget", "view_detail"]
+    }
+  },
+  "forecast": {
+    "result": {
+      "headline": "下月餐饮预计小幅下降",
+      "narrative": "近三月餐饮支出逐月下降（环比均值约 -5%），按朴素季节外推，下月餐饮预计环比 -8% 左右；仅为方向性参考，实际以当月消费为准",
+      "disclaimer": "朴素季节外推，仅作参考，不构成建议"
+    }
+  },
+  "tip-personalize": {
+    "result": {
+      "tips": [
+        { "caseId": "C001", "why": "你订阅支出占比偏高，学生认证优惠案例最适配" },
+        { "caseId": "C002", "why": "你深夜外卖频次高，食堂平价替代正合适" },
+        { "caseId": "C003", "why": "你近三月冲动消费 3 笔，先锁预算再下单" }
+      ]
+    }
+  }
+}

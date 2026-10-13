@@ -1,0 +1,548 @@
+[
+  {
+    "source": "critic:rubric",
+    "doc": "03-agent-pipeline.md",
+    "severity": "high",
+    "issue": "核心账单数据表有四种互不一致的口径：02 §5.2 是 transactions 表（amount_cents BIGINT、tx_id、date_iso…），03 §0 是 tx 表（amount DECIMAL(12,2)、row_id、tx_time、merchant_display…），06 §2.5/§7.4 是 cleaned_bills 表（trade_no、time_month），04 §8.4 是 bills 表（trade_time、amount DECIMAL(10,2)）。六阶段模板 SQL、白名单、脱敏器、UI 各自引用不同表名与列名，PDF 各章引用的 SQL 片段会对不上，评委对照代码立即可见。",
+    "fixHint": "在 01 文档冻结唯一 DDL（建议 02 §5.2 的 transactions 为唯一来源），03/04/05/06 全部改为引用该表；W1 建仓当天做一次全局 grep 替换并列入 G1 验收项（'transactions/tx/cleaned_bills/bills 只允许出现一个'）。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "01-architecture.md",
+    "severity": "high",
+    "issue": "六阶段 StageId 枚举有四套：01 §6.1 为 clean/profile/anomaly/subscription/mom/annual；03 §1.1 为 clean/profile/anomaly/subscription/attribution/annual；05 §2.3 为 mom 版；06 §2.4 为 cleanse/profile/anomaly/subscription/attribution/report（且称'反思自检不计入六阶段'的解释只在 06 出现）。事件协议、卡 schema、SQL 视图引用 stage id 时各写各的，实现期必然踩错，PDF 中六阶段流程图与代码枚举不一致会被直接指出。",
+    "fixHint": "冻结一套（建议 03 的 clean/profile/anomaly/subscription/attribution/annual），在 01 §0 增加'术语唯一来源'声明，其余文档全局替换；G1 验收增加'grep 全仓 StageId 枚举仅一套'。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "03-agent-pipeline.md",
+    "severity": "high",
+    "issue": "流式事件协议有四套互不兼容的定义：01 §6.1 spendct协议@1（stage:thinking/card:delta/card:complete/abort…）、03 §9（pipeline.start/stage.sql.start/llm.repair/model.degraded/reflect.verdict…）、05 §2.3（stage-progress/sql-running/llm-streaming/rag-hit/checkpoint…）、06 §2.4（thought/artifact/pipeline:done…）。每份都自称'协议唯一类型源'，三名成员按各自文档实现 SSE 序列化/解析，W2 联调必崩；且 05 的 ThinkingPanel 依赖的 llm-fallback/rag-hit 事件在 01 协议中不存在。",
+    "fixHint": "以 01 §6.1 协议为唯一来源扩充为完整事件集（补 sql/rag/tool/reflect/degrade 事件），写成 events.ts 单测夹具（序列化→解析 round-trip + 乱序/断流断言），03/05/06 删除各自定义改为 import 引用。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "02-data-privacy.md",
+    "severity": "high",
+    "issue": "洞察卡 JSON Schema 有四个不同版本：01 §6.5（headline/narrative/significance/disclaimer，confidence 0-1）、02 §2.6（cardId/title/conclusion/selfCheck，stage 枚举还多出 anchor_qa/attribution）、03 §3（CardDraft：confidence 是 high|medium|low 枚举、confidenceReason、EvidenceChartRef）、05 §2.3（InsightCardData：noEvidence/refusalReason/significance 又是枚举）。'三层 zod 校验闭环'是 8% 大模型集成分的核心证据，PDF 只能摘录一份 schema，却必然与其余文档及代码不符。",
+    "fixHint": "冻结单一 schema 文件（建议 03 的 CardDraft + 运行时字段组装模式，confidence 统一为 0-1 数值），02/01/05 改为引用；在 01 目录树标注 lib/schema 为唯一来源，G2 验收增加'三份 schema 摘录与代码一致'核对项。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "01-architecture.md",
+    "severity": "high",
+    "issue": "微信/支付宝 CSV 编码的'实测结论'两文档完全相反：01 §1.6 称'微信账单导出实测为 GBK，支付宝为 UTF-8'；02 §3.1-§3.3 称微信为 UTF-8（部分带 BOM）、支付宝为 GB18030（Windows 导出）。两处都声称是实测冻结依据，PDF/答辩若引用任一说法，评委拿真实账单一试即穿。",
+    "fixHint": "W1 第 1-2 天用团队真实导出账单实测一次，把结论写入 tests/fixtures/csv/README.md 作为唯一事实，01 与 02 同步同一结论；在 01 §1.6 与 02 §3.1 互相加引用链接并删除相反表述。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "02-data-privacy.md",
+    "severity": "high",
+    "issue": "DuckDB-WASM 锁定版本三处冲突：01 §1.5/附录 A 锁定 1.32.0（并警告 npm latest 是 dev 构建必须钉死）；02 §5.1 锁定 1.29.0 且降级 1.28.1、加载方式用 jsDelivr CDN 优先（与 01 '自托管 bundle、不走 CDN、pthreadWorker:null' 相反）；06 W1D1 写 ^1.29.x（带 ^ 违反 01 的'精确版本'纪律）。",
+    "fixHint": "统一为 01 的 1.32.0 + 自托管 + 单线程方案，02 §5.1 与 06 W1D1 改为引用 01；删除 02 的 CDN 优先路径（国内演示稳定性与 01 自托管方案冲突）。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "03-agent-pipeline.md",
+    "severity": "high",
+    "issue": "AI SDK 7 使用纪律自相矛盾：01 §1.4 明令'v7 默认拒绝 messages 里的 system 消息，统一用 instructions 选项传系统提示'，而 03 §2.0 buildStageMessages 返回的就是 role:'system' 消息数组。按 03 实现会在 W2 首次调用时报错返工，且 01 已把此列为'与网上教程差异的必查清单'，说明冲突会被当场发现。",
+    "fixHint": "03 §2.0 改为输出 {instructions, userMessages} 形态（或 01 撤销该条纪律并注明核实来源）；在 W2D1 spike 清单中把'instructions vs system 消息'列为第一个验证项，验证结论回写两份文档。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "01-architecture.md",
+    "severity": "high",
+    "issue": "缓存架构自相矛盾：01 §2.2-③/§3/§4.1 设计了服务端 data-hash LRU 缓存（server/ai/cache.ts，500 条 TTL 24h），03 §8 却明确写'缓存仅存浏览器本地，不设服务端缓存（数据不出浏览器，与 02 对齐）'。答辩问'缓存存在哪、服务端存了什么'会得到两个答案；且服务端缓存与'服务器零存储'口号（02 §1.2 原则三）冲突。",
+    "fixHint": "二选一并全局统一：建议删服务端缓存（服务端只做转发，叙事更干净且与 02 原则一致，客户端 idb 缓存已足够抗限流）；若保留，必须在 02 §8 可见性对照表新增一行'脱敏聚合摘要哈希+LLM 输出缓存（服务端内存，24h）'并同步修改 02 §1.2 原则三措辞。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "01-architecture.md",
+    "severity": "high",
+    "issue": "RAG 查询嵌入与重排的运行位置两文档相反：01 §2.2-④ 写'查询嵌入经 SiliconFlow 嵌入 API'、§2.1 图把 bge-reranker 放在 MCP 容器；04 §3.1/D2 是硬约束'运行时零嵌入 API 调用'（查询嵌入 onnxruntime-node 本地推理）、§4.5 重排也在 AI 接入层进程内。三重抗限流叙事（'嵌入离线预计算'）依赖 04 的零 API 说法，01 的写法直接推翻该卖点。",
+    "fixHint": "以 04 为准改写 01 §2.2 数据流与 §2.1 架构图（reranker 标注为 AI 接入层本地推理，MCP 容器仅承载四工具）；两文档统一后把'抓包验证零嵌入 API 请求'列入 04 验收清单的演示证据。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "02-data-privacy.md",
+    "severity": "high",
+    "issue": "隐私承诺文案与真实数据出口冲突：§12.4 合规声明称'原始账单与明细数据不会上传到任何服务器'，但 §3.9 AI 兜底解析会把原始 CSV 前 10 行+1 条数据行（含真实金额/商户名）发给 DeepSeek，03 §2.1 商户分类会把未命中词典的原始商户名单批量发给 Qwen——这两条路径在 §8 数据可见性对照表中没有对应行（第 1 行只在括号里提了兜底片段）。'明细不出浏览器'是核心卖点②，评委用商户分类/未知格式 CSV 即可戳穿。",
+    "fixHint": "在 02 §8 对照表新增两行：'CSV 格式 AI 兜底片段（仅无法识别且用户确认后，≤6KB 截断）'与'商户分类任务文本（仅未命中本地词典的商户主名，批量轻模型）'；同步修改 §12.4 文案为'除非在无法识别格式时经你确认发送的≤6KB 片段，明细数据不会上传'；把分类任务降级选项（Transformers.js 本地或归'其他'）写成显式开关。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "05-uiux.md",
+    "severity": "medium",
+    "issue": "技术栈版本与 01 锁定表冲突：05 §1.1/§0.3 多处写'Next.js 14 App Router'（01 锁定 16.4.0），§3.1 还给出 tailwind.config.ts 映射片段（01 明令'不建 tailwind.config.js'，Tailwind v4 为 CSS-first @theme 写法）。按 05 实现会直接违反 01 的锁定纪律。",
+    "fixHint": "05 全文对齐 01 锁定表：版本号改为引用 01 附录 A，删除 tailwind.config.ts 片段改为 @theme CSS 变量说明；在 05 §0.3 接口表把'指标数值以 01 为准'扩展为'技术栈与版本以 01 为准'。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "02-data-privacy.md",
+    "severity": "medium",
+    "issue": "zod 版本冲突：02 §2.1 声明'所有 schema 用 zod@3 定义'（代码为 v3 风格 z.object），01 锁定 zod 4.6.7 且依赖 v4 的 z.strictObject 作为注入防护第 2 层闸门，03 §2.0 又写'zod ≥3.25 的 z.toJSONSchema'。schema 是'单一事实来源'，三个版本口径会让修复循环的错误格式处理不一致。",
+    "fixHint": "统一为 zod 4.6.7：02/03 代码片段按 v4 API（z.strictObject、错误格式）改写，02 §2.1 删除'zod@3'字样；W1 建仓单测覆盖 schema 解析+修复循环的 v4 错误信息格式。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "03-agent-pipeline.md",
+    "severity": "medium",
+    "issue": "反思自检 judge 路由冲突：01 §2.1 架构图与 §2.2-⑦ 明确反思自检用 SiliconFlow Qwen 轻模型二次评分，03 §10 路由表却写 reflect-judge 用 deepseek 主脑（备选'跳过 L2'）。两文档各自声称执行三模型分工决策，答辩问'自检用哪个模型、为什么'会卡壳。",
+    "fixHint": "统一为 Qwen 轻任务（符合'轻任务归小模型'的叙事与费用纪律，DeepSeek 做叙事主脑），同步修改 03 §10 路由表与 01 §2.1 图；在 03 §10 路由判据列补充理由一句。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "06-roadmap.md",
+    "severity": "medium",
+    "issue": "RAG 金标评测有两套题目与两套阈值：04 §5.1 是 20 条（订阅8/维权4/消费建议4/个人化2/学生2）且 CI 阻断 hit@3<18/20（90%）；06 G3 闸门与 A4 写 hit@3≥0.8 且金标分类为'订阅8/习惯6/异常6'（tests/golden/rag-golden.json 格式也不同）。实测 0.85 时 04 的 CI 会红而 06 的闸门放行，写入 PDF 的评测数字口径自相矛盾。",
+    "fixHint": "统一为 04 的 20 条金标与 90%/60%（dense/TF-IDF）阈值，06 §7.3 与 G3 闸门改为引用 04；删除 06 中'习惯/异常'分类描述，G3 判定文案改为'hit@3≥18/20，未达则按 04 §10.1 RAG 砍法执行'。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "05-uiux.md",
+    "severity": "medium",
+    "issue": "商户名可见性三文档互相打架：02 §7.1 S2 规定 n≥5 且开关开时 LLM 见明文、UI 显示明文（§7.3 示例 B）；03 §2.0 铁律 6 要求'绝不写出真实商户名'只用 @{m:xxx} 占位；05 §0.4 原则 5 又称'商户名永远显示脱敏 hash'。同一张洞察卡上商户名到底明文还是 hash，三份文档三个答案，隐私叙事的核心一致性被破坏。",
+    "fixHint": "定一条唯一规则并三处同步：建议'LLM 叙事永远用代号/哈希占位、浏览器渲染端按 02 的 n≥5+用户开关规则还原显示'；05 §0.4 原则 5 改为'未达聚合门槛的商户一律 hash 显示'，02 §7.1 与 03 铁律 6 互相引用。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "04-rag-mcp.md",
+    "severity": "medium",
+    "issue": "混合检索（dense+reranker）在首选部署上实际不可用：主部署是 Vercel Hobby（01 §9.1），而查询嵌入需 onnxruntime-node + 600MB 模型、重排需 110MB 模型，04 §3.5 自认 serverless 只能 EMBEDDING_PROVIDER=tfidf-only。即公网演示链接上 RAG 6% 的技术亮点只剩 TF-IDF，'混合检索'仅在本地/容器存在，评委点开公网 URL 会发现货不对板。",
+    "fixHint": "把嵌入与重排迁到免费容器（与 MCP server 同进程，04 §9 已预留 rerank.ts 位置），Vercel 仅做代理调用；或在技术文档与 README 明确写'公网部署为轻量检索模式（TF-IDF），完整 dense+reranker 级联见本地演示与评测'，避免宣传与部署事实脱节。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "04-rag-mcp.md",
+    "severity": "medium",
+    "issue": "MCP 客户端依赖版本与 01 锁定表冲突：04 §9.4 代码注释写'import { experimental_createMCPClient } from \"ai\"; // ai@^5（锁定）'，而 01 锁定 ai@7.0.137，且 01 附录 A 的 29 个核实包清单里没有验证 v7 下 MCP client API 的存在性/改名。若 v7 已更名（类似 onFinish→onEnd），W4D1 才能发现，届时 MCP 是砍法第 1 刀会被顺势砍掉。",
+    "fixHint": "把'MCP client API 在 ai@7 的准确名称与签名'加入 01 §1.4 的 W2/W4 spike 必查清单，04 §9.4 注释改为'以 01 锁定 ai@7.0.137 的实测 API 为准'；W4D1 spike 结论回写两文档。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "06-roadmap.md",
+    "severity": "medium",
+    "issue": "演示视频台词与数据规格冲突：06 §6.2 S2 台词称'加载示例账单（1 万行脱敏数据）'，但 02 §4.1 冻结 sample-data 为 620 行、80KB，06 T32 又写'200→1k+ 行'。评委对照仓库里的 sample CSV 行数与视频台词即可发现夸大；且 620 行跑六阶段+洞察，与'1 万行'演示的 loading 观感也不符。",
+    "fixHint": "统一 sample-data 规格：按 06 T32 扩到 1k+ 行（02 §4.1 同步修改规模与埋点说明），视频台词改为'一千行脱敏演示账单'；若维持 620 行则改台词。三处（02 §4.1、06 T32、06 §6.2 S2）写入同一数字。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "06-roadmap.md",
+    "severity": "medium",
+    "issue": "社会价值与商业潜力 10% 覆盖薄弱：全部文档中该维度只有 06 §6.3 第 8 章 2 页的叙事安排，没有任何可演示、可量化的落点——无用户研究/调研数据、无社会议题数据锚点、健康指数 benchmark 也是'同龄人常见 5%-8%'这类无出处的模板数据。10% 分值仅靠叙事，评审追问'社会价值体现在哪、怎么证明'时没有材料支撑。",
+    "fixHint": "给 04 案例库 Schema 增加社会议题证据字段（消协投诉量、法规条文编号，案例已有 legalBasis 可扩展），让订阅雷达卡直接引用权威数据；PDF 第 8 章配一张'案例库分类×法规覆盖'数据图；健康指数 benchmark 改为引用公开数据并标注来源（如《2025 中国消费趋势报告》类可核验口径）。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "03-agent-pipeline.md",
+    "severity": "medium",
+    "issue": "多模态 5% 只有 OCR 单一功能且是砍法第 2 刀：GLM-4V-Flash 仅做账单截图的表格结构化提取，无任何视觉理解/多模态推理场景；2 人模式下整个 5% 直接归零，而 5% 是 AI 深度 35% 里除了 RAG/MCP 外最容易整块丢失的子项。",
+    "fixHint": "至少增加一个低成本多模态增强点并纳入主线：如'低置信度字段→截取原图局部→GLM-4V 复核'（把标黄人工确认升级为多模态二次确认，答辩可演示），或'截图 OCR 结果与 CSV 金额分布交叉校验'；同时在 06 砍法表注明 OCR 被砍时的兜底叙事（PDF 4.5 写原设计+国赛恢复）。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "03-agent-pipeline.md",
+    "severity": "low",
+    "issue": "Agent 循环步数上限三处不一致：01 §6.4 maxSteps:3 / stopWhen stepCountIs(3)；03 §5.3 最多 4 个观察-决策循环；04 §11.1 maxToolRoundtrips=6 / stepCountIs(6)。同一追问循环的防御上限三个值，PDF 若引用其一、代码实现另一，答辩追问'为什么是 N 次'无法自圆。",
+    "fixHint": "统一为一个常量（建议 stopWhen: stepCountIs(6) 对齐 04 的工具探索语义，或按 03 的 4 循环），在 03 §11 接口约定中声明该常量唯一来源，01/04 改为引用。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "05-uiux.md",
+    "severity": "low",
+    "issue": "断点存储机制四处不一致：01 §5.3 用 Zustand persist+IndexedDB（session 切片）；03 §1.4 用 idb-keyval 键 spendct:run:*；05 §5.3 写 localStorage 键 spendct:checkpoint:v1；06 §2.4 也写 localStorage spendct:pipeline:checkpoint。另外 05 §1.1 RouteGuard 代码用了 react-router 的 <Navigate>，而技术栈是 Next.js App Router（无 react-router）。",
+    "fixHint": "统一为 IndexedDB（10k 行级 checkpoint 超出 localStorage 合理容量），05/06 的键名对齐 03 的 spendct:run 命名；RouteGuard 改为 next/navigation 的 router.replace 或 next/link 重定向写法。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "06-roadmap.md",
+    "severity": "low",
+    "issue": "性能门槛数字多处冲突：06 A3/W1D1 验收内存峰值<200MB、WASM 加载<1.5s、Lighthouse LCP<2.5s，而 01 §8 预算为内存<400MB（目标300）、WASM 冷<4s/热<1.5s、LCP<2.0s。按 06 验收可能必然失败（WASM 冷加载 30-40MB 包首次 <1.5s 很悬），按 01 又会放水，闸门失去公信力。",
+    "fixHint": "06 全部改为引用 01 §8 基准表单一来源（区分冷/热加载与内存预算 400MB），A3 只写'以 01 §8 为准，每周四复测记录'；如坚持更严数字需先改 01 并说明依据。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "05-uiux.md",
+    "severity": "low",
+    "issue": "订阅检测规则阈值多版本：05 §2.8 T3 是金额 1-60 元、周期 25-40 天；02 §5.3 v_subscription_candidates 是 <100 元、CV<10%、20-40 天；03 §1.3 S1 是 ¥5-500、±1%、≥3 个月；06 W1D5 是 MAX(amount)=MIN(amount)。同一份账单在不同文档规则下命中结果不同，PDF 展示的'确定性 SQL'与 demo 实际命中可能对不上。",
+    "fixHint": "冻结一套规则（建议 02 §5.3 的 v_subscription_candidates 视图为唯一来源），05 T3 与 06 W1D5 的 SQL 改为引用该视图或与之等价；把'订阅候选规则唯一来源'写入 02 §5.3 并加跨文档引用。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "01-architecture.md",
+    "severity": "low",
+    "issue": "'浏览器端推理'加分叙事没有实体功能支撑：Transformers.js 全文档标注'可选兜底/整段可砍'（01 §1.5、§10-R10），TF-IDF 又被 04 §0.5 明确声明'是计算不是推理'。答辩若被问'你们的浏览器端推理具体做了什么'，将无内容可答，反而暴露叙事空转。",
+    "fixHint": "二选一：要么砍掉该叙事、只讲'DuckDB-WASM 浏览器端计算'；要么给 Transformers.js 一个确定的、纳入验收的小功能（如断网时商户分类本地小模型，03 §10 已有 local-tfjs 路由位），并写进 W3 验收与演示动线。"
+  },
+  {
+    "source": "critic:rubric",
+    "doc": "06-roadmap.md",
+    "severity": "low",
+    "issue": "评分细则口径两处不一致：UX 分值拆分 01 §11 写'AI 交互 3% + UI/前端交互 7%'，05 §0.1 与 06 §6.3 写'UI 设计 4% + 前端交互 3% + AI 交互 3%'；砍 MCP 的丢分评估 06 §4 写'-2~3 分（保住 2/4）'，04 §10.2 L2 写'丢 1-1.5 分'。PDF 各章落点表引用不同拆分口径会让评委质疑对细则的理解。",
+    "fixHint": "在 06 §6.3 顶部固定一张'评分细则唯一口径表'（含 AI 深度六子项分值、UX 三项拆分、各砍法丢分区间），01/04/05 的对照表全部改为引用；砍法丢分评估以 04 §10 的诚实口径为准并回改 06。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 03-agent-pipeline.md ↔ 05-uiux.md ↔ 06-roadmap.md",
+    "severity": "high",
+    "issue": "StageId 命名三套并存：01/05 使用 clean|mom|annual 等，03 §2 定义 clean|profile|anomaly|subscription|attribution|annual，06 使用 cleanse|report；订阅雷达在 03 为 stage 3，04 §0.4 却称「订阅雷达 = 流水线阶段 4」。六阶段名称是全项目枚举、路由、卡片的基石，任何实现方都会互相踩错。",
+    "fixHint": "以产品定义为准统一为 clean/profile/anomaly/subscription/attribution/annual，在 01 附录 A 单点声明 canonical StageId 枚举，03/05/06 全部改为引用该枚举，并修正 04 §0.4 的阶段序号。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 03-agent-pipeline.md ↔ 05-uiux.md ↔ 06-roadmap.md",
+    "severity": "high",
+    "issue": "事件协议四套互不兼容：01 §6.1 spendct协议@1（run:start/stage:start/card:delta/…，10 类事件）、03 §9 自拟（pipeline.start/stage.sql.start/card.published/llm.repair/reflect.*，约 20 类）、05 §2.3 自拟（stage-start/sql-running/llm-streaming/checkpoint）、06 §2.4 又一套（stage:start/thought/artifact/pipeline:done）。前端订阅端、后端 emit 端、评审演示（06 依赖 01-05 产出）无法对接。",
+    "fixHint": "以 01 §6.1 spendct协议@1 为唯一事件协议源（补充 reflect/model.degraded 等 03 独有事件并升版本号），03/05/06 删除自拟协议、改为「引用 01 §6.1」；同时统一事件 payload 的 stageId 取值。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 03-agent-pipeline.md ↔ 04-rag-mcp.md ↔ 05-uiux.md ↔ 06-roadmap.md",
+    "severity": "high",
+    "issue": "账单表 Schema 五套且金额单位矛盾：02 §5 transactions DDL（amount_cents BIGINT、单位「分」、snake_case、direction expense|income|neutral）vs 03 §1.2 tx 表（amount DECIMAL(12,2) 单位「元」、direction in|out、tx_time）vs 04 bills 示例（trade_time/merchant_name/amount 元）vs 05 bills SQL（merchant_name/trade_time/amount 1-60/txn_id）vs 06 cleaned_bills（amount/category/merchant/channel/time_month/trade_date/trade_no）。同一个 DuckDB 表被五种 SQL 引用，任何模板查询/脱敏器/白名单都会失配。",
+    "fixHint": "以 02 §5 DDL 为唯一事实源（amount_cents 分、snake_case），重写 03/04/05/06 中所有建表与 SQL 示例；明确清洗层视图（v_*）与基表名，禁止各文档自造列名。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md ↔ 03-agent-pipeline.md ↔ 05-uiux.md",
+    "severity": "high",
+    "issue": "LLM 是否直接输出图表配置互相矛盾：01 §6.5 定义 echartsSpecSchema 作为 zod 输出层、02 §11.2 定义 EChartsOptionSanitizedSchema 用于净化 LLM 输出、05 §2.3 同样以 echartsOption 承接，而 03 §4.2 明确「LLM 不直接生成 ECharts option…只生成 ChartSpec(tableId+chartType)」并经 chartRegistry 渲染，06 §2.7 又写 ChartSpec 仅 bar|line|pie。这直接决定提示词、zod 层和净化器是否存在。",
+    "fixHint": "采纳 03 的 tableId+chartType 方案（符合模板优先原则），删除或降级 01 §6.5/02 §11.2/05 §2.3 的 EChartsOption 产出 schema，把 EChartsOptionSanitizedSchema 改为对 registry 渲染结果的校验；06 的 CHART_TYPES 与 03 §4.2 的 bar|line|pie|histogram|scatter|heatmap|table 对齐。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md ↔ 03-agent-pipeline.md",
+    "severity": "high",
+    "issue": "脱敏器接口三套：01 §6.3 desensitize(rows, opts) 加盐哈希、02 §7 sanitizeResult(rows, columns) 无盐 sha256(merchant) 输出 M# 8 位十六进制、03 引用 sanitizeRows(rows,{roundTo10})。函数名、参数、盐策略均不一致，前端调用方（06 任务 T31 等）无法确定实现与自测用例。",
+    "fixHint": "统一为一个函数名与签名（如 sanitizeResult(rows, columns, opts)），在 02 §7 给出唯一实现规范并明确是否加盐（建议沿用 01 的加盐 + 密钥注入方案，成本最低且防彩虹表），01/03 删除重复定义改为引用。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 03-agent-pipeline.md ↔ 04-rag-mcp.md ↔ 05-uiux.md ↔ 06-roadmap.md",
+    "severity": "high",
+    "issue": "追问/执行协议与工具名四套：01 §6.4 useChat onToolCall run_browser_sql/duckdb_meta、maxSteps 3 + followupAnswerSchema；03 §5 PlanStep DAG（kind sql|rag|tool|summarize，≤6 节点，4 轮循环），toolName calendar|weather|shopping_festival|duckdb_meta；05 §2.3 PlanStep 树（kind sql|analyze|plot|verify|rag，children ≤8）但 SelectionContext 缺少 03 的 slice/tableMeta/chartType/history；06 三步 JSON 协议；04 MCP 工具名 get_school_calendar/get_weather/get_promo_calendar/query_bill_db_metadata。工具注册表、PlanStep kind 枚举、上下文结构三处全错位。",
+    "fixHint": "以 03 §5 为 canonical：统一 kind 枚举与 DAG 约束，05 的 PlanStep 引用 03 并补齐 SelectionContext 缺失字段；工具名建立一张全局注册表（03 的短名 + 04 MCP 暴露名一一映射），06 删除自拟三步 JSON 改为引用 03。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md ↔ 03-agent-pipeline.md ↔ 05-uiux.md ↔ 06-roadmap.md",
+    "severity": "high",
+    "issue": "洞察卡 Schema 五套：01 §6.5 insightCardSchema vs 02 §2.6（cardId=card_{stage}_{序号}_{时间戳}、confidence ≥0.6 发布、sourceRefs sql_view|rag_doc|template、actions confirm|doubt|deep_dive）vs 03 §3 CardDraftSchema（confidence 枚举 high|medium|low、citations sourceType sql_table|rag_case|manual、actions confirm|dispute|drill|fix）vs 05 §2.3（id uuid、significance high|medium|low|none、sources refId RAG-017/SQL-T3/MCP-cal、actions confirm|dispute|dig）vs 06 §2.7（stage 缺 clean、sources kind sql|rule|rag|llm、ref 形如 sql:stage-anomaly:q3）。字段名（headline/title/conclusion）、置信度类型（number vs 枚举）、动作枚举、ID 格式、来源类型枚举全部不一致——这是 02 数据模型与 03 Schema 对齐审查的核心失败项。",
+    "fixHint": "以 02 §2.6 为唯一 zod 事实源并补齐来源类型枚举（统一为 sql_view|rag_case|rule|template 之类一套）；03 CardDraft 定义为「草稿→02 Schema」的映射关系，05 直接消费 02 Schema，06 §2.7 删除并引用 02；confidence 统一为数值（如 0-1，发布阈值 0.6）或统一枚举并给映射表。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md ↔ 06-roadmap.md",
+    "severity": "high",
+    "issue": "DuckDB-WASM 版本与加载方式三套：01 锁定 1.32.0、自托管 public/duckdb、禁用 CDN；02 写 1.29.0、CDN 优先 + public/wasm；06 写 ^1.29.x。版本不一致会导致 OPFS 初始化参数与 WASM 产物路径失配。",
+    "fixHint": "统一为 01 锁定的 1.32.0 + 自托管 public/duckdb（产品定义要求浏览器端计算且不依赖外网），02 §8 与 06 附录 A 改为引用 01。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 04-rag-mcp.md",
+    "severity": "high",
+    "issue": "查询向量化与重排器位置矛盾：01 §2.2④ 通过 SiliconFlow embedding API（SILICONFLOW_EMBED_MODEL）编码、§9.3 重排器部署在 MCP 进程（mcp/rerank.ts）；04 硬约束「运行时零嵌入 API 调用」（bge-m3 经 onnxruntime-node 本地推理）、重排器在 AI 接入层而非 MCP server；且 onnxruntime-node 未列入 01 附录 A 锁表。这直接决定成本模型（每查询一次嵌入 API 调用）与部署拓扑。",
+    "fixHint": "以 04 §3/§4 为准（零嵌入 API、本地 onnx）：修正 01 §2.2④ 与 §9.3，将 onnxruntime-node 补入 01 附录 A，明确「bge-m3 嵌入与重排均在 AI 接入层本地完成，MCP server 只提供工具」。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 03-agent-pipeline.md",
+    "severity": "high",
+    "issue": "缓存策略互相矛盾：01 设服务端 data-hash LRU 缓存（server/ai/cache.ts、env LLM_CACHE_*）、版本号手动维护（version.json）；03 §8 明确「缓存仅存浏览器本地，不设服务端缓存」，promptVersion 自动取 sha256(promptText).slice(0,8)；且 dataHash 一词被双重占用（01 为按阶段的 sha256(stageId+promptVersion+summary+modelId)，03 为数据集级交易哈希）。",
+    "fixHint": "统一为双层缓存模型：客户端 llm:v1 提示缓存 + 服务端 data-hash 缓存，二者用同一 key 公式（sha256 前 8 位）；promptVersion 只由一处生成（建议 01 的 version.json 或 03 的自动哈希二选一），并为「数据哈希」与「提示缓存 key」分别命名避免歧义。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md",
+    "severity": "high",
+    "issue": "编码事实写反：01 称微信=GBK/支付宝=UTF-8，02 §3.x 称微信=UTF-8/支付宝=GB18030。CSV 解析器按错误的编码表实现会直接产出乱码账单。",
+    "fixHint": "以真实导出的样例文件实测（可用 Notepad++/iconv 验证）后统一写进 01/02 的编码表；PapaParse 不支持 GBK/GB18030 需指明 TextDecoder('gb18030') 方案。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md",
+    "severity": "high",
+    "issue": "金额分桶与行数上限两套：01 AGG_AMOUNT_BUCKETS=[0,5,10,20,50,100,200,500]（8 档）与 AGG_MAX_ROWS=200，02 AMOUNT_BINS 为 5 档（cents）、S5 在 50 行截断且术语称「聚合数据 ≤50 行」；200 与 50 两个行上限并存会令聚合查询被哪层拦截产生随机性。",
+    "fixHint": "统一一份分桶常量（建议 01 的 8 档，02 引用）；明确两级上限语义——模板六阶段查询 ≤200 行（01 常量）、追问聚合结果展示截断 50 行（02 S5），并在白名单规则中写死这两处常量名。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 03-agent-pipeline.md",
+    "severity": "high",
+    "issue": "反思（reflect）裁判模型不一：01 §2.2⑦ 用 SiliconFlow 模型做反思，03 §6/§10 用 deepseek 做 reflect judge。多一次模型调用既影响成本（¥30-100 预算）也影响降级矩阵。",
+    "fixHint": "二选一并写死（建议 deepseek 裁判，理由由 03 给出），01 §2.2 流程图同步修改。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 03-agent-pipeline.md",
+    "severity": "high",
+    "issue": "CSV AI 兜底分类模型不一：02 §3.9 用 DeepSeek-V3，03 §2.1/§10 用 qwen。同一失败路径调用不同模型，成本与降级矩阵无法确定。",
+    "fixHint": "统一为 03 的 qwen（SiliconFlow）并写明单行/批量的 token 预算，02 同步修改。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md ↔ 03-agent-pipeline.md ↔ 05-uiux.md ↔ 06-roadmap.md",
+    "severity": "high",
+    "issue": "持久化红线与存储实现冲突：01 §5.3/02 §1.1 声明明细数据只在 DuckDB/OPFS；03 §1.4 却把清洗后的交易行写入 IndexedDB（spendct:tx:${datasetId}）；断点存储键三套（03 idb-keyval spendct:tx vs 05 localStorage spendct:checkpoint:v1 vs 06 spendct:pipeline:checkpoint）。隐私评审（02）与实现（03/05/06）对「明细能否进 IndexedDB」结论相反。",
+    "fixHint": "在 02 隐私红线中明确裁定：清洗后的明细是否允许 IndexedDB（建议允许但加密/仅元数据，或改为只存哈希摘要），三份文档统一断点存储介质与键名（建议 localStorage spendct:checkpoint:v1），删除多余变体。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 03-agent-pipeline.md ↔ 06-roadmap.md",
+    "severity": "high",
+    "issue": "SQL 白名单 API 三套：02 §6 validateAggregateSQL R1-R10（允许 stddev/median/mode/round、WhitelistResult、仅 v_* 视图）vs 03 §4.1 validateSql S1-S6（隐含允许 JOIN）vs 06 precheckAggregateSql WhitelistVerdict（仅 5 个聚合函数）；参数也不一致：SQL 长度上限 01=4000 vs 02=2000；Worker 超时 02=3s vs 03=5s。白名单是安全评审核心交付物，三套实现意味着 06 演示视频 G4「10/10 拦截」无法对 02 的用例生效。",
+    "fixHint": "以 02 §6 为唯一规范（R1-R10 + WhitelistResult），03 §4.1/06 改为「实现 02 §6 的 S1-S6 前置检查」并引用；统一 4000 字符与 3s/5s 超时（取 02 的 3s+10s kill）；06 的 AggregatePolicySchema 字段与 02 的 ALLOWED_AGGREGATES/ALLOWED_RELATIONS 常量对齐。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 03-agent-pipeline.md",
+    "severity": "high",
+    "issue": "03 的预计算表（profile_*/attribution_*/annual_*）不在 02 §6.2 ALLOWED_RELATIONS（仅 v_* 视图）白名单内，模板优先架构下这些表必然被查询却会被白名单拒绝，导致六阶段主流程无法通过校验。",
+    "fixHint": "在 02 §6.2 为预计算表增加注册机制（dataTables 注册表），明确这些表为只读且由系统生成、聚合粒度 ≥ 指定阈值，纳入 ALLOWED_RELATIONS。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 06-roadmap.md ↔ 01-architecture.md",
+    "severity": "high",
+    "issue": "样例数据三处矛盾：02 为 620 行 public/data/sample-wechat-2026H1.csv，06 T32 写「200→1k+ 行」、§6.2 视频称「1 万行脱敏数据」，01 目录为 data/sample/wechat-sample.csv + public/sample。行数（620/1k+/1 万）与路径均不同，样本数据的行数还直接牵动 05/06 的显著性门槛演示（≥30 笔）。",
+    "fixHint": "统一为一份样例数据：确定行数（建议 1000+ 以满足各类聚合显著性演示）、固定路径（与 01 目录树一致），06 T32 与 §6.2 视频文案同步；demo 视频如需 1 万行另行说明为压测数据。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md",
+    "severity": "high",
+    "issue": "OCR 供应商矛盾：01 用 GLM_API_KEY（智谱），02 §12.1 却用 SiliconFlow 的 GLM-4V-Flash + SILICONFLOW_API_KEY。同一 OCR 调用两家网关，成本与配额计划无法编制。",
+    "fixHint": "按产品定义统一为智谱 GLM-4V-Flash，02 §12.1 修正为 GLM_API_KEY；顺带把 01 附录 A 缺失的 QWEATHER_API_KEY（03/04 天气工具所需）与 SILICONFLOW_API_KEY 补入环境变量清单。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 05-uiux.md",
+    "severity": "high",
+    "issue": "路由/页面树冲突：01 §3 目录树 app/ 下仅 page.tsx、checkup/page.tsx、privacy/page.tsx 三页，05 §2.2 规划 8 条路由（/ /upload /checkup /insights /ledger /subscriptions /report /about），且 01 的 privacy 页对应 05 的 /about。路由是 06 任务拆分与联调演示的依据。",
+    "fixHint": "按产品范围（六阶段 + 隐私页）重订路由清单：建议 / /upload /checkup /insights /subscriptions /report /privacy 七条，01 目录树补全 app/ 子页，05 删 /ledger、/about 改为 /privacy。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 03-agent-pipeline.md ↔ 04-rag-mcp.md ↔ 06-roadmap.md",
+    "severity": "high",
+    "issue": "API 端点清单四套：01 列六条服务端路由，03 §7/§9 为 /api/ai/* + GET /api/run/{runId}/events（T4 轮询），06 写 app/api/chat/route.ts 为「服务端唯一 LLM 出口」+ app/api/ocr/route.ts，04 又新增 POST /api/chat/session/schema。「唯一出口」与多路由并存、runId 轮询协议无人引用，06 的目录与 01 对不上。",
+    "fixHint": "在 01 §3 给出一张唯一 API 清单（含 LLM 出口、OCR、RAG、run 事件轮询、MCP snapshot 五类），明确「唯一 LLM 出口」指所有模型调用必经该路由而非全站唯一路由；03/04/06 改为引用该清单。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 03-agent-pipeline.md ↔ 05-uiux.md ↔ 06-roadmap.md",
+    "severity": "medium",
+    "issue": "订阅检测阈值四套：02（CV<10%、<100 元、20-40 天）vs 03（金额 ±1%、¥5-500、≥3 个月）vs 05（1-60 元、25-40 天）vs 06（MAX=MIN 精确相等）。同一批数据在四份文档下会得出不同的订阅雷达结果，评审演示无法自圆其说。",
+    "fixHint": "以产品定义 P1 订阅雷达为准定稿一套阈值（周期 25-40 天或 30±5 天、金额区间、容差 ±1%），写入 02 作为业务规则，03/05/06 删除自拟阈值改为引用。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "04-rag-mcp.md",
+    "severity": "medium",
+    "issue": "04 §0.4 称「订阅雷达 = 流水线阶段 4」，与 03 §2 的 stage 3 矛盾（且 04 开头自述按 03 对齐）。阶段序号错误会传染给案例库 stage 标注与演示串词。",
+    "fixHint": "改为「订阅雷达 = 流水线阶段 3（subscription）」，并检查 04 案例库中所有 stage 字段标注。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 03-agent-pipeline.md ↔ 05-uiux.md",
+    "severity": "medium",
+    "issue": "类目枚举冲突：02 固定 12 类（餐饮/交通/购物/娱乐/居住/通讯/医疗/教育/人情/金融/订阅/其他），03 的 category 枚举含外卖/转账/订阅服务，05 又出现「外卖依赖度」指标——而外卖不在 02 的 12 类中、也非 02 §3 的 6 个健康维度之一；05 的「冲动消费浓度」SQL 用 22:00-02:00（深夜消费语义）与 02 对该指标的定义冲突。指标体系（健康指数 P2）无法落地。",
+    "fixHint": "在 02 定稿唯一类目枚举（12 类，明确外卖归入餐饮或新增）与健康维度集合（把 05 的外卖依赖度并入或删除）；冲动消费浓度统一为「深夜时段消费占比」或「非计划消费」其中一种语义并只保留一处 SQL 定义。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md ↔ 05-uiux.md ↔ 03-agent-pipeline.md",
+    "severity": "medium",
+    "issue": "Store 架构三套 + StageStatus 变体：01 §5.1 六个 Zustand slice（含 pipelineSlice），02 §3.10 单一 BillStore，05 四个 store（useCheckupStore/useAnchorStore/useBillStore/useUiStore）；StageStatus 枚举在 01（pending/running/succeeded/skipped/failed）与 03（streaming、paused）也不一致。组件按 01 还是 05 的 store 划分写？",
+    "fixHint": "以 01 §5.1 六个 slice 为准，02/05 声明 BillStore/useBillStore 为其别名或合并说明；StageStatus 统一为 01 的五个值，03 的 streaming/paused 并入 running 或显式加入枚举。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 05-uiux.md ↔ 03-agent-pipeline.md ↔ 04-rag-mcp.md",
+    "severity": "medium",
+    "issue": "组件树对不上且存在「幽灵组件」：01 组件为 ImportWizard/PipelineCanvas/InsightCardFrame/AnchorChatPane/AnchorChip/ArtifactCard/OcrReviewTable，05 为 UploadDropzone/PipelineStepper/InsightCard/FollowUpPanel，而 03 §11 与 04 §8.5 引用的 Stepper/ThinkingBubble/SqlCodeBlock/TypingCard/DegradeToast/EvidenceTable/ToolBadge 在 05 组件清单中根本不存在。开发按哪份组件树分包？",
+    "fixHint": "以 05 组件树为主干补全 03/04 引用的组件（或统一重命名映射表），01 §3 目录树按 05 更新；禁止在文档中引用未列入 05 的组件名。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 04-rag-mcp.md ↔ 06-roadmap.md",
+    "severity": "medium",
+    "issue": "MCP 目录/部署/运行时三套：01 为根级 mcp/ 且含 rerank.ts（与 04 结论冲突）、Node ≥?，04 为 mcp-server/ 子包（express、node:20-alpine），06 写 src/mcp-server/；种子数据 04 在 data/mcp 而 01/06 在 data/cases。评审时目录结构（01 附录 A「以 01 为准」）与实际实现（04）必不一致。",
+    "fixHint": "统一为 04 的 mcp-server/ 子包（Node 20 镜像），01 目录树移除 mcp/rerank.ts（重排器在 AI 接入层）并注明 MCP 为独立子包，06 改为 mcp-server/；种子数据路径统一 data/cases。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 04-rag-mcp.md",
+    "severity": "medium",
+    "issue": "duckdb_meta 工具的归属矛盾：01 把 duckdb_meta 作为浏览器端工具（useChat onToolCall），04 把它作为 MCP server 工具 query_bill_db_metadata（基于 POST /api/chat/session/schema 的 10 分钟快照）。元数据快照若滞后，追问阶段的建表信息可能过期。",
+    "fixHint": "明确 duckdb_meta/query_bill_db_metadata 为同一能力的两处暴露：浏览器端工具直读 DuckDB-WASM 实时 schema（01 保留），MCP 端仅作演示用例并在 04 注明快照 TTL；或二选一并删除另一处。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "04-rag-mcp.md",
+    "severity": "medium",
+    "issue": "04 §9.4 experimental_createMCPClient 示例注释写「ai@^5」，与全项目锁定的 ai@7.0.137 不符，照抄代码将装错依赖；01 锁表也未收录 @modelcontextprotocol/sdk 1.32.1（StreamableHTTP）。",
+    "fixHint": "04 注释改为 ai@7，01 附录 A 补 @modelcontextprotocol/sdk 1.32.1 与 onnxruntime-node 版本。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 05-uiux.md ↔ 06-roadmap.md ↔ 04-rag-mcp.md",
+    "severity": "medium",
+    "issue": "性能预算四处打架：WASM 冷启动 01 B3<4s vs 06 A3<1.5s；内存 01<400MB vs 05<500MB vs 06<200MB；六阶段 SQL 01 B4<0.5s vs 03 Worker 5s；RAG 延迟 01 B9<300ms vs 04 P95<900ms；LCP 05 2.0s vs 06 2.5s。验收标准无法引用。",
+    "fixHint": "以 01 §8 为唯一预算表并取各文档最严值统一（建议 WASM<4s、内存<400MB、RAG P95<900ms、LCP<2.5s），其余文档改为引用 01；Worker 5s 超时与 SQL<0.5s 预算的关系在 02 注明（超时是护栏不是预算）。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "04-rag-mcp.md ↔ 06-roadmap.md",
+    "severity": "medium",
+    "issue": "金标评测集两套：04 为 20 题（订阅8/维权4/消费建议4/个人化2/学生2）、hit@3 ≥18/20（90%）+ TF-IDF ≥12/20；06 为 hit@3 ≥0.8（80%）+ TF-IDF ≥0.6、类目订阅8/习惯6/异常6；目录 eval/rag/ + eval-hit3.mjs vs tests/golden/ + eval-rag.ts；且 04 称 100 案例后才出评测数，06 G3 却要求 11/2 就测 hit@3。",
+    "fixHint": "统一评测集定义：确定 20 题题面与类目分布（建议合并为订阅8/习惯4/异常4/个人化2/学生2）、阈值 hit@3≥0.9 为内部标准/≥0.8 为 G3 门槛（分层写清）、脚本名与目录统一（tests/golden/ + scripts/rag/eval-hit3.mjs），并调整里程碑使 100 案例完成日（11/8 前）先于最终评测。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 06-roadmap.md ↔ 05-uiux.md ↔ 03-agent-pipeline.md",
+    "severity": "medium",
+    "issue": "显著性门槛三套：02 笔数≥5、效应>10%；06 样本≥30 笔、环比≥20%、连续≥3 期；03 按阶段各自为政；05 引用「03 的显著性门槛 30 笔」但 03 并未定义该数值。演示视频里同一结论的置信依据无法统一。",
+    "fixHint": "在 02 或 03 定稿一套分阶段显著性规则（如：基础统计≥30 笔、环比≥20% 且连续≥3 期、小样本标注低置信），05/06 全部改为引用该章节，删除 05 对 03 的悬空引用。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 03-agent-pipeline.md ↔ 05-uiux.md",
+    "severity": "medium",
+    "issue": "商户占位符三套：02 输出 M#8 位哈希，03 用 @{m:xxx} 占位符注入提示词，05 anchor JSON 用 {\"id\":\"m_8f3a\"}。提示词模板、锚点消息、卡片 evidence 之间无法互认同一商户。",
+    "fixHint": "统一为一种引用格式（建议 @{m:<hash>} 在提示词内、卡片中存 M#hash 字符串、UI 层只做展示映射），在 02 给映射规则并让 03/05 引用。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "04-rag-mcp.md ↔ 05-uiux.md ↔ 03-agent-pipeline.md",
+    "severity": "medium",
+    "issue": "引用/案例 ID 格式三套：04 案例 ID C001-[C009] 且 Citation.kind 为 case|personal|tool|rule，03 citations sourceType 为 sql_table|rag_case|manual，05 写 refId 形如 RAG-017/SQL-T3/MCP-cal 并声称由 04 定义——但 04 没有这种格式；04 的 PersonalContext 扩展字段声明「由 03/05 定义」但两处均无；RetrievedCase.stage 的 'rule' 值 04 从未产出。",
+    "fixHint": "在 04 定稿引用 ID 规范（rag:<caseId>、sql:<view>:<tableId>、tool:<name>、rule:<ruleId>）与 Citation.kind 枚举，03/05 的 sourceType/refId 改为映射到该规范；PersonalContext 字段由 03 补定义或从 04 删除该声明；删掉无出处的 'rule' stage。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "04-rag-mcp.md ↔ 06-roadmap.md",
+    "severity": "medium",
+    "issue": "W4 日程冲突：04 §13 写 11/4 MCP gate、11/6 评测日；06 写 11/5、11/7 打磨日、T16 MCP 集成在 11/6。同一周两人按两份日历执行必然互相等待或重复。",
+    "fixHint": "以 06 五周计划为准重排 04 §13 里程碑（建议 MCP gate 11/6、评测日 11/7 打磨日做、最终评测 11/10-17），并注明 04 日期为建议而非定案。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 06-roadmap.md",
+    "severity": "medium",
+    "issue": "测试固件两套：02 §3.10 列 12 个 fixture（含 injection_merchants.csv 14 行恶意商户），06 列 10 个 fixture（含 malicious-merchant-name.csv）；恶意 SQL 用例 02 有 18 例而 06 视频要求 10/10 拦截。演示口径与安全自测对不上。",
+    "fixHint": "合并为一份 fixture 清单（建议 02 的 12 个 + 06 独有项），恶意 SQL 演示从 02 的 18 例中选 10 例并注明「10/10 为演示子集，全量 18/18 见 02 §10」。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 02-data-privacy.md ↔ 03-agent-pipeline.md ↔ 05-uiux.md ↔ 06-roadmap.md",
+    "severity": "medium",
+    "issue": "目录布局 src/ 与根级并存：01 目录树为根级 lib//server//mcp/（无 src），02/03/05/06 全部用 src/ 布局（src/lib、src/app/api/chat/route.ts 等）；06 附录 A 又注「若与 01 定稿目录冲突，以 01 为准」——即五份文档中有四份按 src/ 实现、一份「以 01 为准」，冲突声明本身制造了矛盾。",
+    "fixHint": "实际采用 Next.js App Router 惯例 src/ 布局，更新 01 §3 目录树为 src/lib、src/server（或 src/app/api）、mcp-server/ 子包，并删除 06 附录 A 的冲突条款改为引用 01。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "03-agent-pipeline.md ↔ 05-uiux.md",
+    "severity": "medium",
+    "issue": "ModelId 枚举命名两套：03 为 deepseek|qwen|glm4v|local-tfjs，05 为 deepseek-v3|siliconflow-qwen|glm-4v-flash。降级矩阵、日志事件 model.degraded 的 payload 无法跨文档对齐。",
+    "fixHint": "统一 ModelId 枚举（建议 deepseek|qwen|glm4v|local-tfjs），05 的展示名与 ModelId 建立映射表；补充 01 环境变量与 ModelId 的对应。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "03-agent-pipeline.md ↔ 05-uiux.md",
+    "severity": "medium",
+    "issue": "SelectionContext 结构不一致：05 的 anchor JSON 缺少 03 定义的 slice/tableMeta/chartType/history 字段；刷选（brush）在 03 用 dataIndex 集合、05 用 dataRange 二元组。追问计划生成时上下文不完整会导致 sql 追问失败。",
+    "fixHint": "以 03 的 SelectionContext 为准补齐 05 结构；统一 brush 表示（建议 dataIndex 集合，dataRange 仅作 UI 内部态并显式转换）。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 03-agent-pipeline.md ↔ 04-rag-mcp.md ↔ 05-uiux.md ↔ 06-roadmap.md",
+    "severity": "medium",
+    "issue": "循环/重试上限四处：01 maxSteps 3、修复重试 2 次；03 PlanStep 树 4 个循环；04 用 stepCountIs(6)；05/06 修复重试 1 次。同一失败场景的行为不可预测，也影响成本上限。",
+    "fixHint": "统一为：计划内步骤 maxSteps=3、LLM 修复重试 1 次（zod 校验循环除外）、整体追问循环 ≤4，写入 01 §6.4 或 03 §5 并让 04/05/06 引用。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 03-agent-pipeline.md",
+    "severity": "medium",
+    "issue": "dataHash 一词两种含义：01 为按阶段的 sha256(stageId+promptVersion+summary+modelId)（提示缓存 key），03 为数据集级交易哈希（数据变更检测）。同一标识符两种算法，接口与文档互读都会出错。",
+    "fixHint": "分别命名：stageCacheKey（01）与 datasetTxHash（03），在术语表中登记；缓存失效判定同时依赖二者时写出组合公式。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 03-agent-pipeline.md",
+    "severity": "medium",
+    "issue": "商户分类批处理接口不一致：02 按 raw_ref 批量分类，03 按商户名（merchant 名称→label 映射）批量处理。同一批调用两种 key，客户端实现必然分裂。",
+    "fixHint": "统一以脱敏后的商户哈希或原始商户名其中一种为批处理 key（建议商户名，raw_ref 作为行内引用），在 02 §3 与 03 §2.1 对齐入参/出参。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 03-agent-pipeline.md ↔ 04-rag-mcp.md",
+    "severity": "medium",
+    "issue": "01 附录 A 环境变量清单缺项：无 QWEATHER_API_KEY（03 工具 weather 需要）、无 SILICONFLOW_API_KEY（04 工具与模型需要），MCP server 所需的天气密钥来源不明，会导致 04 的 get_weather 工具无法实现。",
+    "fixHint": "01 附录 A 补全 QWEATHER_API_KEY、SILICONFLOW_API_KEY（并注明仅服务端使用），与 ModelId/工具注册表交叉核对一遍 env 清单。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md ↔ 01-architecture.md",
+    "severity": "low",
+    "issue": "02 声称 zod@3 而全项目锁定 zod 4.6.7；01 锁表未收录 03/05 引用的 zod-to-json-schema。zod 3/4 的 API 差异（如 .safeParse 返回、z.string() 链式）会影响共享 schema 代码。",
+    "fixHint": "02 改为 zod@4.6.7，01 附录 A 补 zod-to-json-schema 版本。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "05-uiux.md",
+    "severity": "low",
+    "issue": "05 内部引用失效：§0.3 引用的 §2.13 PrivacyBadge、§2.10，§2.8 引用的 §2.10，§3.1.3 引用的 01 scripts/validate_palette.js 均不存在。读者/评审无法回溯依据。",
+    "fixHint": "修复章节编号或补写缺失小节；validate_palette.js 要么在 01 目录树中补充该脚本，要么删除引用改为设计令牌内联说明。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "05-uiux.md ↔ 01-architecture.md ↔ 03-agent-pipeline.md",
+    "severity": "low",
+    "issue": "05 的 EvidenceChartSchema 含 'sankey' 图表类型，01 明确五种图表红线、03 CHART_TYPES 为 bar|line|pie|histogram|scatter|heatmap|table，均无 sankey；05 若实现 sankey 将突破 01 的限制并新增渲染成本。",
+    "fixHint": "删除 05 的 sankey（如需表达流向可用 heatmap 或文字说明），或三份文档同步加入 sankey 并说明 ECharts 包体影响。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "06-roadmap.md",
+    "severity": "low",
+    "issue": "06 AggregatePolicySchema 注释称「见 01/03」，但聚合策略的正源是 02 §6（R1-R10），引用错误会导致实现者找错规范；且 06 bannedKeywords 含 REINDEX 而 02 R10 无此项、maxResultRows 设 max 100 而 02 固定 50。",
+    "fixHint": "注释改为「见 02 §6」；REINDEX 补入 02 R10 或从 06 删除；maxResultRows 与 02 的 50 行截断对齐（固定值或注明 100 为配置上限）。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "03-agent-pipeline.md",
+    "severity": "low",
+    "issue": "03 §1.3 自相矛盾：「（P1 功能，六阶段中的 P0 阶段）」——订阅雷达是 P1 功能又是 P0 阶段，与产品定义 P0/P1 划分混淆。",
+    "fixHint": "改为「（P1 功能，六阶段中的第 4 阶段 subscription）」或直接引用产品定义的优先级表。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "05-uiux.md",
+    "severity": "low",
+    "issue": "05 自标 v0.9「对齐中，随 01/03 冻结后升 1.0」——即 05 自己承认当前与其他文档不一致，版本基线在评审交付时仍是未对齐状态。",
+    "fixHint": "在本轮一致性修订后统一升为 v1.0，并在 01 附录 A 记录各文档版本号对应关系。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "01-architecture.md ↔ 06-roadmap.md",
+    "severity": "low",
+    "issue": "01 的 e2e 测试描述把「锚点追问」列入 W2 范围，而 06 任务拆分中锚点追问属后续周次；测试用例与排期错位会让 W2 的 CI 恒红。",
+    "fixHint": "01 e2e 用例标注所属周次，W2 用例只覆盖清洗+画像+异常三阶段，锚点追问用例移至对应周次。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "05-uiux.md ↔ 06-roadmap.md",
+    "severity": "low",
+    "issue": "演示时长口径不一：05 称 demo「3.5s 跑完」，06 视频要求「全程 ≤60s」。评审按 60s 验收还是 3.5s 演示未定。",
+    "fixHint": "统一口径：3.5s 为单次六阶段计算耗时，60s 为视频总时长；在 06 文案中写明两者关系。"
+  },
+  {
+    "source": "critic:consistency",
+    "doc": "02-data-privacy.md",
+    "severity": "low",
+    "issue": "02 §7.2 sourceSqlHash 为 12 位十六进制，而全项目其余哈希（数据哈希、promptVersion、M#）均为 8 位；长度不统一虽无功能影响，但取证与文档自查易混淆。",
+    "fixHint": "统一所有摘要为 sha256 前 8 位十六进制（或明确 sourceSqlHash 用 12 位的理由并写进术语表）。"
+  }
+]
