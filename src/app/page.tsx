@@ -25,7 +25,6 @@ import { AuthCtaBand } from "@/components/home/auth-cta-band";
 import { CapabilityWall } from "@/components/home/capability-wall";
 import { HeroAuthArea } from "@/components/home/hero-auth";
 import { ResumeBanner } from "@/components/home/resume-banner";
-import { featureFlags } from "@/lib/feature-flags";
 import { SIX_STAGES, STAGE_DISPLAY_NAMES, type StageId } from "@/lib/pipeline/stage";
 
 /* 六步预览的图标映射：顺序与展示名全部来自 pipeline/stage，本页不复制文案 */
@@ -72,7 +71,7 @@ export default function HomePage() {
         <section className="flex flex-col items-center pt-16 pb-12 text-center sm:pt-20 sm:pb-16 lg:pt-24">
           <p className="inline-flex items-center gap-2 rounded-full border border-(--color-border) bg-(--color-surface) px-4 py-1.5 text-sm text-(--color-ink-secondary) shadow-(--shadow-sm)">
             <ScanLine className="size-4 text-(--color-primary)" aria-hidden />
-            支持微信 / 支付宝的账单文件{featureFlags.ocr ? " · 也可以直接上传截图" : ""}
+            支持微信 / 支付宝导出的账单文件
           </p>
 
           <h1 className="mt-6 max-w-3xl text-4xl leading-tight font-bold tracking-tight text-(--color-ink) sm:text-5xl lg:text-6xl">
@@ -109,8 +108,8 @@ export default function HomePage() {
               className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-(--color-border-strong) bg-(--color-surface) px-6 text-sm font-medium text-(--color-ink) transition hover:border-(--color-primary)"
             >
               <Sparkles className="size-4 text-(--color-primary)" aria-hidden />
-              加载示例账单
-              <span className="text-(--color-ink-muted)">30 秒体验</span>
+              先用内置账单体验
+              <span className="text-(--color-ink-muted)">快速体验</span>
             </Link>
           </div>
 

@@ -143,7 +143,11 @@ export function ChargeSparkline({ charges }: { charges: ChargePoint[] }) {
 
         {hovered ? (
           <span
-            className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-[120%] rounded-(--radius-sm) bg-(--color-ink) px-2 py-1 text-xs whitespace-nowrap text-(--color-surface) shadow-(--shadow-md)"
+            className={`pointer-events-none absolute z-10 -translate-x-1/2 max-w-[calc(100%-8px)] truncate rounded-(--radius-sm) bg-(--color-ink) px-2 py-1 text-xs text-(--color-surface) shadow-(--shadow-md) ${
+              // 顶部数据点固定向上弹会溢出容器盖住「扣费轨迹」标题：
+              // 纵向位置靠上 35% 的点改在下方显示，其余维持上方
+              hovered.y / H < 0.35 ? "translate-y-3" : "-translate-y-[120%]"
+            }`}
             style={{
               left: `${(hovered.x / W) * 100}%`,
               top: `${(hovered.y / H) * 100}%`,

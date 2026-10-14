@@ -3,7 +3,7 @@
 /**
  * 上传工作台（/upload 全部交互与状态机）。
  *
- * 链路：选择入口（OCR 占位 / CSV 文件 / 示例账单）→ 文本就绪 →
+ * 链路：选择入口（CSV 文件 / 内置账单）→ 文本就绪 →
  * parseBillCsv 嗅探（格式/置信度/字段映射/警告）→ 预览人工确认 →
  * stripDuplicates + buildCleanCsv → getDuckDB + importBillCsv（预览表）→
  * registerImportedBook（账本登记 + 激活键）→ 管线数据集装配
@@ -19,7 +19,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import {
   AlertTriangle,
   ArrowRight,
@@ -32,7 +32,6 @@ import {
   Loader2,
   PenLine,
   RefreshCw,
-  ScanLine,
   ShieldCheck,
   Sparkles,
   TrendingDown,
@@ -164,7 +163,7 @@ function EmptyPreview() {
       </div>
       <p className="font-semibold text-(--color-ink)">还没有账单——从左侧选择一个入口开始</p>
       <p className="max-w-xs text-sm text-(--color-ink-muted)">
-        拖入账单文件，或者点左侧「示例账单」直接体验
+         拖入账单文件，或者点左侧「内置账单」直接体验
       </p>
     </div>
   );
@@ -480,11 +479,9 @@ export function UploadWorkspace() {
   const [state, setState] = useState<UploadState>(INITIAL_STATE);
   const [dragging, setDragging] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
 
   /** 解析序号：新文件到来时递增，旧的异步分步文案不再有权写状态 */
   const parseSeqRef = useRef(0);
-  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoSampleStartedRef = useRef(false);
 
@@ -496,15 +493,8 @@ export function UploadWorkspace() {
   // 卸载时清掉未触发的定时器，避免路由离开后还去 push/弹 toast
   useEffect(() => {
     return () => {
-      if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       if (navTimerRef.current) clearTimeout(navTimerRef.current);
     };
-  }, []);
-
-  const showToast = useCallback((message: string) => {
-    setToast(message);
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    toastTimerRef.current = setTimeout(() => setToast(null), 3200);
   }, []);
 
   /** 解析主链路：分步文案 → 真实解析。seq 校验保证只有最新一次请求能落状态 */
@@ -532,11 +522,6 @@ export function UploadWorkspace() {
   const handleSample = useCallback(() => {
     void startParse(generateSampleCsv(), SAMPLE_BILL_FILE_NAME);
   }, [startParse]);
-
-  const handleOcrClick = useCallback(() => {
-    // OCR 入口需要视觉模型密钥，尚未接通：先给反馈，引导走账单文件或示例
-    showToast("截图识别正在准备中，可以先用账单文件或示例账单体验");
-  }, [showToast]);
 
   const resetToEmpty = useCallback(() => {
     // 作废进行中的解析，避免慢的旧链路晚到覆盖空态
@@ -571,7 +556,7 @@ export function UploadWorkspace() {
     [startParse],
   );
 
-  // 首页「加载示例账单」动线：/upload?sample=1 自动走一遍示例
+  // 首页「先用内置账单体验」动线：/upload?sample=1 自动加载内置账单
   useEffect(() => {
     if (sampleRequested && !autoSampleStartedRef.current) {
       autoSampleStartedRef.current = true;
@@ -687,33 +672,14 @@ export function UploadWorkspace() {
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block font-semibold text-(--color-ink)">
-                  没有账单文件？先拿示例账单体验
+                  先用内置账单体验
                 </span>
                 <span className="mt-0.5 block text-sm text-(--color-ink-muted)">
-                  一键生成 {SAMPLE_ROW_COUNT.toLocaleString("zh-CN")} 笔模拟账单，走完上传到体检的完整流程
+                  一键生成 {SAMPLE_ROW_COUNT.toLocaleString("zh-CN")} 笔内置账单，走完上传到体检的完整流程
                 </span>
               </span>
               <ChevronRight className="size-4 shrink-0 text-(--color-ink-muted)" aria-hidden />
             </button>
-
-            {featureFlags.ocr ? (
-              <button
-                type="button"
-                onClick={handleOcrClick}
-                className="flex w-full items-center gap-4 rounded-(--radius-card) border border-(--color-border) bg-(--color-surface) p-4 text-left shadow-(--shadow-sm) transition-colors hover:border-(--color-primary)"
-              >
-                <span className="grid size-11 shrink-0 place-items-center rounded-(--radius-md) bg-(--color-primary-soft)">
-                  <ScanLine className="size-5 text-(--color-primary)" aria-hidden />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block font-semibold text-(--color-ink)">账单截图 OCR</span>
-                  <span className="mt-0.5 block text-sm text-(--color-ink-muted)">
-                    微信 / 支付宝账单截图，识别后直接体检
-                  </span>
-                </span>
-                <ChevronRight className="size-4 shrink-0 text-(--color-ink-muted)" aria-hidden />
-              </button>
-            ) : null}
 
             <div>
               <input
@@ -801,25 +767,6 @@ export function UploadWorkspace() {
           </section>
         </div>
       </Container>
-
-      {/* 轻量 toast：底部居中，自动消失 */}
-      <AnimatePresence>
-        {toast ? (
-          <motion.div
-            key="upload-toast"
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ duration: 0.18 }}
-            role="status"
-            className="pointer-events-none fixed inset-x-0 bottom-24 z-50 flex justify-center px-4 md:bottom-8"
-          >
-            <div className="max-w-md rounded-(--radius-md) bg-(--color-ink) px-4 py-2.5 text-sm text-(--color-surface) shadow-(--shadow-lg)">
-              {toast}
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
     </>
   );
 }

@@ -20,8 +20,9 @@ import { getDuckDB } from "@/lib/duckdb/service";
 import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
-/** 演示口径：订阅年度合计 / 年度总支出，与 DEMO_ACCOUNT_META 咬合（仅演示动线使用，真实动线按 annual_summary 现算） */
-const DEMO_EXPENSE_SHARE_PCT = 1.7;
+/** 内置账单口径：订阅年化 66,000 分 ÷ 年度总支出 2,080,000 分 ≈ 3.2%，
+ *  与 demo-data.ts 新口径一致（仅内置数据动线使用，真实动线按 annual_summary 现算） */
+const DEMO_EXPENSE_SHARE_PCT = 3.2;
 
 function fmtYuan(cents: number): string {
   return (cents / 100).toLocaleString("zh-CN", {
@@ -418,7 +419,7 @@ export default function SubscriptionsPage() {
             近 12 个月
           </span>
           <span className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary)">
-            {isDemoMode ? "演示数据" : "真实数据"}
+            {isDemoMode ? "内置数据" : "真实数据"}
           </span>
         </div>
       </header>

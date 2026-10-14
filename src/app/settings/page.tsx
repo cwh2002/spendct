@@ -33,14 +33,15 @@ import { useAuth } from "@/lib/account/store";
 import { deleteBook, listBooks } from "@/lib/account/db";
 import type { BookRecord } from "@/lib/account/types";
 import { DEMO_SUBSCRIPTIONS } from "@/lib/demo-data";
+import { getDuckDB } from "@/lib/duckdb/service";
 import { featureFlags } from "@/lib/feature-flags";
 import { buildCleanCsv } from "@/lib/import/parse-csv";
 import type { BillRow } from "@/lib/import/types";
+import { readNotifStorage, writeNotifSettings, type NotifSettings } from "@/lib/notifications";
+import { usePipeline } from "@/lib/pipeline/store";
 
 const ACTIVE_BOOK_KEY = "spendct:active-book";
 const THEME_STORAGE_KEY = "spendct:theme";
-const NOTIF_STORAGE_KEY = "spendct:notif:v1";
-const DEMO_MODE_KEY = "spendct:demo";
 const PLAIN_MERCHANT_KEY = "spendct:plain-merchant";
 const COLORBLIND_KEY = "spendct:colorblind";
 
@@ -145,53 +146,40 @@ function applyTheme(mode: ThemeMode): void {
   }
 }
 
-/* ---------------- 通知开关 ---------------- */
+/* ---------------- 通知开关 ----------------
+ * 存储键与读写逻辑统一收在 src/lib/notifications.ts（F13 通知中心同源），
+ * 本页只消费：设置写入必须经 writeNotifSettings 合并已读数组，避免覆盖。 */
 
-interface NotifSettings {
-  subDue: boolean;
-  budgetOver: boolean;
-  resume: boolean;
-}
-
-const DEFAULT_NOTIF: NotifSettings = { subDue: true, budgetOver: true, resume: true };
-
-function readNotifSettings(): NotifSettings {
-  try {
-    const raw = localStorage.getItem(NOTIF_STORAGE_KEY);
-    if (raw) {
-      const parsed: unknown = JSON.parse(raw);
-      if (typeof parsed === "object" && parsed !== null) {
-        return { ...DEFAULT_NOTIF, ...(parsed as Partial<NotifSettings>) };
-      }
-    }
-  } catch {
-    // 内容损坏：回默认
-  }
-  return { ...DEFAULT_NOTIF };
-}
-
-/* ---------------- 导出演示数据 ---------------- */
+/* ---------------- 导出数据（真实优先 + 内置兜底） ---------------- */
 
 interface ExportCategoryDef {
   category: string;
   merchants: readonly string[];
   minCents: number;
   maxCents: number;
-  /** 抽样权重：类目占比贴近演示消费画像 */
+  /** 抽样权重：类目占比贴近学生消费画像（与内置账单生成器同口径） */
   weight: number;
 }
 
+/**
+ * 学生消费画像口径（与内置账单生成器的新参数一致）：
+ * 权重即类目支出占比（餐饮 42%、购物 11.5%……），金额区间取均值的 0.4~1.6 倍，
+ * 均匀分布期望恰为均值（餐饮 20 元、购物 60 元、交通 10 元、娱乐 40 元、
+ * 居住 150 元、通讯 40 元、医疗 50 元、教育 80 元、人情 30 元、金融 100 元、其他 15 元）。
+ * 权重合计 90.9，订阅扣费行单独追加，其余支出占比由订阅补齐。
+ */
 const EXPORT_CATEGORY_POOL: readonly ExportCategoryDef[] = [
-  { category: "餐饮", merchants: ["美团外卖", "瑞幸咖啡", "肯德基", "海底捞", "兰州拉面", "喜茶"], minCents: 800, maxCents: 9000, weight: 30 },
-  { category: "购物", merchants: ["淘宝", "京东", "拼多多", "优衣库", "永辉超市"], minCents: 1500, maxCents: 32000, weight: 24 },
-  { category: "交通", merchants: ["滴滴出行", "地铁出行", "高德打车", "哈啰单车"], minCents: 150, maxCents: 4500, weight: 15 },
-  { category: "娱乐", merchants: ["万达影城", "Steam", "腾讯视频", "网易云音乐"], minCents: 1200, maxCents: 12000, weight: 10 },
-  { category: "居住", merchants: ["国家电网", "燃气缴费", "水费缴纳"], minCents: 3000, maxCents: 26000, weight: 8 },
-  { category: "通讯", merchants: ["中国移动", "中国联通"], minCents: 2000, maxCents: 12000, weight: 5 },
-  { category: "医疗", merchants: ["益丰药房", "社区诊所"], minCents: 1000, maxCents: 20000, weight: 3 },
-  { category: "教育", merchants: ["当当书店", "得到课程"], minCents: 2000, maxCents: 18000, weight: 2 },
-  { category: "人情", merchants: ["微信红包", "生日礼物"], minCents: 2000, maxCents: 20000, weight: 1 },
-  { category: "其他", merchants: ["便利店", "打印店"], minCents: 300, maxCents: 5000, weight: 2 },
+  { category: "餐饮", merchants: ["美团外卖", "瑞幸咖啡", "肯德基", "海底捞", "兰州拉面", "喜茶"], minCents: 800, maxCents: 3200, weight: 42 },
+  { category: "购物", merchants: ["淘宝", "京东", "拼多多", "优衣库", "永辉超市"], minCents: 2400, maxCents: 9600, weight: 11.5 },
+  { category: "交通", merchants: ["滴滴出行", "地铁出行", "高德打车", "哈啰单车"], minCents: 400, maxCents: 1600, weight: 6.3 },
+  { category: "娱乐", merchants: ["万达影城", "Steam", "腾讯视频", "网易云音乐"], minCents: 1600, maxCents: 6400, weight: 7 },
+  { category: "居住", merchants: ["国家电网", "燃气缴费", "水费缴纳"], minCents: 6000, maxCents: 24000, weight: 7.2 },
+  { category: "通讯", merchants: ["中国移动", "中国联通"], minCents: 1600, maxCents: 6400, weight: 4.5 },
+  { category: "医疗", merchants: ["益丰药房", "社区诊所"], minCents: 2000, maxCents: 8000, weight: 1.8 },
+  { category: "教育", merchants: ["当当书店", "得到课程", "中国大学MOOC"], minCents: 3200, maxCents: 12800, weight: 5.4 },
+  { category: "人情", merchants: ["微信红包", "生日礼物"], minCents: 1200, maxCents: 4800, weight: 2.6 },
+  { category: "金融", merchants: ["招商银行信用卡", "基金定投", "保险缴费"], minCents: 4000, maxCents: 16000, weight: 0.9 },
+  { category: "其他", merchants: ["便利店", "打印店"], minCents: 600, maxCents: 2400, weight: 1.7 },
 ];
 
 /** 确定性伪随机：同种子同序列，保证同一评审周期内导出内容可复现 */
@@ -207,8 +195,9 @@ function mulberry32(seed: number): () => number {
 }
 
 /**
- * 演示导出样本：12 个月 × 40 行 + 订阅扣费行（与 DEMO_SUBSCRIPTIONS 同口径）。
- * 真实数据集接通后，此函数替换为 DuckDB 查询结果，其余导出链路不变。
+ * 内置导出样本（回退路径）：12 个月 × 40 行 + 订阅扣费行（与 DEMO_SUBSCRIPTIONS 同口径）。
+ * 只有数据集未落库（尚未导入账单）或 DuckDB 查询失败时才走这里；
+ * 有数据集时导出链路直接读 transactions 真实明细（见 loadExportRowsFromDuckDB）。
  */
 function buildDemoExportRows(): BillRow[] {
   const rows: BillRow[] = [];
@@ -253,6 +242,50 @@ function buildDemoExportRows(): BillRow[] {
         amountCents: picked.minCents + Math.floor(rand() * (picked.maxCents - picked.minCents)),
       });
     }
+  }
+  return rows;
+}
+
+/** 单页导出行数：分页遍历上限，避免一次性物化全部结果 */
+const EXPORT_PAGE_SIZE = 5000;
+
+/** transactions 明细行 → 标准账单行（导出复用 import 域 BillRow 形状） */
+function mapExportRow(row: Record<string, unknown>): BillRow {
+  const amount = row.amount_cents;
+  const note = row.note;
+  const rawRef = row.raw_ref;
+  return {
+    dateIso: String(row.date_iso ?? ""),
+    category: String(row.category ?? "其他"),
+    merchant: String(row.merchant ?? ""),
+    // 渠道契约只有 wechat/alipay 两值；manual 等其余来源导出时归入 wechat
+    channel: row.channel === "alipay" ? "alipay" : "wechat",
+    // 收支契约只有 expense/income；neutral 等其余方向按支出导出
+    direction: row.direction === "income" ? "income" : "expense",
+    amountCents: typeof amount === "bigint" ? Number(amount) : Number(amount) || 0,
+    ...(typeof note === "string" && note !== "" ? { note } : {}),
+    ...(typeof rawRef === "string" && rawRef !== "" ? { rawRef } : {}),
+  };
+}
+
+/**
+ * 从 DuckDB 分页导出真实账单明细。
+ * 表名与列名都是建库常量（schema/bill.ts TRANSACTION_COLUMNS），零用户输入拼接；
+ * 导出属本地允许项，直接 conn.query 遍历，不受白名单 50 行上限约束。
+ * 排序键 date_iso：导出期间数据集不变，OFFSET 分页顺序稳定，不重不漏。
+ */
+async function loadExportRowsFromDuckDB(): Promise<BillRow[]> {
+  const conn = await getDuckDB();
+  const rows: BillRow[] = [];
+  for (;;) {
+    const table = await conn.query(
+      `SELECT date_iso, category, merchant, channel, direction, amount_cents, note, raw_ref ` +
+        `FROM transactions ORDER BY date_iso LIMIT ${EXPORT_PAGE_SIZE} OFFSET ${rows.length}`,
+    );
+    const batch = table.toArray() as Record<string, unknown>[];
+    if (batch.length === 0) break;
+    for (const row of batch) rows.push(mapExportRow(row));
+    if (batch.length < EXPORT_PAGE_SIZE) break;
   }
   return rows;
 }
@@ -431,12 +464,14 @@ function ConfirmModal({ title, description, confirmLabel, busy, onConfirm, onClo
 interface ExportConfirmModalProps {
   format: "csv" | "json";
   rowCount: number;
+  /** 真实明细还在从 DuckDB 读取中：确认键禁用并显示读取态 */
+  loading: boolean;
   onConfirm: () => void;
   onClose: () => void;
 }
 
 /** 导出前隐私提示：文件在本机生成、不经服务端、明确条数 */
-function ExportConfirmModal({ format, rowCount, onConfirm, onClose }: ExportConfirmModalProps) {
+function ExportConfirmModal({ format, rowCount, loading, onConfirm, onClose }: ExportConfirmModalProps) {
   return (
     <Modal title={format === "csv" ? "导出表格文件" : "导出备份文件"} onClose={onClose}>
       <ul className="mt-4 space-y-2.5">
@@ -454,7 +489,7 @@ function ExportConfirmModal({ format, rowCount, onConfirm, onClose }: ExportConf
         </li>
       </ul>
       <p className="mt-3 rounded-(--radius-md) bg-(--color-surface-2) px-3 py-2 text-xs text-(--color-ink-muted)">
-        目前导出的还是内置示例账单，仅供参考；导入你自己的账单后，这里会导出你的真实明细。
+        未导入自己的账单时，这里导出的内容仅用于功能预览；导入你自己的账单后，会导出你的真实明细。
       </p>
       <div className="mt-5 flex justify-end gap-3">
         <button
@@ -467,10 +502,11 @@ function ExportConfirmModal({ format, rowCount, onConfirm, onClose }: ExportConf
         <button
           type="button"
           onClick={onConfirm}
-          className="inline-flex h-11 items-center gap-1.5 rounded-(--radius-md) bg-(--color-btn-primary) px-4 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover)"
+          disabled={loading}
+          className="inline-flex h-11 items-center gap-1.5 rounded-(--radius-md) bg-(--color-btn-primary) px-4 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover) disabled:opacity-60"
         >
           <Download className="size-4" aria-hidden />
-          确认导出
+          {loading ? "正在读取账单…" : "确认导出"}
         </button>
       </div>
     </Modal>
@@ -500,9 +536,8 @@ function SettingsContent() {
     enabled: user !== null,
   });
 
-  const [notif, setNotif] = useState<NotifSettings>(() => readNotifSettings());
+  const [notif, setNotif] = useState<NotifSettings>(() => readNotifStorage().settings);
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => readThemeMode());
-  const [demoMode, setDemoMode] = useLocalStorageFlag(DEMO_MODE_KEY, true);
   const [plainMerchant, setPlainMerchant] = useLocalStorageFlag(PLAIN_MERCHANT_KEY, false);
   const [colorblind, setColorblind] = useLocalStorageFlag(COLORBLIND_KEY, false);
 
@@ -511,7 +546,46 @@ function SettingsContent() {
   const [deleteBookBusy, setDeleteBookBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const exportRows = useMemo(() => buildDemoExportRows(), []);
+  // 导出数据源：数据集已落库（上传账单或内置账单体检）时从 DuckDB 读真实明细，
+  // 否则回退内置样本；读取中/失败都以 null 表示回退态，导出链路不中断
+  const datasetTxHash = usePipeline((s) => s.datasetTxHash);
+  const lastRun = usePipeline((s) => s.lastRun);
+  const [realExportRows, setRealExportRows] = useState<BillRow[] | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+
+  // 数据源切换（新数据集/新体检/清空）时在渲染期同步重置导出态：不在 effect
+  // 里同步 setState，避免级联渲染（React 官方「按 props 调整 state」模式，
+  // 守卫下一次渲染不再命中即自动退出）
+  const [exportSource, setExportSource] = useState({ txHash: datasetTxHash, run: lastRun });
+  if (exportSource.txHash !== datasetTxHash || exportSource.run !== lastRun) {
+    setExportSource({ txHash: datasetTxHash, run: lastRun });
+    setRealExportRows(null);
+    setExportLoading(datasetTxHash !== null || lastRun !== null);
+  }
+
+  useEffect(() => {
+    if (!datasetTxHash && !lastRun) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await loadExportRowsFromDuckDB();
+        if (!cancelled) setRealExportRows(rows);
+      } catch {
+        // 查询失败（数据集未落库/Worker 不可用）：保持内置样本回退
+        if (!cancelled) setRealExportRows(null);
+      } finally {
+        if (!cancelled) setExportLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [datasetTxHash, lastRun]);
+
+  const exportRows = useMemo(
+    () => realExportRows ?? buildDemoExportRows(),
+    [realExportRows],
+  );
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -531,13 +605,9 @@ function SettingsContent() {
   }, [colorblind]);
 
   function updateNotif(patch: Partial<NotifSettings>) {
-    const next = { ...notif, ...patch };
-    setNotif(next);
-    try {
-      localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(next));
-    } catch {
-      // 忽略
-    }
+    setNotif((prev) => ({ ...prev, ...patch }));
+    // 经 notifications 库读-改-写：开关与已读集合共用一个存储对象，整体覆盖会冲掉已读
+    writeNotifSettings(patch);
   }
 
   function setActiveBook(id: string) {
@@ -575,7 +645,7 @@ function SettingsContent() {
   }
 
   function handleExport() {
-    if (!exportTarget) return;
+    if (!exportTarget || exportLoading) return;
     const format = exportTarget;
     const stamp = new Date().toISOString().slice(0, 10);
     try {
@@ -780,13 +850,13 @@ function SettingsContent() {
         <div className="divide-y divide-(--color-border)">
           <SwitchRow
             label="订阅扣费临近"
-            desc="下次扣费前 1 天提醒"
+            desc="下次扣费前 3 天内提醒"
             checked={notif.subDue}
             onChange={(next) => updateNotif({ subDue: next })}
           />
           <SwitchRow
-            label="预算超支"
-            desc="类目支出超出预算时提醒"
+            label="预算使用提醒"
+            desc="预算使用率达到 80% 时提醒"
             checked={notif.budgetOver}
             onChange={(next) => updateNotif({ budgetOver: next })}
           />
@@ -800,7 +870,7 @@ function SettingsContent() {
       </SectionCard>
 
       {/* 偏好 */}
-      <SectionCard icon={Sun} title="偏好" sub="主题、示例数据与显示选项">
+      <SectionCard icon={Sun} title="偏好" sub="主题与显示选项">
         <div className="space-y-4">
           {featureFlags.dark ? (
             <div>
@@ -835,12 +905,6 @@ function SettingsContent() {
           ) : null}
 
           <div className="divide-y divide-(--color-border)">
-            <SwitchRow
-              label="展示示例数据"
-              desc="全站展示内置示例账单，方便先体验功能；导入自己的账单后建议关闭"
-              checked={demoMode}
-              onChange={setDemoMode}
-            />
             <SwitchRow
               label="显示完整商户名"
               desc="默认会隐藏商户名的一部分以保护隐私，打开后显示完整名称"
@@ -910,6 +974,7 @@ function SettingsContent() {
         <ExportConfirmModal
           format={exportTarget}
           rowCount={exportRows.length}
+          loading={exportLoading}
           onConfirm={handleExport}
           onClose={() => setExportTarget(null)}
         />

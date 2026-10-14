@@ -1,7 +1,7 @@
 /**
  * 六阶段管线引擎单测（07 §17/§20 + 03 §1 状态机验收）。
  *
- * 引擎不依赖 DuckDB wasm：fake conn 在内存里把 demoTransactions() 的 788 行
+ * 引擎不依赖 DuckDB wasm：fake conn 在内存里把 demoTransactions() 的 793 行
  * 按 9 张预计算表/视图的语义（07 §3 DDL 口径）聚合成行，再按白名单 SQL 的
  * SELECT/GROUP BY/ORDER BY/LIMIT 投影，保证六阶段全链路用真实数字跑通。
  */
@@ -309,16 +309,15 @@ async function collectRun(
 
 // ───────────────────────── 测试用例 ─────────────────────────
 
-describe("demoTransactions 合成数据口径", () => {
-  it("确定性：两次调用逐字节一致，行数约 800", () => {
+describe("demoTransactions 内置数据口径", () => {
+  it("确定性：两次调用逐字节一致，共 793 行", () => {
     const a = demoTransactions();
     const b = demoTransactions();
-    expect(a.length).toBeGreaterThan(750);
-    expect(a.length).toBeLessThan(850);
+    expect(a.length).toBe(793);
     expect(JSON.stringify(a)).toBe(JSON.stringify(b));
   });
 
-  it("已支付支出总额恒为 3,551,493 分，覆盖 12 类目", () => {
+  it("已支付支出总额恒为 2,080,000 分，覆盖 12 类目", () => {
     const rows = demoTransactions();
     const expense = rows
       .filter((r) => r.direction === "expense" && r.status === "paid")
@@ -331,7 +330,7 @@ describe("demoTransactions 合成数据口径", () => {
     }
   });
 
-  it("深夜 23 笔合计 142,000 分；3 订阅商户各 12 笔；8 收入 2 退款 2 重复", () => {
+  it("深夜 23 笔合计 35,000 分；3 订阅商户各 12 笔；12 收入 2 退款 2 重复", () => {
     const rows = demoTransactions();
     const night = rows.filter((r) => r.direction === "expense" && r.status === "paid" && isNight(r));
     expect(night.length).toBe(DEMO_NIGHT_COUNT);
@@ -345,7 +344,7 @@ describe("demoTransactions 合成数据口径", () => {
       expect(charges.every((r) => r.amount_cents === spec.cents)).toBe(true);
     }
 
-    expect(rows.filter((r) => r.direction === "income").length).toBe(8);
+    expect(rows.filter((r) => r.direction === "income").length).toBe(12);
     expect(rows.filter((r) => r.status === "refunded").length).toBe(2);
     const ids = rows.map((r) => r.tx_id);
     expect(ids.length - new Set(ids).size).toBe(2);
@@ -442,16 +441,16 @@ describe("runCheckup 完整六阶段流程", () => {
     }
 
     const clean = byStage.get("clean")![0]!;
-    expect(clean.headline).toContain("共 789 笔账单");
+    expect(clean.headline).toContain("共 793 笔账单");
 
     const subscription = byStage.get("subscription")!;
     expect(
-      subscription.some((c) => c.evidence.stats.some((s: { value: string }) => s.value === "588.00")),
+      subscription.some((c) => c.evidence.stats.some((s: { value: string }) => s.value === "660.00")),
     ).toBe(true);
 
     const anomaly = byStage.get("anomaly")!;
     expect(
-      anomaly.some((c) => c.evidence.stats.some((s: { value: string }) => s.value === "1420.00")),
+      anomaly.some((c) => c.evidence.stats.some((s: { value: string }) => s.value === "350.00")),
     ).toBe(true);
     expect(anomaly.some((c) => c.headline.includes("2026-06-18"))).toBe(true);
 

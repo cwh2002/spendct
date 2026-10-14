@@ -184,14 +184,14 @@ export function RegisterForm() {
           <h2 className="mt-5 text-xl font-bold tracking-tight">账户创建成功，已自动登录</h2>
           <p className="mt-2 text-sm text-(--color-ink-secondary)">正在进入你的体检中心…</p>
 
-          {/* 首次使用引导：直接加载示例账单，省去自己找 CSV 的步骤 */}
+          {/* 首次使用引导：直接加载内置账单，省去自己找 CSV 的步骤 */}
           <div className="mt-6 rounded-(--radius-lg) border border-(--color-border) p-4 text-left">
             <p className="text-sm font-medium text-(--color-ink)">第一次使用？</p>
             <Link
               href="/upload?sample=1"
               className="mt-2.5 flex min-h-11 items-center justify-between gap-2 rounded-(--radius-md) bg-(--color-primary-soft) px-3.5 py-2 text-sm font-medium text-(--color-brand-600) transition-opacity hover:opacity-85"
             >
-              加载示例账单，开始第一次体检
+              加载内置账单，开始第一次体检
               <ArrowRight className="size-4 shrink-0" aria-hidden />
             </Link>
           </div>

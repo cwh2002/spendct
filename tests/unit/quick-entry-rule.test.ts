@@ -116,4 +116,16 @@ describe("parseable:false 用例（08 §⑥.1 规则①④）", () => {
     const result = parseQuickEntryText("  ", TODAY);
     expect(result.parseable).toBe(false);
   });
+
+  it("「你是谁，你是什么大模型」识别为身份闲聊，引导去记一笔", () => {
+    const result = parseQuickEntryText("你是谁，你是什么大模型", TODAY);
+    expect(result.parseable).toBe(false);
+    expect(result.reason).toContain("记一笔");
+  });
+
+  it("「你好」识别为打招呼闲聊，引导去记一笔", () => {
+    const result = parseQuickEntryText("你好", TODAY);
+    expect(result.parseable).toBe(false);
+    expect(result.reason).toContain("记一笔");
+  });
 });

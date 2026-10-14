@@ -30,7 +30,8 @@ ORDER BY total_cents DESC;`,
        COUNT(*) AS hits,
        SUM(amount_cents) AS total_cents
 FROM bills
-WHERE EXTRACT(hour FROM ts) BETWEEN 0 AND 2
+WHERE EXTRACT(hour FROM ts) >= 23
+   OR EXTRACT(hour FROM ts) < 5
 GROUP BY merchant_ref
 ORDER BY total_cents DESC;`,
   subscription: `SELECT merchant_ref, COUNT(*) AS hits,
@@ -45,10 +46,10 @@ FROM (
 GROUP BY merchant_ref
 HAVING COUNT(*) >= 3 AND AVG(day_gap) BETWEEN 25 AND 40;`,
   attribution: `SELECT category,
-       SUM(CASE WHEN month = '2026-10' THEN amount_cents END) AS cur_cents,
-       SUM(CASE WHEN month = '2026-09' THEN amount_cents END) AS prev_cents
+       SUM(CASE WHEN month = '2026-09' THEN amount_cents END) AS cur_cents,
+       SUM(CASE WHEN month = '2026-08' THEN amount_cents END) AS prev_cents
 FROM bills
-WHERE month IN ('2026-09', '2026-10')
+WHERE month IN ('2026-08', '2026-09')
 GROUP BY category
 ORDER BY cur_cents - prev_cents DESC;`,
   annual: `SELECT month,
@@ -60,49 +61,49 @@ GROUP BY month
 ORDER BY month ASC;`,
 };
 
-/** SQL 命中行数（与 DEMO_INSIGHTS 引用口径咬合） */
+/** SQL 命中行数（与内置账单 793 行口径咬合） */
 const DEMO_HITS: Record<string, number> = {
-  clean: 10_000,
-  profile: 3_214,
+  clean: 793,
+  profile: 793,
   anomaly: 23,
-  subscription: 19,
-  attribution: 6,
+  subscription: 36,
+  attribution: 12,
   annual: 12,
 };
 
 /** 产出卡缩略：标题行与 DEMO_INSIGHTS 的 headline 对齐，不足部分用确定性子任务卡补足 */
 const DEMO_CARDS: Record<string, { title: string; ok: boolean }[]> = {
   clean: [
-    { title: "账单整理摘要 · 10,000 条全部识别成功", ok: true },
-    { title: "去重统计 · 移除 12 条重复记录", ok: true },
+    { title: "账单整理摘要 · 793 条全部识别成功", ok: true },
+    { title: "去重统计 · 移除 2 条重复记录", ok: true },
   ],
   profile: [
-    { title: "餐饮是最大支出类目，占月均支出 34%", ok: true },
+    { title: "餐饮是最大支出类目，占年度支出 41%", ok: true },
     { title: "类目·时段·渠道画像", ok: true },
     { title: "高频商户 Top 10", ok: true },
-    { title: "渠道构成（微信 62% / 支付宝 38%）", ok: true },
+    { title: "渠道构成（支付宝 54% / 微信 46%）", ok: true },
   ],
   anomaly: [
-    { title: "深夜消费 23 笔集中在 0–2 点，游戏充值为主", ok: true },
+    { title: "深夜消费 23 笔 · 游戏充值与直播为主", ok: true },
     { title: "疑似重复扣费 2 笔，建议核对商户订单", ok: false },
     { title: "退款异常扫描 · 未发现问题", ok: true },
   ],
   subscription: [
-    { title: "发现 3 项连续订阅扣费，合计 5,888 元/年", ok: true },
+    { title: "发现 3 项连续订阅扣费，合计 660 元/年", ok: true },
     { title: "沉默订阅 1 项 · 近 90 天零使用", ok: true },
-    { title: "周期扣费明细表（3 商户 × 19 笔）", ok: true },
+    { title: "周期扣费明细表（3 商户 × 36 笔）", ok: true },
     { title: "取消指引 · 来自真实案例", ok: true },
   ],
   attribution: [
-    { title: "本月支出环比 +18%，主要来自购物节大促", ok: true },
-    { title: "类目增量拆解 · 购物 +312 元（81%）", ok: true },
+    { title: "本月支出环比 +23.2%，主要来自开学季采购", ok: true },
+    { title: "类目增量拆解 · 购物 +519 元（128%）", ok: true },
     { title: "一次性脉冲 vs 趋势 · 非趋势性上涨", ok: true },
   ],
   annual: [
-    { title: "年度账单关键词：「外卖自由」与「游戏通行证」", ok: true },
-    { title: "月度支出趋势 · 峰值出现在 10 月", ok: true },
-    { title: "外卖是你的第一消费场景", ok: true },
-    { title: "订阅层悄悄吃掉 5,888 元/年", ok: true },
+    { title: "年度账单关键词：「食堂」与「开学季采购」", ok: true },
+    { title: "月度支出趋势 · 峰值出现在 9 月", ok: true },
+    { title: "堂食与食堂是你的第一消费场景", ok: true },
+    { title: "订阅层悄悄吃掉 660 元/年", ok: true },
     { title: "消费在向「体验型」迁移", ok: true },
     { title: "年度海报已生成", ok: true },
   ],
@@ -113,17 +114,17 @@ const DEMO_RAG: Record<string, { caseId: string; title: string; summary: string 
   profile: [
     {
       caseId: "rag:spending_advice_12",
-      title: "外卖占比偏高怎么办",
+      title: "食堂为主、外卖为辅怎么搭配",
       summary:
-        "案例：外卖占餐饮 58% 的用户设置「外卖周预算 + 自提提醒」，4 周后外卖支出下降 23%，月省 80–150 元。",
+        "案例：外卖占餐饮 35% 的用户设置「外卖周预算 + 食堂优先」规则，4 周后外卖占比降到 22%，月省 60–120 元。",
     },
   ],
   subscription: [
     {
       caseId: "rag:subscription_trap_07",
-      title: "连续扣费 11 个月的视频会员",
+      title: "连续扣费 12 个月的视频会员",
       summary:
-        "案例：视频会员连续扣费 11 个月未被察觉。用户通过 App 内「订阅管理」入口 3 步完成取消，平台自动退款最近 1 期。",
+        "案例：视频会员连续扣费 12 个月未被察觉。用户通过 App 内「订阅管理」入口 3 步完成取消，平台自动退款最近 1 期。",
     },
   ],
   annual: [
@@ -138,32 +139,32 @@ const DEMO_RAG: Record<string, { caseId: string; title: string; summary: string 
 
 /** 确定性进度文本：全部来自真实计数口径，不放伪造百分比（05 §5.1） */
 const PROGRESS_TEXT: Record<string, string> = {
-  clean: "已整理 3,214 / 10,000 条账单",
-  profile: "已按 12 个类目汇总 · 3,214 条账单",
-  anomaly: "已扫描 3,214 条账单 · 发现 6 类问题",
-  subscription: "已排查 1,247 个商户的规律性扣费",
-  attribution: "已对比 6 个类目的支出变化",
+  clean: "已整理 793 条账单",
+  profile: "已按 12 个类目汇总 · 793 条账单",
+  anomaly: "已扫描 793 条账单 · 发现 6 类问题",
+  subscription: "已排查 63 个商户的规律性扣费",
+  attribution: "已对比 12 个类目的支出变化",
   annual: "已汇总 12 个月账单 · 年度总结生成中",
 };
 
 /** 各步骤跑完后的结论式说明（页面不再展示 SQL 原文，只给一句人话结论） */
 const DEMO_SQL_NOTES: Record<string, string> = {
-  clean: "已整理账单并去重，共核对 10,000 条记录",
-  profile: "已按类别汇总账单，共核对 3,214 条记录",
+  clean: "已整理账单并去重，共核对 793 条记录",
+  profile: "已按类别汇总账单，共核对 793 条记录",
   anomaly: "已排查深夜消费与退款异常，查出 23 个疑点",
-  subscription: "已排查规律性连续扣费，查出 19 笔可疑扣费",
-  attribution: "已对比本月与上月支出，拆解 6 项变化",
+  subscription: "已排查规律性连续扣费，查出 36 笔可疑扣费",
+  attribution: "已对比本月与上月支出，拆解 12 项变化",
   annual: "已汇总全年账单走势，共 12 个月",
 };
 
 /** 流式叙事文本（demo 为整段下发，打字机逐字揭示；真实管线为逐 token 增长） */
 const NARRATIVES: Record<string, string> = {
-  clean: "整理完成：10,000 条账单全部识别成功，自动去重移除 12 条重复记录。",
-  profile: "你的消费画像成型：餐饮是最大支出类目，外卖占餐饮支出 58%，周末消费比工作日高 41%。",
-  anomaly: "发现 23 笔深夜消费，其中游戏充值与直播打赏占 71%，建议设置夜间支付冷静期。",
-  subscription: "发现 3 项连续订阅扣费，其中 1 项近 90 天完全没用过，属于典型的沉默订阅。",
-  attribution: "本月支出环比 +18%，购物类贡献增量的 81%，3 笔大额订单集中在促销日。",
-  annual: "年度叙事完成：外卖构成日常基本盘，订阅构成固定成本层，建议把两者纳入统一预算视图。",
+  clean: "整理完成：793 条账单全部识别成功，自动去重移除 2 条重复记录。",
+  profile: "你的消费画像成型：餐饮是最大支出类目，占年度支出 41%，其中堂食与食堂占 78%、外卖 22%。",
+  anomaly: "发现 23 笔深夜消费，其中游戏充值与直播打赏占 84%，建议设置夜间支付冷静期。",
+  subscription: "发现 3 项连续订阅扣费，年化合计 660 元，其中 1 项近 90 天完全没用过，属于典型的沉默订阅。",
+  attribution: "本月支出环比 +23.2%，购物类贡献增量的 128%，3 笔大额订单集中在开学季。",
+  annual: "年度叙事完成：食堂与外卖构成日常基本盘，订阅构成固定成本层，建议把两者纳入统一预算视图。",
 };
 
 /** 事件下发与阶段切换的回调协议：与真实管线 runner 保持一致 */

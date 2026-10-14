@@ -18,13 +18,13 @@ vi.mock("@/lib/duckdb/service", () => ({
 }));
 
 vi.mock("@/lib/duckdb/dataset", () => ({
-  initDataset: vi.fn(async () => ({ rowCount: 789 })),
+  initDataset: vi.fn(async () => ({ rowCount: 793 })),
   verifySchema: vi.fn(async () => []),
   dropDataset: vi.fn(async () => {}),
 }));
 
 vi.mock("@/lib/pipeline/mock-run", () => ({
-  demoTransactions: vi.fn(() => Array.from({ length: 789 }, () => ({ tx_id: "x" }))),
+  demoTransactions: vi.fn(() => Array.from({ length: 793 }, () => ({ tx_id: "x" }))),
 }));
 
 const runCheckupMock = vi.hoisted(() => vi.fn());
@@ -116,7 +116,7 @@ describe("createPipelineRun 事件映射", () => {
     const harness = await startHarness("sample");
     const demoTransactions = await import("@/lib/pipeline/mock-run");
     expect(demoTransactions.demoTransactions).toHaveBeenCalled();
-    expect(harness.events.some((e) => e.text.includes("789"))).toBe(true);
+    expect(harness.events.some((e) => e.text.includes("793"))).toBe(true);
   });
 
   it("stage:start → running 阶段状态与 progress 事件", async () => {

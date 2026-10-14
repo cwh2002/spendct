@@ -40,9 +40,9 @@ const JUMP_KEYS: Record<string, string> = {
 
 /**
  * 演示讲解面板（`?` 键呼出，05 §7.3）：
- * 供演示讲解使用的小工具——重新演示体检过程、直接看结果、模拟一次失败、切换暗色、
- * 试试断网也能用、接着上次演示继续。演示模式下全部计算在本机完成，断网不影响任何功能。
- * 模拟失败/直接看结果/接着上次继续三类动作由体检页监听 DEMO_CONSOLE_EVENT 执行。
+ * 供演示讲解使用的小工具——重新运行体检过程、直接看结果、查看失败时的提示、切换暗色、
+ * 试试断网也能用、接着上次继续。演示模式下全部计算在本机完成，断网不影响任何功能。
+ * 查看失败提示/直接看结果/接着上次继续三类动作由体检页监听 DEMO_CONSOLE_EVENT 执行。
  */
 export function DemoConsole() {
   const router = useRouter();
@@ -116,12 +116,12 @@ export function DemoConsole() {
   }
 
   const ACTIONS: { action: DemoAction; label: string; icon: typeof Play; hint: string }[] = [
-    { action: "replay-pipeline", label: "重新演示体检过程", icon: Play, hint: "" },
+    { action: "replay-pipeline", label: "重新运行体检过程", icon: Play, hint: "" },
     { action: "jump-last-stage", label: "直接看结果", icon: ArrowRightToLine, hint: "正在跳到结果页" },
-    { action: "inject-error", label: "模拟一次失败", icon: Bug, hint: "好的，接下来会演示遇到问题时 App 会怎么友好提示你" },
+    { action: "inject-error", label: "查看失败时的提示", icon: Bug, hint: "好的，接下来会展示遇到问题时 App 会怎么友好提示你" },
     { action: "toggle-dark", label: "切换暗色", icon: Moon, hint: "" },
     { action: "simulate-offline", label: "试试断网也能用", icon: Wifi, hint: "" },
-    { action: "restore-checkpoint", label: "接着上次演示继续", icon: RotateCcw, hint: "" },
+    { action: "restore-checkpoint", label: "接着上次继续", icon: RotateCcw, hint: "" },
   ];
 
   return (
@@ -130,7 +130,7 @@ export function DemoConsole() {
         {open ? (
           <motion.div
             role="dialog"
-            aria-label="演示讲解面板"
+            aria-label="快捷面板"
             initial={{ opacity: 0, y: 12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
@@ -138,18 +138,18 @@ export function DemoConsole() {
             className="fixed bottom-20 right-4 z-50 w-72 rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-lg) md:bottom-6"
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">演示讲解面板</p>
+              <p className="text-sm font-semibold">快捷面板</p>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                aria-label="关闭演示讲解面板"
+                aria-label="关闭快捷面板"
                 className="grid size-7 place-items-center rounded-full text-(--color-ink-muted) transition-colors hover:bg-(--color-surface-2)"
               >
                 <X className="size-4" aria-hidden />
               </button>
             </div>
             <p className="mt-0.5 text-xs text-(--color-ink-muted)">
-              按 ? 开关 · 供演示讲解使用 · 再按 ? 收起
+              按 ? 开关 · 再按 ? 收起
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {ACTIONS.map(({ action, label, icon: Icon, hint }) => (

@@ -92,8 +92,9 @@ const LIST: Capability[] = [
     title: "省钱贴士",
     desc: "学生权益、隐藏优惠搜罗，贴士直接贴合你的账单。",
     icon: PiggyBank,
-    href: null,
-    tier: "P2",
+    // 贴士卡流入洞察页年度阶段（按用户 top 类目匹配学生权益案例）
+    href: "/insights",
+    tier: "P1",
   },
   {
     id: "learn",
@@ -101,7 +102,7 @@ const LIST: Capability[] = [
     desc: "150+ 可核验案例：订阅陷阱、预付风险、消费维权。",
     icon: GraduationCap,
     href: "/learn",
-    tier: "P2",
+    tier: "P1",
     flag: "learn",
   },
   {

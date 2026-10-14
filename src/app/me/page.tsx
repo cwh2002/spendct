@@ -39,14 +39,50 @@ import { deleteBook, listBooks, openDb, upsertUser } from "@/lib/account/db";
 import { useAuth } from "@/lib/account/store";
 import type { BookRecord, UserRecord } from "@/lib/account/types";
 import { DEMO_ACCOUNT_META } from "@/lib/demo-data";
+import { getDuckDB } from "@/lib/duckdb/service";
 import { featureFlags } from "@/lib/feature-flags";
+import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
 import { getRankTier } from "@/lib/rank";
+import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
 /** 当前激活账本在本机存储中的键，与数据管理页共用 */
 const ACTIVE_BOOK_KEY = "spendct:active-book";
 
 /** 演示口径的累计体检次数：与演示成就解锁状态一致；正式接入后由体检记录统计 */
 const DEMO_CHECKUP_COUNT = 3;
+
+/* ---------------- 数据概览真实统计（DuckDB 白名单聚合） ---------------- */
+
+/**
+ * 三条聚合 SQL 均为代码常量（07 §6 文法：必须 GROUP BY，行数 ≤50）：
+ * - 累计笔数：按 direction 分组计数后求和（含收入/退款行，与内置 793 笔同口径）；
+ * - 本月支出：账单最近一个月的支出合计；
+ * - 累计结余：全部月份的收入 − 支出。
+ */
+const SQL_TOTAL_TX = "SELECT direction, COUNT(*) FROM transactions GROUP BY direction";
+const SQL_LATEST_MONTH =
+  "SELECT month, SUM(expense_cents) FROM v_monthly_summary GROUP BY month ORDER BY month DESC LIMIT 1";
+const SQL_TOTALS =
+  "SELECT month, SUM(income_cents), SUM(expense_cents) FROM v_monthly_summary GROUP BY month";
+
+/**
+ * DuckDB 聚合值兜底转数值（与账本页同口径）：BIGINT → bigint、INTEGER → number、
+ * HUGEINT/SUM → 128 位大数对象（Number() 经 valueOf 转数值）。不可解析时兜底 0。
+ */
+function toCents(value: unknown): number {
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "number") return Math.round(value);
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : 0;
+}
+
+/** 真实统计结果：以 lastRun 对象身份打标，运行切换后旧批次整体失效 */
+interface RealStats {
+  run: LastRunSummary;
+  txCount: number | null;
+  monthExpenseCents: number | null;
+  surplusCents: number | null;
+}
 
 function readActiveBookId(): string | null {
   try {
@@ -548,6 +584,61 @@ function MeContent() {
   const unlockedIds = useMemo(() => getUnlockedIds(), []);
   const rank = useMemo(() => getRankTier(), []);
 
+  // 数据概览真实统计：体检后按 lastRun 从 DuckDB 装载；渲染期按 run 身份
+  // 同步清空（不在 effect 里同步 setState），未体检/查询失败保持内置口径
+  const lastRun = usePipeline((s) => s.lastRun);
+  const [realStats, setRealStats] = useState<RealStats | null>(null);
+  const [statsRun, setStatsRun] = useState(lastRun);
+  if (statsRun !== lastRun) {
+    setStatsRun(lastRun);
+    setRealStats(null);
+  }
+
+  useEffect(() => {
+    if (!lastRun) return;
+    let cancelled = false;
+    void (async () => {
+      const conn = await getDuckDB();
+      // 单块查询失败只影响该块，其余保持真实值（与账本页同款模块级降级）
+      const load = async <T,>(
+        sql: string,
+        map: (rows: Record<string, unknown>[]) => T,
+      ): Promise<T | null> => {
+        try {
+          const result = await runWhitelistedAggregate(conn, sql);
+          return map(result.rows as Record<string, unknown>[]);
+        } catch {
+          return null;
+        }
+      };
+      const [txCount, monthExpenseCents, surplusCents] = await Promise.all([
+        load(SQL_TOTAL_TX, (rows) => rows.reduce((sum, row) => sum + toCents(Object.values(row)[1]), 0)),
+        load(SQL_LATEST_MONTH, (rows) =>
+          rows[0] ? toCents(Object.values(rows[0] ?? {})[1]) : null,
+        ),
+        load(SQL_TOTALS, (rows) => {
+          let income = 0;
+          let expense = 0;
+          for (const row of rows) {
+            const values = Object.values(row);
+            income += toCents(values[1]);
+            expense += toCents(values[2]);
+          }
+          return income - expense;
+        }),
+      ]);
+      if (!cancelled) setRealStats({ run: lastRun, txCount, monthExpenseCents, surplusCents });
+    })().catch(() => {
+      // DuckDB 不可用（数据库未落库等）时保持内置口径，不阻塞页面
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lastRun]);
+
+  // 瓦片数据源：真实统计与当前体检结果同源才采用，否则回退内置数据
+  const stats = realStats && realStats.run === lastRun ? realStats : null;
+
   const handleProfileSaved = useCallback(
     (updated: UserRecord) => {
       // hydrate 有单次执行守卫，不会重读库；直接写 store 刷新当前会话的用户
@@ -700,23 +791,23 @@ function MeContent() {
         <StatTile
           label="累计笔数"
           icon={ReceiptText}
-          value={DEMO_ACCOUNT_META.totalTransactions}
+          value={stats?.txCount ?? DEMO_ACCOUNT_META.totalTransactions}
           format={formatCount}
-          hint={`覆盖 ${DEMO_ACCOUNT_META.monthsCovered} 个月`}
+          hint={stats ? "按当前账单统计" : `覆盖 ${DEMO_ACCOUNT_META.monthsCovered} 个月`}
         />
         <StatTile
           label="本月支出"
           icon={Wallet}
-          value={DEMO_ACCOUNT_META.currentMonthExpenseCents}
+          value={stats?.monthExpenseCents ?? DEMO_ACCOUNT_META.currentMonthExpenseCents}
           format={formatYuan}
-          hint="示例数据"
+          hint={stats ? "账单最近一个月" : "内置数据 · 9 月"}
         />
         <StatTile
-          label="省下金额"
+          label="累计结余"
           icon={PiggyBank}
-          value={DEMO_ACCOUNT_META.savedCents}
+          value={stats?.surplusCents ?? DEMO_ACCOUNT_META.savedCents}
           format={formatYuan}
-          hint="订阅取消 + 学生权益"
+          hint={stats ? "收入 − 支出（全部账单）" : "收入 24,000 − 支出 20,800"}
         />
       </section>
 
@@ -757,7 +848,7 @@ function MeContent() {
             <FileSpreadsheet className="size-8 text-(--color-ink-muted)" aria-hidden />
             <p className="font-medium text-(--color-ink)">还没有账本——去上传第一份账单</p>
             <p className="max-w-sm text-xs text-(--color-ink-muted)">
-              支持微信 / 支付宝的账单文件，也可以先加载示例账单看看效果
+              支持微信 / 支付宝的账单文件，也可以先用内置账单体验
             </p>
             <Link
               href="/upload"

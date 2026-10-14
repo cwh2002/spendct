@@ -84,7 +84,8 @@ export function buildLineOption(data: SeriesData, opts: LineOpts = {}): ECOption
       boundaryGap: false,
       axisLine: { lineStyle: { color: t.lineBase } },
       axisTick: { show: false },
-      axisLabel: { color: t.inkMuted, fontSize: 11, margin: 12 },
+      // 月份标签最多 12 个：自动抽稀 + 缩小字号，避免窄卡下相邻标签互相压字
+      axisLabel: { color: t.inkMuted, fontSize: 10, margin: 8, interval: "auto" },
     },
     yAxis: {
       type: "value",
@@ -117,7 +118,7 @@ export function buildLineOption(data: SeriesData, opts: LineOpts = {}): ECOption
   };
 }
 
-/** 环图：radius 62–80%、切片间 2px 表面描边、图例外置、直接标签（重叠加隐藏） */
+/** 环图：图例置顶居中、环体下移给图例让位、标签只留百分比（名称由图例承担），重叠标签隐藏 */
 export function buildDonutOption(data: SeriesData, opts: DonutOpts = {}): ECOption {
   const { dimExcept } = opts;
   const t = chartTokens();
@@ -137,24 +138,28 @@ export function buildDonutOption(data: SeriesData, opts: DonutOpts = {}): ECOpti
       formatter: "{b}：{c}（{d}%）",
     },
     legend: {
-      bottom: 0,
+      // 置顶居中：小高度容器里底部图例常与标签线打架，顶部整行更省纵向空间
+      top: 0,
+      left: "center",
       icon: "roundRect",
-      itemWidth: 10,
-      itemHeight: 10,
-      itemGap: 14,
-      textStyle: { color: t.inkSecondary, fontSize: 11 },
+      itemWidth: 8,
+      itemHeight: 8,
+      itemGap: 8,
+      textStyle: { color: t.inkSecondary, fontSize: 10 },
     },
     series: [
       {
         name: "share",
         type: "pie",
-        radius: ["62%", "80%"],
-        center: ["50%", "44%"],
+        // 环体整体下移，为顶部图例留出整行高度，标签线不再压到图例
+        radius: ["52%", "68%"],
+        center: ["50%", "56%"],
         avoidLabelOverlap: true,
         itemStyle: { borderColor: t.surface, borderWidth: 2, borderRadius: 3 },
-        label: { show: true, formatter: "{b} {d}%", fontSize: 10, color: t.inkSecondary },
+        // 标签只显示百分比：名称已由图例承担，环外文字变短，多切片时重叠大幅减少
+        label: { show: true, formatter: "{d}%", fontSize: 10, color: t.inkSecondary },
         labelLayout: { hideOverlap: true },
-        labelLine: { length: 6, length2: 6, lineStyle: { color: t.lineBase } },
+        labelLine: { length: 4, length2: 4, lineStyle: { color: t.lineBase } },
         emphasis: { scale: true, scaleSize: 4 },
         data: data.values.map((v, i) => ({
           value: v,
@@ -189,7 +194,7 @@ export function buildBarOption(data: SeriesData, opts: BarOpts = {}): ECOption {
   return {
     color: [color],
     textStyle: { fontFamily: t.fontSans, color: t.inkSecondary, fontSize: 12 },
-    grid: { left: 8, right: horizontal ? 56 : 16, top: 28, bottom: 4, containLabel: true },
+    grid: { left: 8, right: horizontal ? 72 : 16, top: 28, bottom: 4, containLabel: true },
     tooltip: {
       trigger: "item",
       confine: true,
@@ -213,6 +218,8 @@ export function buildBarOption(data: SeriesData, opts: BarOpts = {}): ECOption {
         label: {
           show: true,
           position: horizontal ? "right" : "top",
+          // 横向柱的数值标签悬在柱右端：固定 4px 间距，避免贴柱粘连、又不会吃满右留白
+          ...(horizontal ? { distance: 4 } : {}),
           color: t.inkSecondary,
           fontSize: 11,
           formatter: (p) => fmt(Number(p.value)),

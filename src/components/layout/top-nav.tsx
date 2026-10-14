@@ -2,10 +2,28 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Bell, HeartPulse, Lock } from "lucide-react";
+import { Bell, Check, HeartPulse, Lock } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Container } from "./container";
 import { ThemeToggle } from "./theme-toggle";
+import { readPausedCheckpoint } from "@/components/checkup/checkpoint-bar";
 import { useAuth } from "@/lib/account/store";
+import { DEMO_SUBSCRIPTIONS } from "@/lib/demo-data";
+import {
+  buildBudgetSnapshot,
+  countUnread,
+  deriveNotifications,
+  loadRealNotifData,
+  markAllNotifRead,
+  markNotifRead,
+  readBudgetOverrides,
+  readManualEntries,
+  readNotifStorage,
+  type NotificationItem,
+  type NotifBudgetSnapshot,
+  type NotifSubscription,
+} from "@/lib/notifications";
+import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
 
 const NAV_ITEMS = [
   { href: "/", label: "首页" },
@@ -14,9 +32,6 @@ const NAV_ITEMS = [
   { href: "/subscriptions", label: "订阅" },
   { href: "/report", label: "报告" },
 ] as const;
-
-// 未读数占位常量：通知中心落地后改为从通知存储读取
-const UNREAD_COUNT = 0;
 
 /**
  * 路由激活判断：带查询参数的入口（如 /insights?view=ledger）只比较路径部分，
@@ -102,6 +117,197 @@ function AuthArea() {
   );
 }
 
+/** 通知时间展示：今天的显示「HH:mm」，更早的显示「M月D日」 */
+function formatNotifTime(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate();
+  if (sameDay) {
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+  return `${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
+/**
+ * 顶栏通知铃铛（F13）：
+ * 三类通知（订阅临近扣费 / 预算使用率 / 断点续跑）全部由本地数据派生，
+ * 无任何网络请求；开关与已读 id 共用 localStorage 单键（spendct:notif:v1）。
+ * 真实体检完成后从 DuckDB 拉订阅与预算快照，尚未体检时走内置数据口径。
+ */
+function NotificationBell() {
+  const lastRun = usePipeline((s) => s.lastRun);
+  const [open, setOpen] = useState(false);
+  const [storage, setStorage] = useState(() => readNotifStorage());
+  // 真实数据异步加载：记录来源 run，只有与当前 lastRun 同源才采用，
+  // 避免上一次体检的数据渲染到新结果上（subscriptions 页同款口径）
+  const [realData, setRealData] = useState<{
+    run: LastRunSummary;
+    subs: NotifSubscription[];
+    budget: NotifBudgetSnapshot | null;
+  } | null>(null);
+
+  // 体检结果切换时在渲染期同步清空：不在 effect 里同步 setState 触发级联
+  // 渲染（React 官方「按 props 调整 state」模式），下方 memo 的 run 身份比对兜底
+  const [dataRun, setDataRun] = useState(lastRun);
+  if (dataRun !== lastRun) {
+    setDataRun(lastRun);
+    setRealData(null);
+  }
+
+  useEffect(() => {
+    if (!lastRun) return;
+    let cancelled = false;
+    loadRealNotifData()
+      .then((data) => {
+        if (!cancelled) setRealData({ run: lastRun, ...data });
+      })
+      .catch(() => {
+        // 拉取失败按「无订阅、无预算」处理：内置通知不会混进真实模式
+        if (!cancelled) setRealData({ run: lastRun, subs: [], budget: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lastRun]);
+
+  // 下拉展开期间按 Escape 收起
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  const items = useMemo<NotificationItem[]>(() => {
+    const checkpoint = readPausedCheckpoint();
+    // 真实口径：数据与当前体检结果同源才采用
+    if (realData && realData.run === lastRun) {
+      return deriveNotifications({
+        subscriptions: realData.subs,
+        budget: realData.budget,
+        checkpoint,
+        settings: storage.settings,
+      });
+    }
+    // 内置/加载中口径：订阅取内置订阅的固定倒计时，预算按内置月支出 + 手动记账快照
+    return deriveNotifications({
+      subscriptions: DEMO_SUBSCRIPTIONS.map((sub) => ({
+        id: sub.id,
+        amountCents: sub.amountCents,
+        nextChargeInDays: sub.nextChargeInDays,
+      })),
+      budget: buildBudgetSnapshot({
+        category90d: null,
+        windowMonths: 3,
+        overrides: readBudgetOverrides(),
+        manualEntries: readManualEntries(),
+      }),
+      checkpoint,
+      settings: storage.settings,
+    });
+  }, [realData, lastRun, storage]);
+
+  const unread = countUnread(items, storage.read);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        title="通知中心"
+        aria-label={unread > 0 ? `通知中心，${unread} 条未读` : "通知中心"}
+        aria-expanded={open}
+        onClick={() => {
+          // 每次展开重读存储：设置页的开关改动会即时反映到派生结果
+          setStorage(readNotifStorage());
+          setOpen((v) => !v);
+        }}
+        className="relative grid size-10 place-items-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+      >
+        <Bell className="size-5" aria-hidden />
+        {unread > 0 ? (
+          <span className="absolute top-1 right-1 grid min-w-4 place-items-center rounded-full bg-(--color-alert) px-1 text-[10px] leading-4 font-bold text-white">
+            {unread > 99 ? "99+" : unread}
+          </span>
+        ) : null}
+      </button>
+
+      {open ? (
+        <>
+          {/* 透明遮罩承接外部点击关闭（面板自身点击不冒泡到遮罩） */}
+          <div
+            aria-hidden
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute top-full right-0 z-50 mt-2 w-80 overflow-hidden rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) shadow-lg">
+            <div className="flex items-center justify-between border-b border-(--color-border) px-4 py-3">
+              <span className="text-sm font-semibold">通知中心</span>
+              {unread > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    markAllNotifRead(items.map((i) => i.id));
+                    setStorage(readNotifStorage());
+                  }}
+                  className="flex items-center gap-1 text-xs text-(--color-primary) transition-colors hover:underline"
+                >
+                  <Check className="size-3.5" aria-hidden />
+                  全部已读
+                </button>
+              ) : null}
+            </div>
+            <ul className="max-h-80 overflow-y-auto">
+              {items.length === 0 ? (
+                <li className="px-4 py-10 text-center text-sm text-slate-400 dark:text-slate-500">
+                  暂无通知
+                </li>
+              ) : (
+                items.map((item) => {
+                  const isRead = storage.read.includes(item.id);
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // 点击即标记已读：同一天同一规则只出一条，读一次即消
+                          markNotifRead(item.id);
+                          setStorage(readNotifStorage());
+                        }}
+                        className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                      >
+                        <span
+                          aria-hidden
+                          className={`mt-1.5 size-2 shrink-0 rounded-full ${
+                            isRead ? "bg-transparent" : "bg-(--color-primary)"
+                          }`}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-medium">{item.title}</span>
+                          <span className="mt-0.5 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                            {item.body}
+                          </span>
+                          <span className="mt-1 block text-[11px] text-slate-400 dark:text-slate-500">
+                            {formatNotifTime(item.ts)}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 export function TopNav() {
   return (
     <header className="sticky top-0 z-40 border-b border-(--color-border) bg-(--color-surface)/85 backdrop-blur-md">
@@ -124,19 +330,7 @@ export function TopNav() {
               <span className="hidden md:inline">数据不出浏览器</span>
             </Link>
             <ThemeToggle />
-            <button
-              type="button"
-              title="通知中心（即将上线）"
-              aria-label="通知中心（即将上线）"
-              className="relative grid size-10 place-items-center rounded-full text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              <Bell className="size-5" aria-hidden />
-              {UNREAD_COUNT > 0 ? (
-                <span className="absolute top-1 right-1 grid min-w-4 place-items-center rounded-full bg-(--color-alert) px-1 text-[10px] leading-4 font-bold text-white">
-                  {UNREAD_COUNT}
-                </span>
-              ) : null}
-            </button>
+            <NotificationBell />
             <AuthArea />
           </div>
         </div>

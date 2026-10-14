@@ -2,7 +2,7 @@
 
 import { RotateCcw, Search, Table2 } from "lucide-react";
 import type { ECElementEvent } from "echarts/core";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { EChart } from "@/components/charts/e-chart";
 import {
@@ -11,7 +11,10 @@ import {
   buildLineOption,
   formatYuan,
 } from "@/components/charts/option-builders";
-import { DEMO_INSIGHTS } from "@/lib/demo-data";
+import { DEMO_ACCOUNT_META, DEMO_INSIGHTS } from "@/lib/demo-data";
+import { getDuckDB } from "@/lib/duckdb/service";
+import { usePipeline } from "@/lib/pipeline/store";
+import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 import type { FollowUpAnchor } from "./follow-up-panel";
 
 interface LedgerViewProps {
@@ -39,6 +42,79 @@ interface LedgerRow {
   amountCents: number;
 }
 
+// ─────────────────── 真实数据动线（07 §6 白名单文法） ───────────────────
+
+/**
+ * 账本四块数据的聚合 SQL（代码常量，无任何用户输入）：
+ * 仍统一经 runWhitelistedAggregate 预检执行作双保险（与 /report /budget 同口径）。
+ * 明细查询按 date_iso/merchant/category 三列分组（白名单 GROUP BY 上限 3 列），
+ * 同一商户同一天同类别合并成一行，正好对齐账本「流水汇总」而非逐笔的展示粒度。
+ */
+const SQL_MONTHLY_TREND =
+  "SELECT month, SUM(expense_cents) FROM v_monthly_summary GROUP BY month ORDER BY month DESC LIMIT 12";
+
+const SQL_CATEGORY_TOTAL =
+  "SELECT category, SUM(expense_cents) FROM v_category_monthly GROUP BY category";
+
+const SQL_TOP_MERCHANTS =
+  "SELECT merchant, SUM(total_cents), SUM(tx_count) FROM v_top_merchants_90d GROUP BY merchant ORDER BY SUM(total_cents) DESC LIMIT 6";
+
+const SQL_RECENT_DETAIL =
+  "SELECT date_iso, merchant, category, SUM(amount_cents) FROM transactions WHERE direction = 'expense' GROUP BY date_iso, merchant, category ORDER BY date_iso DESC LIMIT 50";
+
+/** 真实装载结果：null = 该模块查询失败或无数据，对应模块回退演示动线 */
+interface RealLedgerData {
+  /** 近 12 月支出走势（升序，值已换算为元，与演示 ins-4 同口径） */
+  timeseries: { labels: string[]; values: number[] } | null;
+  /** 类别支出总额（分），v_category_monthly 聚合结果 */
+  categories: { category: string; cents: number }[] | null;
+  /** 近 90 天商户排行（分 / 笔），已按金额降序 */
+  merchants: { merchant: string; cents: number; count: number }[] | null;
+  /** 最近 50 笔支出明细（时间倒序） */
+  rows: LedgerRow[] | null;
+}
+
+const EMPTY_REAL_DATA: RealLedgerData = {
+  timeseries: null,
+  categories: null,
+  merchants: null,
+  rows: null,
+};
+
+/**
+ * DuckDB 聚合值兜底转数值：BIGINT → bigint、INTEGER → number、
+ * HUGEINT/SUM → 128 位大数对象（Number() 经 valueOf 转数值）。不可解析时兜底 0。
+ */
+function toCents(value: unknown): number {
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "number") return Math.round(value);
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : 0;
+}
+
+/**
+ * DuckDB 月份维度 → YYYY-MM（本地口径，与管线 fmtMonth 一致）：
+ * 兼容 Date 对象、epoch 毫秒 number、字符串三种物化形态。
+ */
+function toMonthKey(value: unknown): string {
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === "number" && Number.isFinite(value)
+        ? new Date(value)
+        : typeof value === "string"
+          ? new Date(value)
+          : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+/** date_iso（YYYY-MM-DD VARCHAR）→ Date；非法值返回 null 由调用方过滤 */
+function parseIsoDate(value: unknown): Date | null {
+  const date = value instanceof Date ? value : new Date(String(value ?? ""));
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 /** 确定性伪随机：同一种子每次生成同一批演示行，重渲染时明细表不会「洗牌」 */
 function mulberry32(seed: number) {
   return function next() {
@@ -49,13 +125,13 @@ function mulberry32(seed: number) {
   };
 }
 
-/** 类别权重与 ins-1 的类目占比同口径（餐饮 34% / 购物 22% / …） */
+/** 类别权重（大学生消费口径）：餐饮约占 42%，与下方金额区间换算出的月均约 1,733 元吻合 */
 const CATEGORY_WEIGHTS: [string, number][] = [
-  ["餐饮", 34],
-  ["购物", 22],
-  ["交通", 14],
-  ["娱乐", 12],
-  ["居住", 10],
+  ["餐饮", 42],
+  ["购物", 20],
+  ["交通", 8],
+  ["娱乐", 10],
+  ["居住", 12],
   ["其他", 8],
 ];
 
@@ -68,14 +144,14 @@ const MERCHANT_POOL: Record<string, string[]> = {
   其他: ["微信读书", "顺丰速运", "大参林药房", "家乐福"],
 };
 
-/** 金额区间（分）：按类别设定，让 90 天合计贴近「月均 2,860 元」的演示口径 */
+/** 金额区间（分，大学生口径）：按类别设定，让 90 天合计贴近「月均 1,733 元」 */
 const AMOUNT_RANGE: Record<string, [number, number]> = {
-  餐饮: [800, 6800],
-  购物: [2500, 26000],
-  交通: [200, 6500],
-  娱乐: [1500, 12800],
-  居住: [4000, 16000],
-  其他: [600, 5200],
+  餐饮: [800, 8000],
+  购物: [1000, 15000],
+  交通: [200, 6000],
+  娱乐: [500, 9000],
+  居住: [1000, 15000],
+  其他: [200, 2500],
 };
 
 function pickCategory(rand: () => number): string {
@@ -88,7 +164,11 @@ function pickCategory(rand: () => number): string {
   return CATEGORY_WEIGHTS[CATEGORY_WEIGHTS.length - 1]![0];
 }
 
-/** 生成 100 行演示明细（时间倒序）；全量 3,214 行在 DuckDB 接入后替换 */
+/**
+ * 生成 100 行演示明细（时间倒序）：仅作兜底动线——
+ * 无体检结果（lastRun 为空）或 DuckDB 明细查询失败时使用；
+ * 真实数据已接入（SQL_RECENT_DETAIL 经白名单查询，见组件内装载 effect）。
+ */
 function generateDemoRows(): LedgerRow[] {
   const rand = mulberry32(20261013);
   const today = new Date();
@@ -191,13 +271,109 @@ function MiniTable({ headers, rows }: { headers: [string, string]; rows: [string
 /**
  * 账本汇总视图（05 §1.6，原 /ledger 并入 /insights）：
  * 筛选行 + 支出走势 / 类别 donut / 商户排行三图（内置数据表切换与选中点击）+ 明细表。
+ * 数据动线：体检运行过（lastRun 存在）且 DuckDB 查询成功时展示真实账单聚合，
+ * 任一模块查询失败或无体检结果则回退内置数据演示动线（generateDemoRows）。
  */
 export function LedgerView({ onAnchor }: LedgerViewProps) {
   const [range, setRange] = useState<LedgerRange>("90d");
   const [category, setCategory] = useState("all");
   const [merchantQuery, setMerchantQuery] = useState("");
 
-  const allRows = useMemo(() => generateDemoRows(), []);
+  // 最近一次体检结果（内存态）：null = 尚无体检记录（含刷新后丢失），整页维持演示动线
+  const lastRun = usePipeline((s) => s.lastRun);
+  const [realData, setRealData] = useState<RealLedgerData>(EMPTY_REAL_DATA);
+  // 演示动线时忽略残留装载结果：渲染期派生，避免在 effect 内同步 setState 重置
+  const liveRealData = lastRun ? realData : EMPTY_REAL_DATA;
+
+  // 真实数据装载：lastRun 存在时读 DuckDB（与体检同一单例连接、同一内存数据集）。
+  // 四块数据各自 try/catch 模块级降级：哪块失败哪块回退演示，不阻断其余模块
+  useEffect(() => {
+    if (!lastRun) return; // 演示动线：不查库
+    let cancelled = false;
+    void (async () => {
+      const loaded: RealLedgerData = { ...EMPTY_REAL_DATA };
+      try {
+        const conn = await getDuckDB();
+        try {
+          const result = await runWhitelistedAggregate(conn, SQL_MONTHLY_TREND);
+          const series = (result.rows as Record<string, unknown>[])
+            .map((row) => {
+              const values = Object.values(row);
+              return { monthKey: toMonthKey(values[0]), yuan: toCents(values[1]) / 100 };
+            })
+            .filter((row) => row.monthKey !== "")
+            .reverse(); // SQL 侧 month DESC → 升序展示
+          if (series.length > 0) {
+            loaded.timeseries = {
+              labels: series.map((row) => row.monthKey),
+              values: series.map((row) => row.yuan),
+            };
+          }
+        } catch {
+          // 走势查询失败 → timeseries 保持 null，回退演示 ins-4
+        }
+        try {
+          const result = await runWhitelistedAggregate(conn, SQL_CATEGORY_TOTAL);
+          const rows = (result.rows as Record<string, unknown>[])
+            .map((row) => {
+              const values = Object.values(row);
+              return { category: String(values[0] ?? ""), cents: toCents(values[1]) };
+            })
+            .filter((row) => row.category !== "" && row.cents > 0);
+          if (rows.length > 0) loaded.categories = rows;
+        } catch {
+          // 类别查询失败 → categories 保持 null，回退按演示行聚合
+        }
+        try {
+          const result = await runWhitelistedAggregate(conn, SQL_TOP_MERCHANTS);
+          const rows = (result.rows as Record<string, unknown>[])
+            .map((row) => {
+              const values = Object.values(row);
+              return {
+                merchant: String(values[0] ?? ""),
+                cents: toCents(values[1]),
+                count: toCents(values[2]),
+              };
+            })
+            .filter((row) => row.merchant !== "");
+          if (rows.length > 0) loaded.merchants = rows;
+        } catch {
+          // 商户查询失败 → merchants 保持 null，回退按演示行聚合
+        }
+        try {
+          const result = await runWhitelistedAggregate(conn, SQL_RECENT_DETAIL);
+          const rows = (result.rows as Record<string, unknown>[])
+            .map((row, i) => {
+              const values = Object.values(row);
+              const date = parseIsoDate(values[0]);
+              return {
+                id: i + 1,
+                date: date ?? new Date(0),
+                merchant: String(values[1] ?? "未知商户"),
+                category: String(values[2] ?? "其他"),
+                amountCents: toCents(values[3]),
+              };
+            })
+            .filter((row) => row.date.getTime() > 0);
+          if (rows.length > 0) loaded.rows = rows;
+        } catch {
+          // 明细查询失败 → rows 保持 null，回退 generateDemoRows
+        }
+      } catch {
+        // getDuckDB 初始化失败：整页维持演示动线
+      }
+      if (!cancelled) setRealData(loaded);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lastRun]);
+
+  // 明细数据源：真实装载成功用最近 50 笔，否则回退确定性演示行（查询失败/无数据集）
+  const allRows = useMemo(
+    () => liveRealData.rows ?? generateDemoRows(),
+    [liveRealData.rows],
+  );
 
   // 日期范围作用于全部图表与明细；类别作用于 donut 高亮与商户排行；商户搜索只作用于明细表
   const now = useMemo(() => new Date(), []);
@@ -217,8 +393,19 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
     [categoryRows, merchantQuery],
   );
 
-  // 类别聚合（占所选时间范围的总支出份额）
+  // 类别聚合（真实：v_category_monthly 全量结果；演示：占所选时间范围的总支出份额）
   const categoryAgg = useMemo(() => {
+    if (liveRealData.categories) {
+      const total = liveRealData.categories.reduce((sum, c) => sum + c.cents, 0);
+      return liveRealData.categories
+        .map((c) => ({
+          category: c.category,
+          cents: c.cents,
+          count: 0,
+          share: total > 0 ? Math.round((c.cents / total) * 1000) / 10 : 0,
+        }))
+        .sort((a, b) => b.cents - a.cents);
+    }
     const map = new Map<string, { cents: number; count: number }>();
     for (const row of rangeRows) {
       const entry = map.get(row.category) ?? { cents: 0, count: 0 };
@@ -233,10 +420,11 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
       count: map.get(cat)?.count ?? 0,
       share: total > 0 ? Math.round(((map.get(cat)?.cents ?? 0) / total) * 1000) / 10 : 0,
     })).filter((entry) => entry.cents > 0);
-  }, [rangeRows]);
+  }, [liveRealData.categories, rangeRows]);
 
-  // 商户排行（所选时间范围 + 类别内，取前 6）
+  // 商户排行（真实：v_top_merchants_90d 前 6；演示：所选时间范围 + 类别内取前 6）
   const merchantAgg = useMemo(() => {
+    if (liveRealData.merchants) return liveRealData.merchants;
     const map = new Map<string, { cents: number; count: number }>();
     for (const row of categoryRows) {
       const entry = map.get(row.merchant) ?? { cents: 0, count: 0 };
@@ -248,16 +436,18 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
       .map(([merchant, entry]) => ({ merchant, ...entry }))
       .sort((a, b) => b.cents - a.cents)
       .slice(0, 6);
-  }, [categoryRows]);
+  }, [liveRealData.merchants, categoryRows]);
 
-  // 支出时间序列数据源 = DEMO_INSIGHTS.ins-4（demo 单一来源，缺位时退内置常量）
+  // 支出时间序列：真实装载成功用近 12 月聚合；否则取 DEMO_INSIGHTS.ins-4
+  // （demo 单一来源，不再内置硬编码兜底数组，缺位时留空由图表自然处理）
   const ins4 = DEMO_INSIGHTS.find((insight) => insight.id === "ins-4");
   const timeseries = useMemo(
-    () => ({
-      labels: ins4?.chartLabels ?? ["5月", "6月", "7月", "8月", "9月", "10月"],
-      values: ins4?.chartData ?? [2100, 2280, 2140, 2390, 2260, 2640],
-    }),
-    [ins4],
+    () =>
+      liveRealData.timeseries ?? {
+        labels: ins4?.chartLabels ?? [],
+        values: ins4?.chartData ?? [],
+      },
+    [liveRealData.timeseries, ins4],
   );
 
   const lineOption = useMemo(
@@ -391,7 +581,9 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
         <div className="md:col-span-2">
           <ChartCard
             title="支出走势（月）"
-            caption="演示数据 · 点击柱子可以追问"
+            caption={
+              liveRealData.timeseries ? "近 12 个月 · 点击柱子可以追问" : "内置数据 · 点击柱子可以追问"
+            }
             chart={
               <EChart
                 option={lineOption}
@@ -450,10 +642,16 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
           <div>
             <h3 className="text-sm font-semibold">明细表</h3>
             <p className="mt-0.5 text-xs text-(--color-ink-muted)">
-              共 3,214 笔 · 展示最近 100 笔{tableRows.length !== 100 ? `（筛选后 ${tableRows.length} 笔）` : ""}
+              {liveRealData.rows
+                ? // 真实动线：明细查询 LIMIT 50，展示最近 50 笔
+                  `最近 ${liveRealData.rows.length} 笔${tableRows.length !== liveRealData.rows.length ? `（筛选后 ${tableRows.length} 笔）` : ""}`
+                : // 演示动线：总数读 DEMO_ACCOUNT_META，避免文案与数据源脱钩
+                  `共 ${DEMO_ACCOUNT_META.totalTransactions.toLocaleString("zh-CN")} 笔 · 展示最近 100 笔${tableRows.length !== 100 ? `（筛选后 ${tableRows.length} 笔）` : ""}`}
             </p>
           </div>
-          <p className="text-xs text-(--color-ink-muted)">当前展示的是演示数据</p>
+          <p className="text-xs text-(--color-ink-muted)">
+            {liveRealData.rows ? "当前展示的是你的账单数据" : "当前展示的是内置数据"}
+          </p>
         </div>
         <div className="max-h-[420px] overflow-y-auto">
           <table className="w-full text-sm">

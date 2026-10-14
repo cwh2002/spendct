@@ -1,19 +1,20 @@
 /**
- * 示例账单生成器：上传页「示例账单」入口与首页 /upload?sample=1 演示动线共用。
+ * 内置账单生成器：上传页「内置账单」入口与首页 /upload?sample=1 演示动线共用。
  *
  * 三个约束：
  * 1. 确定性：mulberry32 固定种子 + 固定时间锚点（不读系统时钟），每次生成的
- *    内容逐字节一致——预览页「疑似重复 N 条」提示、导入行数等演示文案不会漂移；
+ *    内容逐字节一致——预览页「疑似重复 N 条」提示、导入行数等文案不会漂移；
  * 2. 形态对齐微信账单导出：11 列表头（与嗅探器的位置兜底规则一致）、金额单位
- *    为元、空值写「/」占位、UTF-8 带 BOM，保证示例走真实嗅探链路而非旁路；
- * 3. 分布贴近真实账单：金额指数分布（小额高频、大额低频）、96% 支出、
- *    类目权重餐饮最高、深夜时段低概率，供后续异常检测阶段挖出区分度。
+ *    为元、空值写「/」占位、UTF-8 带 BOM，保证内置账单走真实嗅探链路而非旁路；
+ * 3. 分布贴近学生真实账单：类目权重按学生年度支出占比设定（餐饮最高）、金额
+ *    均值取学生口径（堂食/外卖小额高频、宿舍费/教材中额低频）、收入固定 12 笔
+ *    × 2,000 元生活费（家庭转账）、深夜时段低概率，供异常检测阶段挖出区分度。
  */
 
-export const SAMPLE_BILL_FILE_NAME = "微信账单-示例.csv";
+export const SAMPLE_BILL_FILE_NAME = "微信账单-内置.csv";
 export const SAMPLE_ROW_COUNT = 1000;
 
-/** 固定种子：取本冲刺开始日期，方便回溯「这版示例数据是哪天定的」 */
+/** 固定种子：取本冲刺开始日期，方便回溯「这版内置数据是哪天定的」 */
 const SEED = 20261013;
 
 /** 时间锚点：2025-10-01 00:00 ~ 2026-10-13 00:00（北京时间），覆盖最近 12 个月 */
@@ -29,8 +30,9 @@ const NOTE_RATE = 0.15;
 /** 退款行概率：状态列写「已全额退款」，解析器据此打 [退款] 标记 */
 const REFUND_RATE = 0.01;
 
-/** 支出占比 96%（按行数精确分配，不靠随机命中率） */
-const EXPENSE_RATE = 0.96;
+/** 收入行固定 12 笔（每月 1 笔生活费 2,000 元，家庭转账），不再用随机命中率 */
+const INCOME_ROW_COUNT = 12;
+const INCOME_AMOUNT_YUAN = 2000;
 
 /** 商品列写「/」占位的概率（与微信导出空商品形态一致） */
 const PRODUCT_EMPTY_RATE = 0.15;
@@ -111,7 +113,7 @@ const HOUR_WEIGHTS: readonly number[] = [
   2.4, 2.0, 1.3, 1.2, 1.4, 2.0, 2.6, 2.2, 1.6, 1.4, 1.3, 1.1,
 ];
 
-/** 12 类目支出池（07 §3 类目枚举；权重合计 100） */
+/** 12 类目支出池（07 §3 类目枚举；权重按学生年度支出占比的相对大小设定） */
 interface CategorySpec {
   /** 类目名，只用于文档说明，不进 CSV（类目在 clean 阶段按商户词典细分） */
   name: string;
@@ -126,87 +128,90 @@ interface CategorySpec {
 
 /**
  * 商户与商品两个数组按下标一一配对（同长度），生成行按同一随机下标取二者，
- * 保证「麦当劳 → 汉堡套餐」这类组合可信，不会出现「哔哩哔哩 → 剧本杀门票」。
+ * 保证「学校食堂 → 食堂餐费」这类组合可信，不会出现「哔哩哔哩 → 剧本杀门票」。
+ * 权重：餐饮 42 / 交通 6.3 / 购物 11.5 / 娱乐 7 / 居住 7.2 / 通讯 4.5 /
+ * 医疗 1.8 / 教育 5.4 / 人情 2.6 / 金融 0.9 / 订阅 3.2 / 其他 1.7
+ * （与年度支出占比同量级：餐饮第一、购物与教育随后）。
  */
 const CATEGORY_SPECS: readonly CategorySpec[] = [
   {
     name: "餐饮",
-    weight: 26,
+    weight: 42,
     amountMin: 3,
-    amountMean: 32,
+    amountMean: 20,
     types: ["商户消费", "扫二维码付款"],
     merchants: [
-      "美团平台商户", "饿了么", "瑞幸咖啡(学院路店)", "蜜雪冰城(中关村店)", "沙县小吃(学府路店)",
-      "麦当劳(五道口店)", "海底捞火锅(中关村店)", "老乡鸡(苏州街店)", "喜茶(五道口店)", "兰州牛肉面(学院路店)",
+      "学校食堂", "饿了么", "瑞幸咖啡", "蜜雪冰城", "沙县小吃",
+      "麦当劳", "海底捞火锅", "兰州牛肉面", "库迪咖啡", "美团外卖",
     ],
-    products: ["外卖订单", "外卖订单", "生椰拿铁", "奶茶两杯", "小吃套餐", "汉堡套餐", "火锅双人餐", "中式快餐", "奶茶两杯", "牛肉拉面"],
+    products: ["食堂餐费", "外卖订单", "生椰拿铁", "奶茶两杯", "小吃套餐", "汉堡套餐", "火锅双人餐", "牛肉拉面", "生椰拿铁", "外卖订单"],
   },
   {
     name: "交通",
-    weight: 12,
+    weight: 6.3,
     amountMin: 1,
-    amountMean: 12,
+    amountMean: 10,
     types: ["商户消费", "扫二维码付款"],
     merchants: ["滴滴出行", "北京地铁", "高德打车", "哈啰单车", "12306铁路", "北京公交"],
     products: ["网约车行程", "地铁乘车", "网约车行程", "单车骑行", "火车票", "公交乘车"],
   },
   {
     name: "购物",
-    weight: 18,
+    weight: 11.5,
     amountMin: 5,
     amountMean: 60,
     types: ["商户消费", "扫二维码付款"],
-    merchants: ["京东商城", "淘宝网", "拼多多", "唯品会", "得物App", "小米商城", "山姆会员商店", "名创优品"],
-    products: ["数码配件", "服饰订单", "日用品订单", "服饰订单", "潮流单品", "数码配件", "会员店采购", "日用品订单"],
+    merchants: ["京东商城", "淘宝网", "拼多多", "唯品会", "得物App", "小米商城", "名创优品"],
+    products: ["数码配件", "服饰订单", "日用品订单", "服饰订单", "潮流单品", "数码配件", "日用品订单"],
   },
   {
     name: "娱乐",
-    weight: 8,
+    weight: 7,
     amountMin: 5,
     amountMean: 40,
     types: ["商户消费", "扫二维码付款"],
-    merchants: ["万达影城(中关村店)", "哔哩哔哩", "Steam", "网易游戏", "剧本杀工作室", "唱吧麦颂"],
+    merchants: ["万达影城", "哔哩哔哩", "Steam", "网易游戏", "剧本杀工作室", "唱吧麦颂"],
     products: ["电影票", "大会员续费", "游戏充值", "游戏充值", "剧本杀门票", "欢唱包间"],
   },
   {
     name: "居住",
-    weight: 8,
+    weight: 7.2,
     amountMin: 10,
-    amountMean: 260,
+    amountMean: 150,
     types: ["商户消费", "扫二维码付款"],
-    merchants: ["自如", "国家电网", "北京燃气", "自来水集团", "链家"],
-    products: ["房租", "电费", "燃气费", "水费", "中介服务费"],
+    merchants: ["校园宿舍", "国家电网", "北京燃气", "自来水集团", "校园宽带"],
+    products: ["住宿费", "电费", "燃气费", "水费", "网费"],
   },
   {
     name: "通讯",
-    weight: 6,
+    weight: 4.5,
     amountMin: 10,
-    amountMean: 50,
+    amountMean: 40,
     types: ["充值缴费"],
     merchants: ["中国移动", "中国联通", "中国电信"],
     products: ["话费充值", "流量包", "话费充值"],
   },
   {
     name: "医疗",
-    weight: 3,
+    weight: 1.8,
     amountMin: 5,
     amountMean: 60,
     types: ["商户消费", "扫二维码付款"],
-    merchants: ["京医通", "同仁堂药店", "北京协和医院", "叮当快药"],
-    products: ["挂号费", "药品", "门诊缴费", "药品"],
+    merchants: ["校医院", "同仁堂药店", "叮当快药", "口腔门诊"],
+    products: ["门诊缴费", "药品", "药品", "门诊缴费"],
   },
   {
     name: "教育",
-    weight: 4,
+    weight: 5.4,
     amountMin: 10,
     amountMean: 80,
     types: ["商户消费", "扫二维码付款"],
-    merchants: ["新东方在线", "粉笔公考", "网易有道", "中国知网", "学而思"],
-    products: ["课程报名", "课程报名", "网课会员", "文献下载", "课程报名"],
+    merchants: ["中国知网", "四六级考试", "学校教材科", "网易有道", "新东方在线"],
+    products: ["文献下载", "考试报名费", "教材费", "网课会员", "课程报名"],
   },
   {
     name: "人情",
-    weight: 4,
+    weight: 2.6,
     amountMin: 5,
     amountMean: 120,
     types: ["微信红包", "转账"],
@@ -215,7 +220,7 @@ const CATEGORY_SPECS: readonly CategorySpec[] = [
   },
   {
     name: "金融",
-    weight: 3,
+    weight: 0.9,
     amountMin: 10,
     amountMean: 150,
     types: ["信用卡还款", "转账", "理财通"],
@@ -224,36 +229,28 @@ const CATEGORY_SPECS: readonly CategorySpec[] = [
   },
   {
     name: "订阅",
-    weight: 5,
-    amountMin: 6,
-    amountMean: 20,
+    weight: 3.2,
+    amountMin: 15,
+    amountMean: 8,
     types: ["商户消费"],
-    merchants: ["腾讯视频VIP", "网易云音乐", "爱奇艺", "QQ音乐", "WPS会员", "百度网盘"],
-    products: ["会员自动续费", "黑胶VIP续费", "会员自动续费", "豪华绿钻续费", "会员自动续费", "超级会员续费"],
+    merchants: ["腾讯视频VIP", "网易云音乐", "哔哩哔哩", "QQ音乐", "WPS会员", "百度网盘"],
+    products: ["会员自动续费", "黑胶VIP续费", "大会员续费", "豪华绿钻续费", "会员自动续费", "超级会员续费"],
   },
   {
     name: "其他",
-    weight: 3,
+    weight: 1.7,
     amountMin: 2,
     amountMean: 18,
     types: ["商户消费", "扫二维码付款"],
-    merchants: ["便利蜂", "全家便利店", "菜鸟驿站", "顺丰速运"],
-    products: ["便利店购物", "便利店购物", "快递取件", "快递寄件"],
+    merchants: ["打印店", "便利蜂", "菜鸟驿站", "顺丰速运"],
+    products: ["打印复印", "便利店购物", "快递取件", "快递寄件"],
   },
 ];
 
 const CATEGORY_TOTAL_WEIGHT = CATEGORY_SPECS.reduce((sum, spec) => sum + spec.weight, 0);
 
-/** 收入池（4%）：红包/转账，类型/对方/商品三元组固定配对，避免「转账 + 红包」混搭 */
-const INCOME_ENTRIES = [
-  { type: "微信红包", merchant: "妈妈", product: "红包" },
-  { type: "转账", merchant: "爸爸", product: "零花钱" },
-  { type: "微信红包", merchant: "李华", product: "红包" },
-  { type: "转账", merchant: "王芳", product: "AA收款" },
-  { type: "微信红包", merchant: "张伟", product: "生日红包" },
-  { type: "转账", merchant: "刘洋", product: "转账" },
-  { type: "微信红包", merchant: "陈静", product: "红包" },
-] as const;
+/** 收入行固定三元组：每月生活费由家庭转账打入（类型/对方/商品固定配对） */
+const INCOME_ENTRY = { type: "转账", merchant: "家庭转账", product: "生活费" } as const;
 
 const PAY_METHODS = ["零钱", "零钱通", "招商银行(6688)", "工商银行(1234)", "建设银行(0521)"] as const;
 
@@ -318,22 +315,17 @@ function buildExpenseLine(rng: () => number, ms: number): string {
 }
 
 function buildIncomeLine(rng: () => number, ms: number): string {
-  const entry = pick(INCOME_ENTRIES, rng);
-  const type = entry.type;
-  const merchant = entry.merchant;
-  const product = entry.product;
-  const amount = exponentialAmount(rng, 1, 60);
   const payMethod = pick(PAY_METHODS, rng);
   const note = rng() < NOTE_RATE ? pick(NOTE_POOL, rng) : "/";
   const orderNo = `4200${yyyymmdd(ms)}${digits(rng, 14)}${digits(rng, 4)}`;
   const merchantNo = digits(rng, 18);
   return [
     formatDateTime(ms),
-    type,
-    merchant,
-    product,
+    INCOME_ENTRY.type,
+    INCOME_ENTRY.merchant,
+    INCOME_ENTRY.product,
     "收入",
-    amount.toFixed(2),
+    INCOME_AMOUNT_YUAN.toFixed(2),
     payMethod,
     "已存入零钱",
     orderNo,
@@ -350,16 +342,15 @@ interface GeneratedRow {
 }
 
 /**
- * 生成 1,000 行微信形态示例账单 CSV（含 BOM 与表头）。
- * 每次调用返回完全相同的字符串；末尾含 3 行精确重复，
- * 预览页的重复提示与导入去重（stripDuplicates）在演示中可见。
+ * 生成 1,000 行微信形态内置账单 CSV（含 BOM 与表头）。
+ * 每次调用返回完全相同的字符串；含 12 笔固定 2,000 元生活费收入行（家庭转账），
+ * 末尾含 3 行精确重复，预览页的重复提示与导入去重（stripDuplicates）在演示中可见。
  */
 export function generateSampleCsv(): string {
   const rng = mulberry32(SEED);
   const uniqueCount = SAMPLE_ROW_COUNT - DUPLICATE_COUNT;
-  // 收入行的位置在生成前一次性抽好（无放回），支出占比精确到 96%，
-  // 而不是逐行掷骰子（随机命中率会让每次调种子漂移）
-  const incomeCount = uniqueCount - Math.round(uniqueCount * EXPENSE_RATE);
+  // 收入行的位置在生成前一次性抽好（无放回）：固定 12 笔，而不是逐行掷骰子
+  // （随机命中率会让每次调种子漂移）
   const shuffled = Array.from({ length: uniqueCount }, (_, index) => index);
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -367,7 +358,7 @@ export function generateSampleCsv(): string {
     shuffled[i] = shuffled[j]!;
     shuffled[j] = tmp;
   }
-  const incomePositions = new Set(shuffled.slice(0, incomeCount));
+  const incomePositions = new Set(shuffled.slice(0, INCOME_ROW_COUNT));
 
   const rows: GeneratedRow[] = [];
   for (let i = 0; i < uniqueCount; i++) {
@@ -379,6 +370,6 @@ export function generateSampleCsv(): string {
   rows.push({ ...rows[1]! }, { ...rows[250]! }, { ...rows[500]! });
   // 微信导出按交易时间升序排列
   rows.sort((a, b) => a.ms - b.ms);
-  // 微信导出的 UTF-8 文件带 BOM；解析器会剥离，保留它让示例与真实文件同一条路径
+  // 微信导出的 UTF-8 文件带 BOM；解析器会剥离，保留它让内置账单与真实文件同一条路径
   return "﻿" + [HEADER, ...rows.map((row) => row.line)].join("\n") + "\n";
 }

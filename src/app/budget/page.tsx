@@ -261,12 +261,15 @@ interface MonthBudgetView {
   totalActualCents: number;
 }
 
-/** DuckDB 聚合金额 → 分：BIGINT 在 wasm 各版本可能返回 bigint/number/string，统一收口 */
+/**
+ * DuckDB 聚合金额 → 分：BIGINT → bigint、INTEGER → number、
+ * HUGEINT/SUM → 128 位大数对象（Number() 经 valueOf 转数值），统一收口。
+ */
 function rowCents(value: unknown): number {
   if (typeof value === "number") return Math.round(value);
   if (typeof value === "bigint") return Number(value);
-  if (typeof value === "string") return Math.round(Number(value) || 0);
-  return 0;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : 0;
 }
 
 /** DuckDB TIMESTAMP（JS Date 或字符串）→ YYYY-MM（本地口径，与管线 fmtMonth 一致） */
@@ -875,13 +878,14 @@ function BudgetContent() {
         borderColor: t.line,
         textStyle: { color: t.ink },
         valueFormatter: (v) => `¥${Number(v).toFixed(2)}`,
+        confine: true,
       },
       xAxis: {
         type: "category",
         data: month.categories.map((c) => c.category),
         axisTick: { show: false },
         axisLine: { lineStyle: { color: t.line } },
-        axisLabel: { color: t.inkSecondary, fontSize: 12 },
+        axisLabel: { color: t.inkSecondary, fontSize: 11, interval: "auto", margin: 8 },
       },
       yAxis: {
         type: "value",
@@ -921,6 +925,7 @@ function BudgetContent() {
         borderColor: t.line,
         textStyle: { color: t.ink },
         valueFormatter: (v) => `¥${Number(v).toFixed(2)}`,
+        confine: true,
       },
       xAxis: {
         type: "category",
@@ -928,12 +933,12 @@ function BudgetContent() {
         boundaryGap: false,
         axisTick: { show: false },
         axisLine: { lineStyle: { color: t.line } },
-        axisLabel: { color: t.inkMuted },
+        axisLabel: { color: t.inkMuted, fontSize: 11 },
       },
       yAxis: {
         type: "value",
         scale: true,
-        axisLabel: { color: t.inkMuted, formatter: "¥{value}" },
+        axisLabel: { color: t.inkMuted, fontSize: 11, formatter: "¥{value}" },
         splitLine: { lineStyle: { color: t.line } },
       },
       series: [
@@ -1112,8 +1117,8 @@ function BudgetContent() {
           {/* 数据源徽标：诚实标注真实/演示动线（05 §5.1 不放假数据），真实动线在本次会话内跟随体检结果 */}
           <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] text-(--color-ink-muted)">
             {lastRun
-              ? `真实数据 · ${lastRun.source === "sample" ? "示例账单" : "上传账单"}`
-              : "演示数据"}
+              ? `真实数据 · ${lastRun.source === "sample" ? "内置账单" : "上传账单"}`
+              : "内置数据"}
           </span>
         </div>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--color-ink-secondary)">
@@ -1416,7 +1421,7 @@ function BudgetContent() {
                 <p className="mt-2 text-xs text-(--color-ink-muted)">
                   {lastRun
                     ? "下月数字根据最近 90 天的月均支出估算，每月按 9 折递减"
-                    : "未来月份是示例估算，每月按 9 折递减"}
+                    : "未来月份按估算展示，每月按 9 折递减"}
                   {shownMonthManual.count > 0 ? "；手动记账按实际金额计入" : ""}
                 </p>
               ) : monthOffset < 0 ? (
@@ -1429,7 +1434,7 @@ function BudgetContent() {
                 <div className="relative size-44 shrink-0 sm:size-48">
                   <EChart
                     option={ringOption}
-                    height={192}
+                    height="100%"
                     className="size-full"
                     ariaLabel={`${monthNumberLabel(monthOffset)}预算已用 ${(ratio * 100).toFixed(1)}%`}
                   />
@@ -1528,15 +1533,18 @@ function BudgetContent() {
                       : `，预计每月${forecastView.slopeCentsPerMonth > 0 ? "多花" : "少花"} ¥${fmtYuan(Math.abs(forecastView.slopeCentsPerMonth), 0)}`}
                     。这个估算只延续过去的走势，临时的大额花销和你的计划没算进去。
                   </p>
-                  <p className="mt-2 text-xs text-(--color-ink-muted)">自动估算，仅供参考</p>
+                  <p className="mt-2 text-xs text-(--color-ink-muted)">
+                    基于最近 {forecastView.historyMonths} 个月实际支出自动估算
+                  </p>
                 </>
               ) : (
                 <>
                   <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
-                    按季节规律估算：未来三个月月均支出约 ¥{forecastAvgYuan.toLocaleString("zh-CN")}
-                    ，11 月受购物节影响略高、1 月回落。临时的大额花销没算进去。
+                    根据内置账单近一年的月度支出走势估算：未来三个月月均支出约 ¥
+                    {forecastAvgYuan.toLocaleString("zh-CN")}。10 月开学季固定采购退去后支出回落，
+                    11、12 月逐步回到全年月均水平。临时的大额花销没算进去。
                   </p>
-                  <p className="mt-2 text-xs text-(--color-ink-muted)">自动估算，仅供参考</p>
+                  <p className="mt-2 text-xs text-(--color-ink-muted)">基于内置账单近 12 个月实际支出自动估算</p>
                 </>
               )}
             </div>
@@ -1636,7 +1644,7 @@ function BudgetContent() {
                   </h2>
                   {!lastRun || !advice || advice.status !== "done" ? (
                     <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] text-(--color-ink-muted)">
-                      {!lastRun ? "示例建议" : "正在生成建议…"}
+                      {!lastRun ? "内置建议" : "正在生成建议…"}
                     </span>
                   ) : null}
                 </div>
@@ -1708,7 +1716,7 @@ function BudgetContent() {
                       </button>
                     </div>
                     <p className="mt-3 text-[11px] text-(--color-ink-muted)">
-                      当前展示的是示例建议。上传账单完成体检后，这里会换成针对你的数据的建议。
+                      当前展示的是内置账单的建议。上传自己的账单完成体检后，这里会换成针对你的数据的建议。
                     </p>
                   </>
                 )}

@@ -1,5 +1,5 @@
 /**
- * LLM 接入层客户端（T6 叙事流式 + 08 扩展任务路由的唯一入口，07 §12/§19）。
+ * LLM 接入层客户端（T6 叙事流式 + 08 扩展任务流式/结构化输出的唯一入口，07 §12/§19）。
  *
  * 硬约束：
  * - 仅服务端：顶部 import "server-only"，客户端打包直接报错（02 §1.2「服务器只做转发」）；
@@ -12,7 +12,8 @@ import "server-only";
 
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { streamText } from "ai";
+import { generateObject, streamText } from "ai";
+import type { z } from "zod";
 
 import { pickMockText, type LlmTask } from "./mock-narratives";
 
@@ -118,6 +119,33 @@ export async function streamLlmText(
   const response = result.toTextStreamResponse();
   if (!response.body) throw new Error("streamText 返回的响应没有 body");
   return response.body;
+}
+
+/**
+ * live 结构化输出入口（08 §⑥ 四个短任务共用，07 §19 SDK 使用纪律）。
+ *
+ * resolveModel 按 07 §12 任务路由表取模型，generateObject 以 zod 结构约束输出，
+ * 返回解析通过的对象；解析失败抛错（错误信息含生成文本与校验细节），
+ * 由调用方按 03 §4 三层闭环把错误回传重试（≤2 次），仍失败落确定性模板。
+ * 本函数只做一次生成，不做重试——修复次数是路由层策略，这里保持单次语义。
+ */
+export async function generateLlmObject<S extends z.ZodType>(
+  task: LlmTask,
+  schema: S,
+  prompt: string,
+): Promise<z.infer<S>> {
+  const model = resolveModel(task);
+  const result = await generateObject({
+    model,
+    schema,
+    schemaName: task, // 任务名作为结构名，便于提供方侧识别与问题排查
+    instructions: TASK_INSTRUCTIONS[task],
+    prompt,
+  });
+  // SDK 对泛型 schema 的返回类型是带枚举分支的条件类型，无法自动归约到 zod 输出；
+  // 此断言是唯一跨库边界：generateObject 拿到 zod 结构后先解析再返回，
+  // result.object 就是结构校验通过的对象，与 z.infer<S> 是同一个值。
+  return result.object as z.infer<S>;
 }
 
 /** mock 流：模板文本按码点切 6 字小片，固定 40ms 延时逐片输出（30-60ms 区间取定值，保证可复现） */

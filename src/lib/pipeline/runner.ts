@@ -273,7 +273,7 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
       if (opts.source === "sample") {
         const rows = demoTransactions();
         await initDataset(conn, rows);
-        push("progress", `示例账单就绪 · 共 ${rows.length.toLocaleString("zh-CN")} 条，全部在本地处理`);
+        push("progress", `内置账单就绪 · 共 ${rows.length.toLocaleString("zh-CN")} 条，全部在本地处理`);
       } else {
         const missing = await verifySchema(conn);
         if (missing.length > 0) {

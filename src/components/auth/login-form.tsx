@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, LoaderCircle, Sparkles } from "lucide-react";
+import { AlertCircle, LoaderCircle } from "lucide-react";
 import { useState } from "react";
-import { DEMO_ACCOUNT } from "@/lib/account/auth";
 import { AccountError } from "@/lib/account/types";
 import { useAuth } from "@/lib/account/store";
 import { PasswordInput } from "./password-input";
@@ -72,12 +71,6 @@ export function LoginForm() {
       }
       setSubmitting(false);
     }
-  }
-
-  function fillDemoAccount() {
-    setUsername(DEMO_ACCOUNT.username);
-    setPassword(DEMO_ACCOUNT.password);
-    setFormError(null);
   }
 
   const usernameInvalid = formError?.fields.includes("username") ?? false;
@@ -166,16 +159,6 @@ export function LoginForm() {
           ) : (
             "登录"
           )}
-        </button>
-
-        <button
-          type="button"
-          onClick={fillDemoAccount}
-          disabled={submitting}
-          className="flex h-10 w-full items-center justify-center gap-2 rounded-(--radius-md) border border-dashed border-(--color-border-strong) text-sm text-(--color-ink-secondary) transition-colors hover:border-(--color-brand-600) hover:text-(--color-brand-600) disabled:opacity-50"
-        >
-          <Sparkles className="size-4 text-(--color-accent)" aria-hidden />
-          使用演示账户一键填入（demo / demo123）
         </button>
       </form>
 

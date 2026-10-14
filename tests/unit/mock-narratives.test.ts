@@ -70,8 +70,8 @@ describe("模板库完整性", () => {
 
 describe("fillTemplate 与确定性选段", () => {
   it("数字与字符串占位替换正确", () => {
-    expect(fillTemplate("这个月花了 {amount} 元，占比 {pct}%", { amount: 486, pct: 34 })).toBe(
-      "这个月花了 486 元，占比 34%",
+    expect(fillTemplate("这个月花了 {amount} 元，占比 {pct}%", { amount: 1733, pct: 41 })).toBe(
+      "这个月花了 1733 元，占比 41%",
     );
     expect(fillTemplate("变动主要来自 {cat}", { cat: "餐饮" })).toBe("变动主要来自 餐饮");
   });
@@ -88,7 +88,7 @@ describe("fillTemplate 与确定性选段", () => {
     }
     expect(pickMockText("narrative", "profile")).toBe(pickMockText("narrative", "profile"));
     expect(pickMockText("narrative", "profile")).toContain("餐饮");
-    expect(DEFAULT_MOCK_VARS.narrative.pct).toBe(34);
+    expect(DEFAULT_MOCK_VARS.narrative.pct).toBe(41);
   });
 
   it("mockBudgetAdvice 的 severity 由 ratio 阈值直接判定（08 §⑥.2）", () => {

@@ -309,7 +309,8 @@ export function InsightCard({
           ) : (
             <EChart
               option={chartOption}
-              height={180}
+              // 环图图例置顶 + 环体下移，180px 下标签线会顶到卡片边缘，单独加高 40px
+              height={insight.chartKind === "donut" ? 220 : 180}
               ariaLabel={`${insight.headline}的证据图，等价数据见数据表视图`}
               onClick={handleChartClick}
             />

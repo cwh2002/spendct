@@ -7,6 +7,7 @@
 
 - 被测页面：`/spike/duckdb-wasm/`（独立静态页），与正式管线同源加载 `/duckdb/` 自托管产物（`duckdb-mvp.wasm` + `duckdb-browser-mvp.worker.js`，`pthreadWorker:null`，07 契约 §8）。
 - 数据：页面内生成 1 万行贴近真实账单形态的 CSV（12 类目、指数分布金额、96% 支出），经 `registerFileText` → `read_csv_auto` 建表，再执行与六阶段画像同形态的分组聚合 SQL。
+- 口径说明：本基准使用独立的压测 CSV 生成器，与产品「内置账单」（793 行学生口径数据，见 src/lib/pipeline/mock-run.ts）无关；本报告数字只用于性能判定，不回填任何产品文案。
 - 冷加载 = 全新浏览器 context（无 HTTP 缓存、无 sessionStorage）；热加载 = 同页刷新后重测（HTTP 缓存命中，页面按 sessionStorage 判定口径）。
 - 内存取 `performance.memory.usedJSHeapSize`（仅 Chromium 内核可读）。
 
@@ -54,6 +55,6 @@
 
 ## 6. 结论与风险
 
-1. **四项验收指标全部通过**，且余量充足：最紧的热加载也有 1.9× 余量，弱网/低配机演示场景有兜底空间。
+1. **四项验收指标全部通过**，且余量充足：最紧的热加载也有 1.9× 余量，弱网/低配机使用场景有兜底空间。
 2. 加载时间主要构成是 37.7 MB 的 wasm 下载，本地回环接近磁盘/内存速度；公网首次访问会受带宽影响，但 vercel.json 已对 `/duckdb/*` 配置 immutable 长缓存，二次访问全部命中缓存。
 3. 待补测项：①OPFS 持久化路径（正式版启用 `registerFileHandle("spendct", …)` 后的重启保留验证，W1D2 集成时测）；②真机（非 headless）手感；③低配机（4GB 内存）复测。届时更新本文件对应行。

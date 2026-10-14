@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 
+import { classifySmallTalk, SMALL_TALK_ANSWER } from "@/lib/llm/small-talk";
+
 /** 追问会话的锚点：来自洞察卡「深挖」或账本图表数据点点击 */
 export interface FollowUpAnchor {
   id: string;
@@ -27,11 +29,13 @@ interface FollowUpTurn {
   id: number;
   role: "user" | "assistant";
   text: string;
-  /** 「示例回答」说明徽标：标记基于示例账单产出的回答 */
+  /** 「内置回答」说明徽标：标记基于内置账单产出的回答 */
   demoNote?: boolean;
+  /** 闲聊定稿回答（打招呼/询问身份）：气泡前不展示「完成分析」状态行 */
+  smallTalk?: boolean;
 }
 
-/** 有会话时预置的两轮示例对话（任务规格的演示数据） */
+/** 有会话时预置的两轮内置对话（「看个例子」灌入的固定内容） */
 const DEMO_TURNS: Omit<FollowUpTurn, "id">[] = [
   { role: "user", text: "外卖为什么涨了？" },
   {
@@ -41,9 +45,9 @@ const DEMO_TURNS: Omit<FollowUpTurn, "id">[] = [
   },
 ];
 
-/** 新提交问题后的固定示例回答；接入真实分析后替换 */
+/** 新提交问题后的固定内置回答；接入真实分析后替换 */
 const DEMO_ANSWER =
-  "近 90 天该维度共 42 笔、合计 1,286 元，波动主要来自 2 笔单笔超过 200 元的订单。";
+  "近 90 天该维度共 42 笔、合计 1,286 元，波动主要来自 2 笔单笔超过 100 元的订单。";
 
 interface FollowUpPanelProps {
   ref?: React.Ref<FollowUpPanelHandle>;
@@ -112,7 +116,7 @@ export function FollowUpPanel({
   }
 
   function seedDemoTurns() {
-    // 「看个例子」：把预置的两轮示例对话灌进会话
+    // 「看个例子」：把预置的两轮内置对话灌进会话
     seqRef.current += 1;
     setTurns(DEMO_TURNS.map((turn) => ({ ...turn, id: seqRef.current })));
   }
@@ -124,13 +128,26 @@ export function FollowUpPanel({
     queueDemoAnswer();
   }
 
-  function queueDemoAnswer() {
-    // 固定示例回答 + 「示例回答」说明；接入真实分析后替换此分支
+  /**
+   * 追加一条助手回答：先进入「正在思考」态，700ms 后落气泡。
+   * demoNote 挂「内置回答」说明徽标；smallTalk 标记闲聊定稿回答（不展示「完成分析」状态行）。
+   */
+  function answerTurn(text: string, options?: { demoNote?: boolean; smallTalk?: boolean }) {
     setPending(true);
     pendingTimer.current = window.setTimeout(() => {
-      appendTurn({ role: "assistant", text: DEMO_ANSWER, demoNote: true });
+      appendTurn({
+        role: "assistant",
+        text,
+        demoNote: options?.demoNote,
+        smallTalk: options?.smallTalk,
+      });
       setPending(false);
     }, 700);
+  }
+
+  function queueDemoAnswer() {
+    // 固定内置回答 + 「内置回答」说明；接入真实分析后替换此分支
+    answerTurn(DEMO_ANSWER, { demoNote: true });
   }
 
   function handleSubmit() {
@@ -138,6 +155,12 @@ export function FollowUpPanel({
     if (!text || pending) return;
     appendTurn({ role: "user", text });
     setInput("");
+    // 闲聊分流：打招呼/询问身份走定稿回答，账单类问题才走锚点回答
+    const smallTalkKind = classifySmallTalk(text);
+    if (smallTalkKind) {
+      answerTurn(SMALL_TALK_ANSWER[smallTalkKind], { smallTalk: true });
+      return;
+    }
     queueDemoAnswer();
   }
 
@@ -262,7 +285,9 @@ export function FollowUpPanel({
           </div>
         ) : (
           turns.map((turn, i) => {
-            const isLastAssistant = turn.role === "assistant" && i === turns.length - 1;
+            // 最后一条助手气泡且非闲聊定稿回答，才展示「完成分析」状态行
+            const isLastAssistant =
+              turn.role === "assistant" && i === turns.length - 1 && !turn.smallTalk;
             return (
               <div key={turn.id} className="space-y-2.5">
                 {isLastAssistant ? <AnswerDoneNote /> : null}
@@ -278,7 +303,7 @@ export function FollowUpPanel({
                     {turn.demoNote ? (
                       <span className="mt-2 flex items-start gap-1.5 rounded-(--radius-sm) bg-(--color-warn-soft) px-2 py-1.5 text-xs leading-relaxed text-(--color-warning-ink)">
                         <Sparkles className="mt-0.5 size-3 shrink-0" aria-hidden />
-                        示例回答：以上按示例账单计算，仅供参考
+                        内置回答：以上按内置账单数据计算，仅供参考
                       </span>
                     ) : null}
                   </div>
@@ -321,7 +346,7 @@ export function FollowUpPanel({
               }
             }}
             rows={2}
-            placeholder="围绕图表继续追问，例如：为什么外卖涨了？"
+            placeholder="可以问账单问题，也可以围绕图表追问，例如：为什么外卖涨了？"
             aria-label="追问输入框"
             className="min-h-11 flex-1 resize-none rounded-(--radius-md) border border-(--color-border) bg-(--color-surface-2) px-3 py-2.5 text-sm text-(--color-ink) placeholder:text-(--color-ink-muted) focus-visible:outline-2 focus-visible:outline-(--color-brand-600)"
           />

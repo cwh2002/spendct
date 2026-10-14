@@ -30,7 +30,7 @@ import { usePipeline } from "@/lib/pipeline/store";
 
 type Phase = "boot" | "playing" | "paused" | "done";
 
-/** 数据来源三分支：demo 定时器播放 / 真实管线跑演示数据集 / 真实管线跑本地账单 */
+/** 数据来源三分支：demo 定时器播放 / 真实管线跑内置数据集 / 真实管线跑本地账单 */
 type DataMode = "demo" | "sample" | "upload";
 
 /** 播放驱动公共接口：createDemoRun 与 createPipelineRun 返回形一致（start/pause/resume/stop） */
@@ -47,7 +47,7 @@ const JUMP_ANNUAL_MS = 700;
 const PHASE_LABEL: Record<Phase, { chip: string; sub: string }> = {
   boot: { chip: "准备中", sub: "正在准备，稍等几秒…" },
   playing: { chip: "运行中", sub: "正在检查你的账单，六个步骤依次进行 · 账单不会上传到任何服务器" },
-  paused: { chip: "已暂停", sub: "进度已保存在你的设备上 · 点击「继续」接着检查" },
+  paused: { chip: "已暂停", sub: "进度在本次会话内保留 · 刷新页面后需重新体检" },
   done: { chip: "已完成", sub: "六项检查全部完成 · 分析结果已就绪" },
 };
 
@@ -141,7 +141,7 @@ export default function CheckupPage() {
     //  且 setState 放在回调中避免水合不匹配与 effect 体内同步 setState）
     const timer = window.setTimeout(() => {
       // 数据来源分支（本页只替换这一段，页面组件与交互不动）：
-      // 1. URL 带 ?sample=1 → 真实管线跑演示数据集（789 行合成账单，demoDatasetHash）
+      // 1. URL 带 ?sample=1 → 真实管线跑内置数据集（793 行内置账单，demoDatasetHash）
       // 2. pipeline store 存在 datasetTxHash → 真实管线跑本地导入账单
       // 3. 都没有 → 维持 createDemoRun 定时器播放
       const sampleRequested = new URLSearchParams(window.location.search).get("sample") === "1";
@@ -277,10 +277,10 @@ export default function CheckupPage() {
   // 数据来源徽章：sample/upload 分支换成真实口径文案，demo 分支保持现状
   const badgeText =
     mode === "sample"
-      ? "示例账单 · 789 条交易"
+      ? "内置账单 · 793 条交易"
       : mode === "upload"
         ? "本地账单 · 数据不出浏览器"
-        : "示例账单 · 10,000 条交易";
+        : "内置账单 · 793 条交易";
 
   const totalCards = stages.reduce((sum, s) => sum + (s.status === "succeeded" ? s.cards : 0), 0);
 
@@ -295,7 +295,7 @@ export default function CheckupPage() {
 
   return (
     <Container wide className="py-6 md:py-8">
-      {/* 页头：标题 + 阶段状态 + 演示/隐私徽章 */}
+      {/* 页头：标题 + 阶段状态 + 数据来源/隐私徽章 */}
       <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">

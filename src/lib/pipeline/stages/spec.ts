@@ -87,7 +87,11 @@ export function valAt(row: Record<string, unknown>, index: number): unknown {
   return Object.values(row)[index] ?? null;
 }
 
-/** 按位置取数值：兼容 DuckDB BIGINT 返回的 bigint 与箭头层的 number/string */
+/**
+ * 按位置取数值：兼容 DuckDB 聚合结果经箭头层的几种物化形态——
+ * BIGINT → bigint、INTEGER → number、HUGEINT/SUM → 128 位大数对象（Number()
+ * 经 valueOf 转数值）。不可解析时兜底 0。
+ */
 export function numAt(row: Record<string, unknown>, index: number): number {
   const value = valAt(row, index);
   if (typeof value === "bigint") return Number(value);
@@ -101,20 +105,36 @@ export function fmtYuan(cents: number): string {
   return (cents / 100).toFixed(2);
 }
 
-/** 月份维度 → YYYY-MM：兼容 DuckDB TIMESTAMP 的 Date 对象与字符串两种形态 */
+/**
+ * 月份维度 → YYYY-MM。兼容三种物化形态：Date 对象、epoch 毫秒 number
+ * （DATE/TIMESTAMP 经箭头层的时间整数）、"YYYY-MM-DD" 字符串。
+ * 时间值按本地钟表分量格式：导入的 ts 是无时区本地时间，UTC 格式化会漂移一天。
+ */
 export function fmtMonth(value: unknown): string {
-  if (value instanceof Date) {
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === "number" && Number.isFinite(value)
+        ? new Date(value)
+        : null;
+  if (date && !Number.isNaN(date.getTime())) {
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}`;
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
   }
   return String(value ?? "").slice(0, 7);
 }
 
-/** 日期维度 → YYYY-MM-DD：兼容 DuckDB DATE 的 Date 对象与字符串两种形态 */
+/** 日期维度 → YYYY-MM-DD：物化形态与本地口径同 fmtMonth */
 export function fmtDate(value: unknown): string {
-  if (value instanceof Date) {
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === "number" && Number.isFinite(value)
+        ? new Date(value)
+        : null;
+  if (date && !Number.isNaN(date.getTime())) {
     const pad = (n: number) => String(n).padStart(2, "0");
-    return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   }
   return String(value ?? "").slice(0, 10);
 }

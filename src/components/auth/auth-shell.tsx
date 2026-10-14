@@ -2,6 +2,7 @@
 
 import { motion } from "framer-motion";
 import { HeartPulse, Lock, ScanSearch, ShieldCheck } from "lucide-react";
+import Image from "next/image";
 import type { ReactNode } from "react";
 
 const TRUST_POINTS = [
@@ -12,7 +13,7 @@ const TRUST_POINTS = [
 
 /**
  * 登录/注册的沉浸式两栏布局（05 §1.1）：
- * - ≥lg：左侧品牌区（品牌渐变底 + 主张 + 信任点 + 截图占位），右侧表单区；
+ * - ≥lg：左侧品牌区（品牌渐变底 + 主张 + 信任点），右侧表单区；
  * - 移动端：单栏居中卡片，品牌区收成卡片上方的顶部品牌条。
  * Shell 已按路由隐藏导航/页脚，本组件只负责分屏内容本身。
  */
@@ -58,15 +59,15 @@ export function AuthShell({ children }: { children: ReactNode }) {
             ))}
           </ul>
 
-          {/* 截图占位：演示素材就绪后替换为真实仪表盘截图 */}
-          <div
-            className="mt-10 rounded-(--radius-xl) border-2 border-dashed border-white/30 p-8 text-center"
-            aria-label="产品截图位"
-          >
-            <p className="text-sm font-medium text-white/80">产品截图位</p>
-            <p className="mt-1.5 text-xs text-white/45">
-              此处将展示体检仪表盘与年度报告的演示截图
-            </p>
+          {/* 产品预览：年度报告页真实截图（内置账单体检结果），矮屏隐藏以免挤占表单空间 */}
+          <div className="mt-10 hidden max-w-sm overflow-hidden rounded-(--radius-xl) border border-white/15 shadow-2xl [@media(min-height:820px)]:block">
+            <Image
+              src="/screenshots/auth-report-hero.png"
+              alt="消费CT 年度消费报告页面预览：健康指数与六维健康分析"
+              width={1440}
+              height={720}
+              className="block w-full"
+            />
           </div>
         </div>
 

@@ -144,11 +144,11 @@ export const VISIBILITY_ROWS: VisibilityRow[] = [
     note: "在确认表里展示，识别不准的栏目标黄提醒你核对；服务器只转发，不留存",
   },
   {
-    item: "示例账单",
+    item: "内置账单",
     browser: "local-only",
     llm: "aggregated",
     server: "-",
-    note: "与真实账单同一套保护规则（仅统计 + 打码）；而且它本来就是虚构数据",
+    note: "与真实账单同一套保护规则（仅统计 + 打码）",
   },
   {
     item: "微信昵称 / 账号信息",

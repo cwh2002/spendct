@@ -1,10 +1,12 @@
 "use client";
 
 import {
+  ArrowRight,
   ChartColumn,
   Inbox,
   LayoutGrid,
   MessageSquare,
+  PiggyBank,
   Rows3,
   Star,
   Upload,
@@ -35,7 +37,8 @@ import {
 } from "@/components/insights/follow-up-panel";
 import { InsightCard, type InsightCardHandle } from "@/components/insights/insight-card";
 import { LedgerView } from "@/components/insights/ledger-view";
-import { DEMO_INSIGHTS, DEMO_STAGES, type DemoInsight } from "@/lib/demo-data";
+import { CASES, type CaseRecord } from "@/lib/cases";
+import { DEMO_BUDGET, DEMO_INSIGHTS, DEMO_STAGES, type DemoInsight } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { readFavorites, toggleFavoriteLocal } from "@/lib/insights/favorites";
 import { STAGE_DISPLAY_NAMES } from "@/lib/pipeline/stage";
@@ -188,12 +191,18 @@ function toFiniteNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** 分组维度值 → 展示标签：month 维度截为 YYYY-MM，其余日期形态保留完整日期 */
+/**
+ * 分组维度值 → 展示标签：month 维度截为 YYYY-MM，其余日期形态保留完整日期。
+ * 兼容 Date 对象、epoch 毫秒 number（DATE 经箭头层的时间整数）与字符串；
+ * bigint 是年份等整型维度（如 EXTRACT(YEAR)），按整数原样展示，不做时间换算。
+ */
 function formatDimValue(value: unknown, dimField: string): string {
-  if (value instanceof Date) {
-    const iso = value.toISOString().slice(0, 10);
+  const asIso = (date: Date): string => {
+    const iso = date.toISOString().slice(0, 10);
     return dimField === "month" ? iso.slice(0, 7) : iso;
-  }
+  };
+  if (value instanceof Date) return asIso(value);
+  if (typeof value === "number" && Number.isFinite(value)) return asIso(new Date(value));
   if (typeof value === "bigint") return String(Number(value));
   return String(value ?? "");
 }
@@ -293,6 +302,116 @@ function mapRunCard(card: RunInsightCard): DemoInsight {
   };
 }
 
+// ─────────────────── 年度阶段省钱贴士（学生权益案例匹配） ───────────────────
+
+/** 学生权益标签 → 中文名（与知识课堂案例卡同口径） */
+const BENEFIT_TAG_LABELS: Record<string, string> = {
+  student_cert: "学生认证",
+  edu_discount: "教育优惠",
+  campus_card: "校园资源",
+  budget_substitute: "平价替代",
+  rights_tip: "权益提示",
+};
+
+/**
+ * 支出类目 → 案例标题/摘要关键词。匹配口径：只在 student_benefits 案例里
+ * 做简单包含匹配，类目按用户支出排名依次扫描，先命中的类目优先且案例不重复。
+ * 学习页没有导出可复用的检索函数，这里实现页面所需的轻量版。
+ */
+const CATEGORY_TIP_KEYWORDS: Record<string, string[]> = {
+  餐饮: ["外卖", "食堂", "餐饮"],
+  购物: ["Apple", "购物", "数码", "超市"],
+  交通: ["火车票", "公交", "地铁", "通勤", "出行"],
+  娱乐: ["电影", "演出", "景区", "门票", "音乐"],
+  教育: ["课程", "电子书", "软件", "图书馆", "MOOC"],
+  金融: ["金融", "银行", "校园贷", "贷款", "信用卡"],
+  订阅: ["订阅", "会员", "付费"],
+};
+
+/** 案例检索文本：标题 + 摘要 + 权益标签中文名（关键词匹配在这段文本上进行） */
+function tipSearchText(item: CaseRecord): string {
+  const tags = item.benefitTags
+    .map((tag) => BENEFIT_TAG_LABELS[tag] ?? "")
+    .filter(Boolean)
+    .join(" ");
+  return `${item.title} ${item.summary} ${tags}`;
+}
+
+/**
+ * 按用户支出 top 类目匹配学生权益案例：
+ * 依次扫描每个类目的关键词，命中的案例按类目优先级排列且不重复，超出 limit 截断。
+ */
+function matchStudentTips(topCategories: string[], limit = 4): CaseRecord[] {
+  const seen = new Set<string>();
+  const picked: CaseRecord[] = [];
+  for (const category of topCategories) {
+    const keywords = CATEGORY_TIP_KEYWORDS[category];
+    if (!keywords || keywords.length === 0) continue;
+    for (const item of CASES) {
+      if (picked.length >= limit) return picked;
+      if (item.category !== "student_benefits" || seen.has(item.id)) continue;
+      const text = tipSearchText(item);
+      if (keywords.some((keyword) => text.includes(keyword))) {
+        seen.add(item.id);
+        picked.push(item);
+      }
+    }
+  }
+  return picked;
+}
+
+/** 内置动线 top3 类目：按内置预算的实际支出降序（与预算页演示口径一致） */
+function demoTopCategories(): string[] {
+  return [...DEMO_BUDGET.categories]
+    .sort((a, b) => b.actualCents - a.actualCents)
+    .slice(0, 3)
+    .map((entry) => entry.category);
+}
+
+/** 真实数据 top3 类目查询：白名单聚合（LIMIT 3 远低于 50 行上限） */
+const TOP_CATEGORIES_SQL =
+  "SELECT category, SUM(expense_cents) FROM v_category_monthly " +
+  "GROUP BY category ORDER BY SUM(expense_cents) DESC LIMIT 3";
+
+/**
+ * 省钱贴士卡：视觉沿用洞察卡 token（圆角/描边/底色/阴影），
+ * 但交互只保留「看全文」跳转——确认/质疑/图表等是洞察卡专属能力，不复用卡组件。
+ */
+function StudentTipCard({ tip }: { tip: CaseRecord }) {
+  const tags = tip.benefitTags
+    .map((tag) => BENEFIT_TAG_LABELS[tag])
+    .filter((label): label is string => Boolean(label));
+  return (
+    <article className="flex flex-col gap-3 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="rounded-full bg-(--color-primary-soft) px-2.5 py-0.5 text-xs font-medium text-(--color-brand-600)">
+          学生权益
+        </span>
+        {tags.map((label) => (
+          <span
+            key={label}
+            className="rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] text-(--color-ink-secondary)"
+          >
+            {label}
+          </span>
+        ))}
+      </div>
+      <h4 className="text-sm leading-snug font-semibold">{tip.title}</h4>
+      <p className="line-clamp-3 text-xs leading-5 text-(--color-ink-secondary)">{tip.summary}</p>
+      <div className="mt-auto flex items-center justify-between gap-2 border-t border-(--color-border) pt-3 text-xs">
+        <span className="min-w-0 truncate text-(--color-ink-muted)">{tip.source}</span>
+        <Link
+          href="/learn"
+          className="inline-flex shrink-0 items-center gap-1 font-medium text-(--color-brand-600) transition-colors hover:underline"
+        >
+          看全文
+          <ArrowRight className="size-3.5" aria-hidden />
+        </Link>
+      </div>
+    </article>
+  );
+}
+
 function InsightsView() {
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -332,6 +451,37 @@ function InsightsView() {
     run: LastRunSummary | null;
     entries: Record<string, ChartResultEntry>;
   }>({ run: null, entries: {} });
+
+  // 真实数据 top3 类目：与 chartResults 同款「run 身份打标」策略，
+  // 加载中为 null（贴士区块隐藏不闪烁），失败回退空数组（视为无匹配）
+  const [topCategoriesState, setTopCategoriesState] = useState<{
+    run: LastRunSummary | null;
+    categories: string[];
+  }>({ run: null, categories: [] });
+
+  useEffect(() => {
+    // 无体检结果时不做同步清空：读取侧按 run 身份比对（见下 topCategories），
+    // 旧 run 的类目不会被采用，无需在 effect 里级联 setState
+    if (!lastRun) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const conn = await getDuckDB();
+        const result = await runWhitelistedAggregate(conn, TOP_CATEGORIES_SQL);
+        if (cancelled) return;
+        const categories = (result.rows as Record<string, unknown>[])
+          .map((row) => String(Object.values(row)[0] ?? ""))
+          .filter((name) => name !== "");
+        setTopCategoriesState({ run: lastRun, categories });
+      } catch {
+        // 查询失败视为无匹配：贴士区块隐藏，不影响卡流
+        if (!cancelled) setTopCategoriesState({ run: lastRun, categories: [] });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [lastRun]);
 
   // 真实卡图表数据加载：取 DuckDB 单例连接后逐卡执行白名单聚合。
   // 查询失败或白名单拒绝时仅该卡退化到 stats 兜底，不阻断其他卡；
@@ -404,6 +554,19 @@ function InsightsView() {
     const filtered = applyInsightFilters(cards, filters, metaLookup);
     return [...filtered].sort((a, b) => Number(Boolean(a.withheld)) - Number(Boolean(b.withheld)));
   }, [cards, filters, lastRun]);
+
+  // 贴士匹配源：真实数据按 run 身份比对（未加载时为 null），内置动线取演示支出 top3
+  const topCategories = lastRun
+    ? topCategoriesState.run === lastRun
+      ? topCategoriesState.categories
+      : null
+    : demoTopCategories();
+
+  // 年度阶段贴士：无匹配/加载中为空数组，区块整体隐藏
+  const tips = useMemo(
+    () => (topCategories === null ? [] : matchStudentTips(topCategories)),
+    [topCategories],
+  );
 
   // 焦点索引为原始值，渲染期钳到当前可见列表长度内（不在 effect 里同步，避免级联渲染）
   const clampedFocus =
@@ -672,6 +835,28 @@ function InsightsView() {
               ))}
             </div>
           )}
+
+          {/* 年度阶段省钱贴士：仅卡片/图表廊视图 + 全部或年度阶段筛选下出现；
+              无匹配案例（含真实数据加载中）时整个区块隐藏 */}
+          {view !== "ledger" &&
+          !demoOff &&
+          (filters.stage === "all" || filters.stage === "annual") &&
+          tips.length > 0 ? (
+            <section aria-label="省钱贴士" className="mt-8">
+              <div className="flex items-center gap-2">
+                <PiggyBank className="size-4 text-(--color-primary)" aria-hidden />
+                <h2 className="text-base font-bold tracking-tight">省钱贴士</h2>
+              </div>
+              <p className="mt-1 text-xs text-(--color-ink-secondary)">
+                按你支出最多的类目，挑了几条学生权益省钱案例
+              </p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                {tips.map((tip) => (
+                  <StudentTipCard key={tip.id} tip={tip} />
+                ))}
+              </div>
+            </section>
+          ) : null}
         </div>
 
         {/* 追问面板：桌面为右侧固定列（可折叠），移动端收为右侧抽屉 */}
