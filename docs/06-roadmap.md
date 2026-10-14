@@ -40,7 +40,7 @@
 
 ### 0.4 使用方式与更新机制
 
-- 每日 21:30 站会对照本文档当日任务卡逐项打勾，记录到 docs/devlog/YYYY-MM-DD.md；
+- 每日 21:30 站会对照本文档当日任务卡逐项打勾，记录到开发记录；
 - 工期与砍法只在**闸门日**变更；01-05 任一文档改设计，必须当日站会同步并在本文档登记工期影响；
 - 本文档引用的代码路径见附录 A「代码目录约定」（唯一布局以 07 §14 为准）；与 01-05 任一文档冲突时，以 07《权威契约文档》（docs/07-canonical-contract.md）裁决为准，本文档只改工期不改职责。
 
@@ -218,10 +218,10 @@ export async function runWhitelistedAggregate(
 | R1 | **T30a 缴费报名**：传智杯官网完成团队注册并缴费，凭证截图入 docs/assets/receipts/，报名号记入台账 | 登录后可见「作品提交」入口（缴费后才可见），入口截图归档 |
 | R1 | **T30b 校内报备**：向指导老师/院系竞赛负责人提交报备表（队名、成员、方向 8 AI 数据分析与可视化、账号），申请演示场地与赛期支持 | 报备回执（签字或群确认截图）归档 |
 | R1 | **T20 仓库脚手架**：GitHub 公开仓库 spendct；Next.js App Router（版本以 01 锁表为准）+ TypeScript + Tailwind + shadcn/ui + Zustand + TanStack Query + pnpm + ESLint + Prettier + .env.example（无真实密钥） | pnpm dev 首页可开，首个 commit 进历史 |
-| R2 | **T1 DuckDB-WASM spike**：public/spike/duckdb-wasm 独立静态页；client-only 动态导入 @duckdb/duckdb-wasm；**精确锁定 @duckdb/duckdb-wasm@1.32.0（禁 ^、禁 latest）+ 自托管 public/duckdb/（禁 CDN）**（07 §8）；单线程模式 pthreadWorker:null（避开 SharedArrayBuffer/COOP/COEP）；10k 行 CSV → 建表 → GROUP BY 聚合 → 页面打印耗时 | WASM 冷 <4s / 热 <1.5s、10k 行导入+聚合 <2s、内存峰值 <400MB（唯一基准 01 §8），三数字写入 docs/benchmarks.md；集成摩擦与避坑记录写 devlog |
+| R2 | **T1 DuckDB-WASM spike**：public/spike/duckdb-wasm 独立静态页；client-only 动态导入 @duckdb/duckdb-wasm；**精确锁定 @duckdb/duckdb-wasm@1.32.0（禁 ^、禁 latest）+ 自托管 public/duckdb/（禁 CDN）**（07 §8）；单线程模式 pthreadWorker:null（避开 SharedArrayBuffer/COOP/COEP）；10k 行 CSV → 建表 → GROUP BY 聚合 → 页面打印耗时 | WASM 冷 <4s / 热 <1.5s、10k 行导入+聚合 <2s、内存峰值 <400MB（唯一基准 01 §8），三数字写入 docs/benchmarks.md；集成摩擦与避坑记录写开发记录 |
 | R2 | **T2 SQL 聚合白名单模块**（见 2.0 代码） | 10 条单测全绿 |
 | R3 | **T30c 费用台账**：docs/finance.md 建立（预算 ¥30-100、上限 ¥150，已支出=报名费）；**T35** 竞品表 v0 四行草稿；OBS/剪映安装 | 台账+竞品表提交 |
-| 全员 | 21:30 站会：逐项过 D1 验收，确认 T1/T2 数字 | devlog/2026-10-13.md 三行记录 |
+| 全员 | 21:30 站会：逐项过 D1 验收，确认 T1/T2 数字 | 开发记录三行归档 |
 
 ### 2.2 W1D2 · 10/14（周三）
 
@@ -273,7 +273,7 @@ export async function runWhitelistedAggregate(
 | R2 | **T5b** 六阶段聚合 SQL 全部过白名单并在 DuckDB 跑通（示例见下方 SQL）；起草数据可见性对照表 v1（移交 02 文档第 2 章） | 6 阶段 SQL × 白名单全绿，输出 JSON 入库 |
 | R1 | **T22** PipelineStepper 组件（六阶段进度可视化/状态/思考消息流，mock 数据；组件名以 07 §14 注册表为唯一） | 组件渲染+动画 |
 | R3 | **T31** fixtures 扩至 10 份（清单以 02 §3.10 为唯一）；**T34** 恶意 SQL 第一批 10 条（20/20 全集子集，见 02 §10） | 入仓 |
-| 全员 | 周中回顾 15 分钟 | devlog 记录偏差 |
+| 全员 | 周中回顾 15 分钟 | 开发记录登记偏差 |
 
 ```sql
 -- 六阶段确定性 SQL（T5b）：全部必须通过 T2 白名单（GROUP BY + 聚合函数）。
@@ -718,7 +718,7 @@ graph LR
 | A6 | 注入演示 | 恶意商户名账单 → 输出不变形+叙事不含注入内容+zod 终闸通过+日志记录 | 每次演示都录（11/8 起） | 全员 | 见 7.5 |
 | A7 | 断网降级演练 | 断网→上传/清洗/聚合正常→LLM 重试退避→双路由→确定性模板卡降级→恢复联网自动恢复；全程无白屏无未捕获异常 | W4 起每周一演；11/14 录备用录像版 | R2 主导 | 见 7.6 |
 | A8 | 最小闭环验收 | sample-data 全自动六阶段+3 流式卡 ≤60s；断点续跑；失败降级卡 | G2（10/26） | 全员 | 闸门判定 3.1.2 |
-| A9 | 默认洞察人工验收 | 每条默认洞察 R3 打分 ≥3/5 才进默认卡池；宁缺毋滥（无显著洞察就出「本期未发现显著洞察」空态） | W2 起每条 | R3 | docs/devlog 记录 |
+| A9 | 默认洞察人工验收 | 每条默认洞察 R3 打分 ≥3/5 才进默认卡池；宁缺毋滥（无显著洞察就出「本期未发现显著洞察」空态） | W2 起每条 | R3 | 开发记录归档 |
 | A10 | 打磨清单 | 错误态/加载态/空态全量过一遍，无 console error | 打磨日（11/5/7/12/14） | 全员 | 见 7.7 |
 | A11 | 新功能回归清单 | 预算 SQL（budgets/budget_vs_actual/forecast_monthly 三表口径+白名单 R1-R10 合规+规模护栏「当月+未来 2 月」）；导出（CSV/JSON 本地生成不落盘、10k 行 <3s）；两大图表（单图渲染 <250ms、数据表切换、锚点捕获、懒挂载；国赛两图落地后同清单追加）；快速记账 zod 用例（parseable true/false 各 ≥5 条、金额单位「分」断言、原始文本不落盘）；详见 7.8 | 每次提交 pnpm test；E1（11/2）验 P0（F04 于 11/4 补验）、E2（11/9）验 P1（T55） | R1+R2 | tests/fixtures/ 扩展 + src/lib/schema/ 单测 |
 
@@ -800,7 +800,7 @@ interface GoldenCase { id: string; question: string; expectedCaseIds: string[]; 
 | 快速记账（F08） | QuickEntrySchema 用例 ≥10 条（parseable true 5 条：含「中午食堂花了 15」→1500 分/餐饮/今天；false 5 条：闲聊/问句/「15 万」拒绝）；manual 行入 transactions（source='manual'、channel='manual'、raw_ref='M#n'、tx_id=sha256(ts+amount_cents+merchant+序号)）后可在既有视图聚合 | 原始输入文本仅在内存中转（代码评审断言无落盘调用）；金额断言全部以「分」为单位；direction 允许 income（红包入账用例） |
 | 其他（F04/F06/F10/F13） | 收藏/成就/通知 localStorage 键 ≤2KB/≤2KB/≤20KB；订阅管理墙倒计时与年度订阅合计数字正确；成就 12 枚可重算（清键后重算幂等）；通知由确定性规则生成 | E1 验 F04/F06；E2 验 F10/F13；P2 项若启动同口径 |
 
-验收：T55 全绿后记入 docs/devlog；E1（11/2）随 G3 验 P0 项、E2（11/9）随 G4 验 P1 项，未过项按第 4 章砍法表处理。
+验收：T55 全绿后记入开发记录；E1（11/2）随 G3 验 P0 项、E2（11/9）随 G4 验 P1 项，未过项按第 4 章砍法表处理。
 
 ---
 
@@ -840,12 +840,12 @@ interface GoldenCase { id: string; question: string; expectedCaseIds: string[]; 
 
 - 格式：`<type>(<scope>): T{任务ID} {一句话描述}`，示例 `feat(pipeline): T5 状态机断点续跑`、`fix(sql-guard): T14 行数上限二次校验`、`docs(roadmap): T38 PDF 第 4 章初稿`；
 - type 限 feat/fix/docs/test/chore/perf/refactor；
-- 规则：每人每天 ≥1 commit（考试日豁免，提前在 devlog 登记）；main 禁 force push；每 commit 绑定任务卡 ID；22:00 前 push；
+- 规则：每人每天 ≥1 commit（考试日豁免，提前在开发记录登记）；main 禁 force push；每 commit 绑定任务卡 ID；22:00 前 push；
 - 终检（11/16）：`git log --since=2026-10-13 --until=2026-11-17 --oneline` 逐日核对无空日。
 
 ### 9.3 每日验收
 
-- devlog 三行制：docs/devlog/YYYY-MM-DD.md 记录「完成/阻塞/明日」；
+- 开发记录三行制：记录「完成/阻塞/明日」；
 - 连续 2 天阻塞同一任务 → 当日即做闸门预评估（提前砍或换人），不等闸门日。
 
 ### 9.4 视频素材滚动录制触发点
@@ -929,7 +929,7 @@ public/data/sample-wechat-2026H1.csv  # 示例账单公开副本（07 §15）
 tests/fixtures/            # T31 回归集（清单 02 §3.10）+ T34 恶意 SQL（10 例子集）
 tests/golden/              # T33 金标 20 条
 scripts/                   # rag/eval-hit3.mjs / bench.mjs / gen-sample-csv.mjs（种子 20261013）
-docs/                      # 01-07 设计文档 + devlog/ + benchmarks.md + finance.md + assets/
+docs/                      # 01-07 设计文档 + benchmarks.md + finance.md + assets/
 .env.example               # 密钥只存服务端 env，公开仓库仅此模板
 ```
 

@@ -242,7 +242,7 @@
   <div class="meta">
     赛道：AI WEB 网页开发挑战赛（track id=10037）<br />
     作品形态：AI 账单体检与消费洞察平台 · Web 应用<br />
-    开发团队：独立开发（1 人队）<br />
+    开发团队：2 人团队（队长 1 名 · 队员 1 名）<br />
     提交日期：<span>2026 年 11 月</span>
   </div>
   <div class="foot">账单数据全程不出浏览器 —— 这是产品承诺，也是技术架构的第一性原理</div>
@@ -264,7 +264,7 @@
     <li><span class="t">10　工程规范与研发流程</span><span class="d"></span><a href="#c10"></a></li>
     <li><span class="t">11　展望与里程碑</span><span class="d"></span><a href="#c11"></a></li>
     <li><span class="t">结语</span><span class="d"></span><a href="#c12"></a></li>
-    <li class="sub"><span class="t">附：项目仓库 / 在线演示 / 开发日志 / 设计文档索引</span><span class="d"></span><a href="#c13"></a></li>
+    <li class="sub"><span class="t">附：项目仓库 / 在线演示 / 设计文档索引</span><span class="d"></span><a href="#c13"></a></li>
   </ol>
   <p class="note">本文档为参赛说明摘要（≤30 页），完整设计与契约见仓库 docs/ 目录 8 份设计文档（01 架构 / 02 数据隐私 / 03 Agent 流水线 / 04 RAG-MCP / 05 UIUX / 06 路线图 / 07 权威契约 / 08 功能扩展）。</p>
 </section>
@@ -591,8 +591,8 @@
   <h3><span class="tag">测试</span>分层测试矩阵</h3>
   <table>
     <tr><th style="width:34%">层</th><th style="width:22%">数量</th><th>覆盖</th></tr>
-    <tr><td><b>单元测试（Vitest）</b></td><td class="good">158 用例 / 10 文件</td><td>SQL 白名单、账户、导入清洗、事件协议、管线引擎、卡片 schema、运行桥、LLM 层</td></tr>
-    <tr><td><b>端到端（Playwright）</b></td><td class="good">15 用例</td><td>13 页冒烟（0 console error）+ 示例账单全动线（上传 → 真实管线 → 洞察真实卡，32.2s）+ 账户登录</td></tr>
+    <tr><td><b>单元测试（Vitest）</b></td><td class="good">271 用例</td><td>SQL 白名单、账户、导入清洗、事件协议、管线引擎、卡片 schema、运行桥、LLM 层</td></tr>
+    <tr><td><b>端到端（Playwright）</b></td><td class="good">23 用例</td><td>13 页冒烟（0 console error）+ 示例账单全动线（上传 → 真实管线 → 洞察真实卡，32.2s）+ 账户登录</td></tr>
     <tr><td><b>静态质量</b></td><td class="good">0 错误</td><td>tsgo 全量类型检查、ESLint、生产构建 17 路由（14 静态 + 2 API）</td></tr>
   </table>
   <p>关键设计验证：订阅规则在真实 DuckDB 引擎上命中 / 排除断言通过（demo 数据集含 3 个订阅商户周期扣费）；引擎单测用 fake conn 驱动全部 20 类事件与 8 错误码路径，不依赖 wasm 环境。</p>
@@ -604,7 +604,7 @@
   <p class="kicker">CRAFT</p>
   <ul class="tight">
     <li><b>契约先行</b>：07 权威契约是单一事实源（阶段清单 / 事件协议 / DDL / SQL 白名单 / 发布闸门全部逐字落地并有单测钉死），设计文档与实现冲突时以契约为准；</li>
-    <li><b>提交规范</b>：`&lt;type&gt;(&lt;scope&gt;): 描述`（feat / test / docs / fix…），提交历史即开发叙事，配合 docs/devlog/ 逐日开发日志；</li>
+    <li><b>提交规范</b>：`&lt;type&gt;(&lt;scope&gt;): 描述`（feat / test / docs / fix…），提交历史即开发叙事，逐条可追溯；</li>
     <li><b>锁版本依赖</b>：全部依赖精确版本（无 ^），自托管 DuckDB-WASM 产物入库，postinstall 自动同步——评审环境断网也能完整复现；</li>
     <li><b>演示控制台</b>：按 `?` 键呼出（重放流水线 / 跳最后阶段 / 注入错误 / 暗色切换 / 断网模拟 / 恢复断点），为评审演示提供确定性兜底；</li>
     <li><b>安全工程化</b>：密钥只走环境变量 + check-secrets 钩子；上传文件大小 / 类型双校验；`?next` 回跳参数白名单消毒；金额全链路整数分（浮点不进库）。</li>
@@ -643,7 +643,7 @@
   <div class="lead">
     消费CT 想做的，是让每一个年轻人的账单都值得被认真对待——<b>体检出问题，处方给动作，数据留本地</b>。
   </div>
-  <p>从「账单零散」到「体检 + 处方」，从「云上分析」到「明细不出浏览器」，从「空白聊天窗」到「可审阅的洞察卡流」——SpendCT 在交互范式与隐私模型两个维度上给出了自己的答案。项目的每一行代码、每一条契约、每一个测试，都记录在公开仓库的提交历史与开发日志里。</p>
+  <p>从「账单零散」到「体检 + 处方」，从「云上分析」到「明细不出浏览器」，从「空白聊天窗」到「可审阅的洞察卡流」——SpendCT 在交互范式与隐私模型两个维度上给出了自己的答案。项目的每一行代码、每一条契约、每一个测试，都记录在公开仓库的完整提交历史里。</p>
   <p>感谢评委的时间与关注。</p>
 
   <h3><span class="tag">附录</span>仓库与文档索引</h3>
@@ -653,8 +653,8 @@
     <tr><td><b>在线演示</b></td><td>Vercel 部署（零密钥 mock 模式，演示账户 demo / demo123）</td></tr>
     <tr><td><b>环境模板</b></td><td>.env.example（密钥全空，标注 07 契约 §12 唯一清单）</td></tr>
     <tr><td><b>设计文档</b></td><td>docs/01 架构 · 02 数据隐私 · 03 Agent 流水线 · 04 RAG-MCP · 05 UIUX · 06 路线图 · 07 权威契约 · 08 功能扩展</td></tr>
-    <tr><td><b>工程证据</b></td><td>docs/benchmarks.md（性能基准）· docs/devlog/（开发日志）· tests/unit + tests/e2e（测试矩阵）</td></tr>
-    <tr><td><b>演示视频</b></td><td>5-8 分钟 · 1080p（docs/demo-script.md 剧本 S1-S8）</td></tr>
+    <tr><td><b>工程证据</b></td><td>docs/benchmarks.md（性能基准）· tests/unit + tests/e2e（测试矩阵）</td></tr>
+    <tr><td><b>演示视频</b></td><td>5-8 分钟 · 1080p（随参赛作品另行提交）</td></tr>
   </table>
 </section>
 

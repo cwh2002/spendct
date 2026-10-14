@@ -53,13 +53,13 @@ pnpm dev              # http://localhost:3000
 ```
 
 - **零密钥演示**：不填任何 API key 即 mock 模式（演示账户 `demo` / `demo123`），「上传账单」页可用内置示例账单跑完整流程；
-- **接入真实模型**：在 `.env.local` 填 `DEEPSEEK_API_KEY`（文本主脑）、`SILICONFLOW_API_KEY`（轻任务）、`GLM_API_KEY`（截图 OCR），并把 `DEMO_MODE` 改为 `live`。
+- **接入真实模型**：在 `.env.local` 填 `DEEPSEEK_API_KEY`（文本主脑）、`SILICONFLOW_API_KEY`（轻任务）、`GLM_API_KEY`（截图 OCR）；任一 key 就位即自动切 live 模式（`DEMO_MODE=mock` 可强制回零密钥演示）。
 
 ```bash
 pnpm typecheck       # tsgo 全量类型检查
 pnpm lint            # ESLint
-pnpm test            # Vitest 单测（158 用例）
-pnpm test:e2e        # Playwright 端到端（13 页冒烟 + 示例账单全动线，15 用例）
+pnpm test            # Vitest 单测（271 用例）
+pnpm test:e2e        # Playwright 端到端（13 页冒烟 + 示例账单全动线，23 用例）
 pnpm build           # 生产构建（17 路由：14 静态 + 2 API + not-found）
 ```
 
@@ -83,8 +83,8 @@ tests/
 ├── unit/                 # 白名单/账户/导入/协议/引擎/卡片 schema/运行桥 单测
 └── e2e/                  # Playwright：全路由冒烟 · 关键动线 · 账户登录
 public/duckdb/            # 自托管 wasm + worker（sync-duckdb-wasm.mjs 同步）
-scripts/                  # 同步 · 密钥检查 · 验证脚本
-docs/                     # 8 份设计文档 + devlog + benchmarks + finance
+scripts/                  # 同步 · 密钥检查 · 验证 · 文档构建脚本
+docs/                     # 8 份设计文档 + benchmarks + finance
 ```
 
 ## 隐私承诺（写入产品）
@@ -97,7 +97,10 @@ docs/                     # 8 份设计文档 + devlog + benchmarks + finance
 
 ## 团队与分工
 
-- 独立开发（1 人队）：架构设计 → 设计文档 → 全栈实现 → 测试 → 交付物，全程见 git 提交历史与 [docs/devlog/](docs/devlog/) 开发日志。
+- **队长**：架构设计、前端交互与交付物（13 个路由页、组件库、暗色主题、演示控制台、说明文档）；
+- **队员**：数据管线与 AI 接入（DuckDB-WASM 数据层、六阶段管线引擎、LLM 接入层、测试矩阵与基准）。
+
+从架构设计 → 设计文档 → 全栈实现 → 测试 → 交付物，全程见 git 提交历史。
 
 ## 许可证
 
