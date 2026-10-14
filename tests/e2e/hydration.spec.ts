@@ -58,6 +58,30 @@ test("个人中心：登录后整页加载水合一致", async ({ page }) => {
   expect(issues).toEqual([]);
 });
 
+test("个人中心：账本归属提示展示、可关闭且关闭状态持久化", async ({ page }) => {
+  await page.goto("/login");
+  await page.locator('input[placeholder="3-20 位小写字母、数字或下划线"]').fill("demo");
+  await page.locator('input[placeholder="请输入密码"]').fill("demo123");
+  await page.locator('button[type="submit"]').click();
+  await expect(page).toHaveURL(/\/me/);
+
+  // 提示条默认展示：直接回答「换账户不换账本」的困惑
+  const banner = page.locator('aside[aria-label="账本归属说明"]');
+  await expect(banner).toBeVisible();
+  await expect(banner.getByText("账单数据保存在本机浏览器，不随账户切换")).toBeVisible();
+
+  // 关闭一次：本次会话内消失
+  await banner.getByRole("button", { name: "关闭提示" }).click();
+  await expect(banner).toHaveCount(0);
+
+  // 关闭状态写入 localStorage，刷新后仍不出现（持久化）
+  const issues = collectHydrationErrors(page);
+  await page.reload();
+  await expect(page.locator("h1").first()).toBeVisible();
+  await expect(page.locator('aside[aria-label="账本归属说明"]')).toHaveCount(0);
+  expect(issues).toEqual([]);
+});
+
 test("订阅页：本地提醒/标记/攻略进度与服务器空态冲突时水合一致", async ({
   context,
   page,

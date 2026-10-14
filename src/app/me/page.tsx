@@ -33,6 +33,7 @@ import type { LucideIcon } from "lucide-react";
 import { AuthGuard } from "@/components/auth/route-guard";
 import { AchievementWall } from "@/components/achievements/achievement-wall";
 import { Container } from "@/components/layout/container";
+import { LocalDataBanner } from "@/components/me/local-data-banner";
 import { ACHIEVEMENT_DEFS, useUnlockedIds } from "@/lib/achievements";
 import { PBKDF2_ITERATIONS, hashPassword, validateNickname, validatePassword } from "@/lib/account/auth";
 import { deleteBook, listBooks, openDb, upsertUser } from "@/lib/account/db";
@@ -721,6 +722,9 @@ function MeContent() {
           账户、成就与账本一览——所有数据只保存在你的浏览器里
         </p>
       </header>
+
+      {/* 账本归属提示：说明「换账户不会换账本」，可直接关闭 */}
+      <LocalDataBanner />
 
       {/* 账户卡 */}
       <section
