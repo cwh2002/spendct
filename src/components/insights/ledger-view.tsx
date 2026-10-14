@@ -451,7 +451,14 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
   );
 
   const lineOption = useMemo(
-    () => () => buildLineOption(timeseries, { formatValue: (v) => v.toLocaleString("zh-CN"), unit: " 元" }),
+    () => () =>
+      buildLineOption(timeseries, {
+        // 千分位 + 固定两位小数：tooltip 与轴刻度（¥ 整数元）各自独立，避免小数位漂移
+        formatValue: (v) =>
+          v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        unit: " 元",
+        axisFormat: (v) => `¥${Math.round(v)}`,
+      }),
     [timeseries],
   );
   const donutOption = useMemo(
@@ -459,9 +466,14 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
       buildDonutOption(
         {
           labels: categoryAgg.map((entry) => entry.category),
-          values: categoryAgg.map((entry) => entry.share),
+          // 传分为刻度：占比与 share 等比不变，tooltip 得以报「名称：¥金额（占比%）」
+          values: categoryAgg.map((entry) => entry.cents),
         },
-        { dimExcept: category === "all" ? undefined : category },
+        {
+          dimExcept: category === "all" ? undefined : category,
+          formatValue: (v) => `¥${formatYuan(v)}`,
+          legendWithValue: categoryAgg.length <= 5,
+        },
       ),
     [categoryAgg, category],
   );
@@ -472,7 +484,11 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
           labels: merchantAgg.map((entry) => entry.merchant),
           values: merchantAgg.map((entry) => entry.cents),
         },
-        { horizontal: true, formatValue: (v) => `¥${formatYuan(v)}` },
+        {
+          horizontal: true,
+          formatValue: (v) => `¥${formatYuan(v)}`,
+          axisFormat: (v) => `¥${Math.round(v / 100)}`,
+        },
       ),
     [merchantAgg],
   );
@@ -597,7 +613,10 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
                 headers={["月份", "支出（元）"]}
                 rows={timeseries.labels.map((label, i) => [
                   label,
-                  `${(timeseries.values[i] ?? 0).toLocaleString("zh-CN")}`,
+                  `${(timeseries.values[i] ?? 0).toLocaleString("zh-CN", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}`,
                 ])}
               />
             }

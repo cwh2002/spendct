@@ -58,6 +58,9 @@ export const ATTRIBUTION_EXECUTOR: StageExecutor = {
       },
       "",
     );
+    // 图表行过滤的月份等值形态（month 列为 date_trunc 的月首 TIMESTAMP，
+    // 字符串字面量比较由 DuckDB 自动转型；regex 见 ChartSpecSchema）
+    const m01 = `${latestMonth}-01`;
     const pairs = rows.filter((row) => fmtMonth(valAt(row, 0)) === latestMonth);
 
     interface MomPair {
@@ -99,9 +102,13 @@ export const ATTRIBUTION_EXECUTOR: StageExecutor = {
           chart: {
             tableId: "attribution_mom_stats",
             chartType: "bar",
-            title: "涨幅类目对比",
+            title: "各类目环比涨幅",
             dimField: "category",
-            measureFields: ["cur_cents"],
+            // 环比变化率（%）：只查最新月行，HAVING 排除上月无支出的 NULL 新类目假柱
+            measureFields: ["change_ratio"],
+            where: `month = '${m01}'`,
+            having: "AVG(change_ratio) > 0",
+            topN: 12,
           },
           stats: [
             { label: "本月支出", value: fmtYuan(riser.cur), unit: "元" },
@@ -132,9 +139,13 @@ export const ATTRIBUTION_EXECUTOR: StageExecutor = {
           chart: {
             tableId: "attribution_mom_stats",
             chartType: "bar",
-            title: "回落类目对比",
+            title: "各类目环比回落",
             dimField: "category",
-            measureFields: ["cur_cents"],
+            measureFields: ["change_ratio"],
+            where: `month = '${m01}'`,
+            having: "AVG(change_ratio) < 0",
+            sortBy: "asc",
+            topN: 12,
           },
           stats: [
             { label: "本月支出", value: fmtYuan(faller.cur), unit: "元" },

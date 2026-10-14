@@ -157,11 +157,15 @@ function mapChartKind(
   return "bar";
 }
 
-/** 度量字段 → 展示单位：金额列（*_cents）为元、行数（*_rows）为行、其余聚合为笔数 */
+/**
+ * 度量字段 → 展示单位：金额列（*_cents）为元、行数（*_rows）为行、
+ * 比率列（*_ratio / *_pct）为 %，其余聚合为笔数。
+ */
 function mapChartUnit(measureField: string | undefined): DemoInsight["chartUnit"] {
   if (!measureField) return undefined;
   if (measureField.includes("cents")) return "元";
   if (measureField.includes("rows")) return "行";
+  if (measureField.includes("ratio") || measureField.includes("pct")) return "%";
   return "笔";
 }
 
@@ -220,24 +224,37 @@ function parseStatNumber(raw: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/** 时间维度：折线/柱图凡按时间维度分组，一律按维度升序取全量序列（不按金额截断） */
+const TIME_DIM_FIELDS = new Set(["month", "date_iso", "year"]);
+
 /**
  * 按卡内图表规格拼确定性聚合 SQL（07 §6 硬约束下的合法路径）。
  * 表名/维度/度量全部来自引擎产出的卡（代码常量或经 schema 校验的草稿），
  * 无任何用户输入；执行仍走 runWhitelistedAggregate 预检作双保险。
- * 口径说明：白名单文法不支持「ORDER BY 2」位置序号，聚合列排序须写完整
- * SUM(<度量>) 表达式（语义等价）；方向取 chart.sortBy，缺省降序取头部；
- * 行数上限取 chart.topN，缺省 8。
+ * 口径说明：
+ * - 时间维度（month/date_iso/year）：按维度升序、LIMIT 50（白名单上限）取全量序列，
+ *   时间序列若按聚合值排序会被截成乱序片段，画出锯齿假趋势；
+ * - 其余维度：白名单文法不支持「ORDER BY 2」位置序号，聚合列排序须写完整
+ *   SUM(<度量>) 表达式（语义等价）；方向取 chart.sortBy，缺省降序取头部；
+ *   行数上限取 chart.topN，缺省 8；
+ * - where/having 为引擎模板专用行过滤（ChartSpecSchema 正则限定形态），
+ *   缺省不输出子句。
  */
 function buildCardChartSql(chart: RunInsightCard["evidence"]["chart"]): string {
   // schema 保证至少 1 个度量（ChartSpecSchema.min(1)），此处为防御兜底
   const measure = chart.measureFields[0] ?? "amount_cents";
-  const direction = chart.sortBy === "asc" ? "ASC" : "DESC";
-  const limit = chart.topN ?? 8;
+  const isTimeDim = TIME_DIM_FIELDS.has(chart.dimField);
+  const orderBy = isTimeDim
+    ? `${chart.dimField} ASC`
+    : `SUM(${measure}) ${chart.sortBy === "asc" ? "ASC" : "DESC"}`;
+  const limit = isTimeDim ? 50 : (chart.topN ?? 8);
   return (
     `SELECT ${chart.dimField}, SUM(${measure}) ` +
     `FROM ${chart.tableId} ` +
+    (chart.where ? `WHERE ${chart.where} ` : "") +
     `GROUP BY ${chart.dimField} ` +
-    `ORDER BY SUM(${measure}) ${direction} ` +
+    (chart.having ? `HAVING ${chart.having} ` : "") +
+    `ORDER BY ${orderBy} ` +
     `LIMIT ${limit}`
   );
 }
@@ -258,11 +275,17 @@ function rowsToChartData(rows: unknown[], dimField: string): ChartResultEntry {
 /**
  * 查询失败/白名单拒绝时的退化数据：用 evidence.stats 的 label/value 兜底，
  * 图表仍可渲染（降级口径：stats 是引擎产出该卡时已算好的摘要统计）。
+ *
+ * 金额卡（measureFields 含 *_cents）的 stats.value 已是引擎换算好的元串
+ * （fmtYuan 小数，如 "8507.20"），乘 100 回到分刻度，与正常查询路径
+ * （SUM(*_cents) 原始分）同口径，再由展示层 ÷100 还原——避免「已格式化元串
+ * 再 ÷100」的双重换算。非金额项（占比/笔数/z-score/月份文本）原值往返。
  */
 function statsFallbackChartData(card: RunInsightCard): ChartResultEntry {
+  const isCents = (card.evidence.chart.measureFields[0] ?? "").includes("cents");
   return {
     labels: card.evidence.stats.map((stat) => stat.label),
-    values: card.evidence.stats.map((stat) => parseStatNumber(stat.value)),
+    values: card.evidence.stats.map((stat) => parseStatNumber(stat.value) * (isCents ? 100 : 1)),
   };
 }
 
@@ -302,6 +325,9 @@ function mapRunCard(card: RunInsightCard): DemoInsight {
     // 图表数据异步回填：查询中保持空数组，成功/退化后由 chartResults 覆盖
     chartData: [],
     chartLabels: [],
+    // 图表说明行与证据统计行：真实卡携带，演示卡缺省不渲染
+    chartTitle: card.evidence.chart.title,
+    chartStats: card.evidence.stats,
     citations: [...new Set(card.sources.map(formatCitation))],
   };
 }

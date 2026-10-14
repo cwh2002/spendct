@@ -3,6 +3,8 @@
 import * as echarts from "echarts/core";
 import { RadarChart } from "echarts/charts";
 import { RadarComponent } from "echarts/components";
+// 函数式 tooltip 参数类型（官方导出路径，避免 any；package.json exports 已声明 ./types/dist/shared）
+import type { CallbackDataParams } from "echarts/types/dist/shared";
 
 // 页面级补充注册（use 幂等）：雷达图仅本页使用，避免共享组件注册集变动影响渲染
 echarts.use([RadarChart, RadarComponent]);
@@ -317,6 +319,8 @@ interface ReportStorySegment {
   chartKind: string;
   chartData: number[];
   chartLabels: string[];
+  /** donut 数值单位：yuan=元（真实段，分/100 后的元）、percent=百分比（demo 段数据本身就是占比）；缺省按 percent 兜底 */
+  chartUnit?: "yuan" | "percent";
 }
 
 interface ReportData {
@@ -561,6 +565,7 @@ function buildFoodSegment(points: FoodSubPoint[]): ReportStorySegment | null {
     chartKind: "donut",
     chartData: slices.map((point) => point.totalCents / 100), // 分 → 元：donut 只按占比归一，刻度与元对齐
     chartLabels: slices.map((point) => point.subCategory),
+    chartUnit: "yuan",
   };
 }
 
@@ -612,6 +617,7 @@ function buildExperienceSegment(points: CategoryCentsPoint[]): ReportStorySegmen
     chartKind: "donut",
     chartData: entries.map((entry) => entry.cents / 100),
     chartLabels: entries.map((entry) => entry.name),
+    chartUnit: "yuan",
   };
 }
 
@@ -815,7 +821,8 @@ function buildStoryOption(seg: ReportStorySegment): () => ECOption {
         tooltip: {
           ...tooltipBase,
           trigger: "axis",
-          valueFormatter: (value: unknown) => `${value} 元`,
+          // 固定两位小数，避免 1876.5 元 / 1876.54 元混排（demo 与真实段均为元刻度）
+          valueFormatter: (value: unknown) => `${Number(value).toFixed(2)} 元`,
         },
         xAxis: {
           type: "category",
@@ -828,7 +835,11 @@ function buildStoryOption(seg: ReportStorySegment): () => ECOption {
         yAxis: {
           type: "value",
           splitLine: { lineStyle: { color: t.lineHair } },
-          axisLabel: { color: t.inkMuted },
+          axisLabel: {
+            color: t.inkMuted,
+            // 轴刻度带 ¥ 前缀：报告段数据统一为元刻度，轴示值与 tooltip 同口径
+            formatter: (value: number) => `¥${value}`,
+          },
         },
         series: [
           {
@@ -906,9 +917,22 @@ function buildStoryOption(seg: ReportStorySegment): () => ECOption {
 
     // donut：分类占比，图例 + 直标百分比，颜色按实体固定顺序取色板。
     // 审计修复 3a：图例移到顶部、环半径收窄并下移中心，给标签留出上下空间；
-    // 标签只写百分比单行 + 重叠隐藏，避免多瓣时标签互相压盖
+    // 标签只写百分比单行 + 重叠隐藏，避免多瓣时标签互相压盖；
+    // 真实段（chartUnit=yuan）tooltip 报金额 + 1 位小数占比，demo 段数据本身就是百分比只报占比
+    const isYuan = seg.chartUnit === "yuan";
     return {
-      tooltip: { ...tooltipBase, trigger: "item", formatter: "{b}：{d}%" },
+      tooltip: {
+        ...tooltipBase,
+        trigger: "item",
+        formatter: (p: CallbackDataParams | CallbackDataParams[]) => {
+          const params = Array.isArray(p) ? p[0] : p;
+          const name = params?.name ?? "";
+          const pct = typeof params?.percent === "number" ? params.percent.toFixed(1) : "0.0";
+          if (!isYuan) return `${name}：${pct}%`;
+          const v = Number(params?.value ?? 0);
+          return `${name}：¥${v.toLocaleString("zh-CN", { maximumFractionDigits: 2 })}（${pct}%）`;
+        },
+      },
       legend: {
         top: 0,
         icon: "circle",
@@ -923,9 +947,17 @@ function buildStoryOption(seg: ReportStorySegment): () => ECOption {
           radius: ["50%", "68%"],
           center: ["50%", "54%"],
           avoidLabelOverlap: true,
-          label: { show: true, color: t.ink, formatter: "{d}%", fontSize: 11 },
+          label: {
+            show: true,
+            color: t.ink,
+            // 1 位小数，与叙事口径一致；percent 在类型上可选，需 ?? 0 兜底
+            formatter: (p) => `${(p.percent ?? 0).toFixed(1)}%`,
+            fontSize: 11,
+          },
           labelLine: { length: 6, length2: 6 },
           labelLayout: { hideOverlap: true },
+          // 小角切片不拉标签线（6.1.0 支持）
+          minShowLabelAngle: 8,
           itemStyle: { borderColor: t.surface, borderWidth: 2, borderRadius: 6 },
           data: seg.chartLabels.map((name, i) => ({
             name,

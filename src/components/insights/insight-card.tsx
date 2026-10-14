@@ -56,18 +56,51 @@ interface InsightCardProps {
  */
 function buildInsightChartOption(insight: DemoInsight): ECOption {
   const data = { labels: insight.chartLabels, values: insight.chartData };
+  const unit = insight.chartUnit;
   switch (insight.chartKind) {
     case "timeseries":
-      // DEMO 口径：ins-2 为笔数、ins-4 为月度金额（元），原始值直接展示
+      // 真实管线卡：金额口径按分存储，chartUnit 为元时换算为元（两位小数、
+      // ¥ 轴刻度 + 月均参考线）；笔/行/% 计数与比率口径原样展示；
+      // 演示卡（chartUnit 缺省，ins-2 为笔数、ins-4 为元）保持原状
+      if (unit === "元") {
+        return buildLineOption(data, {
+          formatValue: formatYuan,
+          unit: " 元",
+          axisFormat: (v) => `¥${Math.round(v / 100)}`,
+          markLineAverage: { label: "月均" },
+        });
+      }
+      if (unit === "笔" || unit === "行" || unit === "%") {
+        // 比率口径固定 1 位小数，与数据表/柱图标签口径一致
+        return buildLineOption(data, {
+          unit: ` ${unit}`,
+          ...(unit === "%" ? { formatValue: (v: number) => v.toFixed(1) } : {}),
+        });
+      }
       return buildLineOption(data);
     case "donut":
+      // 真实管线卡：金额口径分 → 元（tooltip 报金额 + 1 位小数占比）；
+      // 演示百分比卡（chartUnit 缺省）数据本身就是占比，tooltip 只报占比
+      if (unit === "元") {
+        return buildDonutOption(data, {
+          formatValue: formatYuan,
+          unit: " 元",
+          legendWithValue: data.labels.length <= 5,
+        });
+      }
       return buildDonutOption(data);
     case "bar": {
       // 金额口径按分存储（与 DEMO_SUBSCRIPTIONS 同口径），展示换算为元；
-      // 笔数/行数等聚合计数口径（真实管线卡携带 chartUnit）原样展示
-      const unit = insight.chartUnit ?? "元";
-      const formatValue = unit === "元" ? (v: number) => formatYuan(v) : (v: number) => String(v);
-      return buildBarOption(data, { formatValue, unit: ` ${unit}` });
+      // 笔数/行数等聚合计数原样展示；比率口径（%）固定 1 位小数，
+      // 避免整数百分比（如 -61.0）与小数百分比混排时小数位不齐
+      const barUnit = unit ?? "元";
+      const formatValue =
+        barUnit === "元"
+          ? (v: number) => formatYuan(v)
+          : barUnit === "%"
+            ? (v: number) => v.toFixed(1)
+            : (v: number) => String(v);
+      return buildBarOption(data, { formatValue, unit: ` ${barUnit}` });
     }
   }
 }
@@ -77,17 +110,30 @@ function buildTableRows(insight: DemoInsight): { label: string; value: string; n
   const rows = insight.chartLabels.map((label, i) => {
     const raw = insight.chartData[i] ?? 0;
     if (insight.chartKind === "bar") {
-      // 与图表同口径：金额列换算为元，计数列（笔/行）原样展示
+      // 与图表同口径：金额列换算为元，计数列（笔/行）原样展示，
+      // 比率列（%）固定 1 位小数，与图表标签口径一致
       const unit = insight.chartUnit ?? "元";
-      const value = unit === "元" ? `${formatYuan(raw)} 元` : `${raw} ${unit}`;
+      const value =
+        unit === "元" ? `${formatYuan(raw)} 元` : unit === "%" ? `${raw.toFixed(1)} ${unit}` : `${raw} ${unit}`;
       return { label, value };
     }
     if (insight.chartKind === "donut") {
+      // 真实卡按 chartUnit 定口径：元 = 分换算金额；演示百分比卡（无 chartUnit）原样 + %
+      const unit = insight.chartUnit;
+      if (unit === "元") return { label, value: `${formatYuan(raw)} 元` };
+      if (unit === "笔" || unit === "行") return { label, value: `${raw} ${unit}` };
       return { label, value: `${raw}%` };
     }
-    // 时间序列按量级推断单位：两位数以内为笔数（深夜消费），其余为月度金额（元）
-    const unit = insight.chartData.some((v) => v >= 100) ? "元" : "笔";
-    return { label, value: `${raw} ${unit}` };
+    // 时间序列：真实卡按 chartUnit 定口径（元→分换算为元，笔/行原样+单位，
+    // % 固定 1 位小数）；演示卡无 chartUnit，保留量级推断启发式（两位数以内为笔数，其余为元）
+    const unit = insight.chartUnit;
+    if (unit) {
+      const value =
+        unit === "元" ? `${formatYuan(raw)} 元` : unit === "%" ? `${raw.toFixed(1)} ${unit}` : `${raw} ${unit}`;
+      return { label, value };
+    }
+    const inferred = insight.chartData.some((v) => v >= 100) ? "元" : "笔";
+    return { label, value: `${raw} ${inferred}` };
   });
   return rows;
 }
@@ -307,15 +353,39 @@ export function InsightCard({
               </table>
             </div>
           ) : (
-            <EChart
-              option={chartOption}
-              // 环图图例置顶 + 环体下移，180px 下标签线会顶到卡片边缘，单独加高 40px
-              height={insight.chartKind === "donut" ? 220 : 180}
-              ariaLabel={`${insight.headline}的证据图，等价数据见数据表视图`}
-              onClick={handleChartClick}
-            />
+            <>
+              {insight.chartTitle ? (
+                <p className="mb-1.5 text-xs text-(--color-ink-muted)">
+                  {insight.chartTitle}
+                  {insight.chartKind === "bar" ? ` · 单位：${insight.chartUnit ?? "元"}` : ""}
+                </p>
+              ) : null}
+              <EChart
+                option={chartOption}
+                // 环图图例置顶 + 环体下移，180px 下标签线会顶到卡片边缘，单独加高 40px
+                height={insight.chartKind === "donut" ? 220 : 180}
+                ariaLabel={`${insight.headline}的证据图，等价数据见数据表视图`}
+                onClick={handleChartClick}
+              />
+            </>
           )}
         </div>
+
+        {insight.chartStats && insight.chartStats.length > 0 ? (
+          <div className="px-4 sm:px-5">
+            <ul className="flex flex-wrap items-baseline gap-x-5 gap-y-1 pt-1.5 text-xs text-(--color-ink-secondary)">
+              {insight.chartStats.map((stat) => (
+                <li key={stat.label} className="flex items-baseline gap-1">
+                  <span className="text-(--color-ink-muted)">{stat.label}</span>
+                  <span className="font-medium tabular-nums">
+                    {stat.value}
+                    {stat.unit ?? ""}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         {!compact ? (
           <>

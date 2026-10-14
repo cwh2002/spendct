@@ -142,11 +142,15 @@ export interface DemoInsight {
   headline: string;
   narrative: string;
   chartKind: "timeseries" | "donut" | "bar";
-  /** 展示单位（真实管线卡按度量字段推断）：元 = 金额按分换算展示，笔/行 = 聚合计数原样展示；缺省按元 */
-  chartUnit?: "元" | "笔" | "行";
+  /** 展示单位（真实管线卡按度量字段推断）：元 = 金额按分换算展示，笔/行 = 聚合计数原样展示，% = 比率原样；缺省按元 */
+  chartUnit?: "元" | "笔" | "行" | "%";
+  /** 图表标题（真实管线卡 evidence.chart.title，如「深夜消费分布」；演示卡不填则不渲染说明行） */
+  chartTitle?: string;
   chartData: number[];
   chartLabels: string[];
   citations: string[];
+  /** 证据统计（真实管线卡 evidence.stats：label/value/unit），卡面图表下方一行呈现；演示卡缺省不渲染 */
+  chartStats?: { label: string; value: string; unit?: string }[];
   withheld?: { reason: string; action: string };
 }
 

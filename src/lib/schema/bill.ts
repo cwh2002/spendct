@@ -397,7 +397,7 @@ SELECT account_id,
 FROM transactions
 GROUP BY account_id, month`,
 
-  // 阶段3 anomaly：日异常统计（全量日基线 + zscore，模板侧自行筛 |zscore|>2.5）
+  // 阶段3 anomaly：日异常统计（全量日基线 + zscore + is_pulse 标记，模板侧筛 is_pulse=1 出卡）
   anomaly_daily_stats: `CREATE OR REPLACE TABLE anomaly_daily_stats AS
 WITH daily AS (
   SELECT date_iso, SUM(amount_cents) AS total_cents, COUNT(*) AS tx_count
@@ -410,7 +410,8 @@ WITH daily AS (
 SELECT d.date_iso, d.total_cents, d.tx_count,
        ROUND(b.mu, 2) AS mu,
        ROUND(b.sigma, 2) AS sigma,
-       ROUND((d.total_cents - b.mu) / NULLIF(b.sigma, 0), 2) AS zscore
+       ROUND((d.total_cents - b.mu) / NULLIF(b.sigma, 0), 2) AS zscore,
+       CASE WHEN ROUND((d.total_cents - b.mu) / NULLIF(b.sigma, 0), 2) > 2.5 THEN 1 ELSE 0 END AS is_pulse
 FROM daily d, baseline b`,
 
   // 阶段3 anomaly：商户异常统计（变异系数 cv_pct 为离群信号）

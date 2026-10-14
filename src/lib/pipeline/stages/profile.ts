@@ -79,7 +79,8 @@ export const PROFILE_EXECUTOR: StageExecutor = {
             dimField: "category",
             measureFields: ["expense_cents"],
             sortBy: "desc",
-            topN: 8,
+            // 12 类目全量：环图占比分母与叙述「占总支出的 N%」同口径（12 类目即全部支出）
+            topN: 12,
           },
           stats: [
             { label: topCategory, value: fmtYuan(topCents), unit: "元" },

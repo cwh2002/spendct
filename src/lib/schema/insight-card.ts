@@ -11,7 +11,12 @@ import { z } from "zod";
 
 import { SIX_STAGES } from "@/lib/pipeline/stage";
 
-/** 图表规格：只声明「哪张表 + 哪种图 + 哪个维度」（模板优先，七类枚举不扩展） */
+/**
+ * 图表规格：只声明「哪张表 + 哪种图 + 哪个维度」（模板优先，七类枚举不扩展）。
+ * where/having 是引擎模板专用行过滤（引擎 SQL 常量拼接，不经 LLM 草稿），
+ * 形态用正则收紧：月份等值（month = 'YYYY-MM-DD'）、整数比较（night_cents > 0、
+ * is_pulse = 1）与 AVG(change_ratio) 符号过滤三类，其余形态一律被拒。
+ */
 export const ChartSpecSchema = z.object({
   tableId: z.string(),
   chartType: z.enum(["bar", "line", "pie", "histogram", "scatter", "heatmap", "table"]),
@@ -21,6 +26,15 @@ export const ChartSpecSchema = z.object({
   sortBy: z.enum(["desc", "asc"]).optional(),
   topN: z.number().int().min(3).max(24).optional(),
   note: z.string().max(60).optional(),
+  /** 行过滤：形态限「列 = '字符串' / 列 = 整数 / 列 比较符 整数」三类 */
+  where: z
+    .string()
+    .min(1)
+    .max(80)
+    .regex(/^[a-z_][a-z0-9_]* (=( '[^']*'| \d+)|[<>]=? \d+)$/)
+    .optional(),
+  /** 聚合过滤：仅允许 AVG(change_ratio) 与 0 比较，排除 NULL 新类目的 0% 假柱 */
+  having: z.string().min(1).max(80).regex(/^AVG\(change_ratio\) [<>] 0$/).optional(),
 });
 
 /** 来源引用（kind 枚举与 ref 格式唯一口径） */

@@ -28,6 +28,10 @@ export interface ChartSpecInput {
   measureFields: string[];
   sortBy?: "desc" | "asc";
   topN?: number;
+  /** 引擎模板专用行过滤（白名单预检双保险），形态见 ChartSpecSchema 正则口径 */
+  where?: string;
+  /** 引擎模板专用聚合过滤，形态见 ChartSpecSchema 正则口径 */
+  having?: string;
 }
 
 export interface CitationInput {

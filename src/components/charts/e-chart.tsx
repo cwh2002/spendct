@@ -10,10 +10,17 @@ import type {
   PieSeriesOption,
   RadarSeriesOption,
 } from "echarts/charts";
-import { GridComponent, LegendComponent, RadarComponent, TooltipComponent } from "echarts/components";
+import {
+  GridComponent,
+  LegendComponent,
+  MarkLineComponent,
+  RadarComponent,
+  TooltipComponent,
+} from "echarts/components";
 import type {
   GridComponentOption,
   LegendComponentOption,
+  MarkLineComponentOption,
   RadarComponentOption,
   TooltipComponentOption,
 } from "echarts/components";
@@ -30,6 +37,7 @@ echarts.use([
   RadarChart,
   GridComponent,
   LegendComponent,
+  MarkLineComponent,
   RadarComponent,
   TooltipComponent,
   CanvasRenderer,
@@ -44,6 +52,7 @@ export type ECOption = ComposeOption<
   | RadarSeriesOption
   | GridComponentOption
   | LegendComponentOption
+  | MarkLineComponentOption
   | RadarComponentOption
   | TooltipComponentOption
 >;

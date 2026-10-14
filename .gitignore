@@ -27,3 +27,6 @@ test-results/
 scripts/.shots/
 scripts/.video/
 docs/pdf-build/spendct-guide.embedded.html
+
+# 图表人工核对截图（scripts/screenshot-insights.mjs 产物，不入库）
+.screenshots/

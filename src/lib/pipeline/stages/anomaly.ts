@@ -5,7 +5,8 @@
  * 深夜口径与视图一致：23:00-05:00（07 §3 唯一深夜语义），按月聚合；
  * 脉冲口径：anomaly_daily_stats 预计算表已含全量日基线的 mu/sigma/zscore，
  * 白名单禁止 WHERE 小数常量比较，模板侧在 JS 里筛 zscore > 2.5（与
- * v_anomaly_daily 视图口径一致）。脉冲日无命中时不产卡（该阶段允许 1-3 张）。
+ * v_anomaly_daily 视图口径一致）；卡面图表经 is_pulse = 1 只画异常日。
+ * 脉冲日无命中时不产卡（该阶段允许 1-3 张）。
  */
 import {
   fmtDate,
@@ -67,6 +68,8 @@ export const ANOMALY_EXECUTOR: StageExecutor = {
             title: "深夜消费分布",
             dimField: "month",
             measureFields: ["night_cents"],
+            // 视图含全部月份（无深夜消费的月份 night_cents=0），图表只画有消费的月份
+            where: "night_cents > 0",
           },
           stats: [
             { label: "深夜总支出", value: fmtYuan(totalNight), unit: "元" },
@@ -115,6 +118,8 @@ export const ANOMALY_EXECUTOR: StageExecutor = {
             title: "异常日支出",
             dimField: "date_iso",
             measureFields: ["total_cents"],
+            // 预计算表是全量日基线，图表只画 zscore>2.5 的脉冲日（与卡面口径一致）
+            where: "is_pulse = 1",
           },
           stats: [
             { label: "当日支出", value: fmtYuan(totalCents), unit: "元" },
