@@ -379,7 +379,7 @@
     <div class="row">
       <div class="box"><b>LLM 接入层（服务端转发）</b><span>deepseek → qwen → 模板<br />统计为主 · 追问含明细快照</span></div>
       <div class="arrow">↔</div>
-      <div class="box"><b>RAG 案例库（本地）</b><span>60 条案例 · TF-IDF 检索<br />引用可溯源</span></div>
+      <div class="box"><b>RAG 案例库（本地）</b><span>60 条案例 · 关键词匹配<br />引用可溯源</span></div>
       <div class="arrow">↔</div>
       <div class="box"><b>账户层（本地）</b><span>IndexedDB · PBKDF2-SHA256<br />本地账户模式</span></div>
     </div>
@@ -490,8 +490,8 @@
 
   <h3><span class="tag">RAG</span>本地案例检索与可溯源引用</h3>
   <ul class="tight">
-    <li><b>案例库 60 条</b>：订阅陷阱、预付风险、消费维权、学生权益四类，每条带法条出处与官方来源链接，检索默认走本地 TF-IDF（零依赖、公网可部署）；</li>
-    <li><b>MCP 工具</b>：和风天气工具（雨天外卖溢价提醒等场景），契约化调用；</li>
+    <li><b>案例库 60 条</b>：订阅陷阱、预付风险、消费维权、学生权益四类，每条带法条出处与官方来源链接；订阅卡引用按确定性规则挂接，省钱贴士按用户 top 类目关键词匹配（全程浏览器内、零依赖、公网可部署）；</li>
+    <li><b>工具集成</b>：浏览器内 SQL 工具（追问本地规则 + 白名单聚合）+ 4 个结构化 LLM 短任务（快速记账 / 预算建议 / 预测叙事 / 贴士个性化）；独立 MCP 服务未上线（设计见 04，国赛窗口恢复）；</li>
     <li><b>引用可溯源</b>：每张卡的引用五类形态——数据表 / 视图（sql）、规则（rule）、案例（rag）、工具（tool）、个人锚点（personal），UI 中逐条可展开核对。</li>
   </ul>
 </section>
@@ -516,7 +516,7 @@
   <h3><span class="tag">8.2</span>账单上传与字段映射</h3>
   <figure class="avoid-break">
     <img src="../scripts/.shots/04-upload.png" alt="上传" />
-    <figcaption><b>图 6　上传</b> —— 三种入口（截图 OCR / CSV / 示例账单）· 置信度评估 · 字段映射确认 · 重复记录提示，全流程本地解析</figcaption>
+    <figcaption><b>图 6　上传</b> —— 两种入口（CSV / 示例账单）· 置信度评估 · 字段映射确认 · 重复记录提示，全流程本地解析</figcaption>
   </figure>
 
   <h3><span class="tag">8.3</span>洞察卡流</h3>

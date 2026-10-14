@@ -99,7 +99,7 @@ const LIST: Capability[] = [
   {
     id: "learn",
     title: "知识课堂",
-    desc: "150+ 可核验案例：订阅陷阱、预付风险、消费维权。",
+    desc: "60 条可核验案例：订阅陷阱、预付风险、消费维权。",
     icon: GraduationCap,
     href: "/learn",
     tier: "P1",

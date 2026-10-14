@@ -398,7 +398,7 @@ export const featureFlags = {
 
 ### 1.11 消费知识小课堂 `/learn`（08 修订案 A7，P2）
 
-- **目的**：把 150+ 条 RAG 案例变成可浏览产品——案例库浏览（8 类分类 / 搜索）+ 金融素养知识卡 + 防坑手册（F11）。展示面 = 静态公开投影（title/summary/category/source/legalBasis/benefitTags），不含任何用户数据（08 §5.4）。
+- **目的**：把 60 条 RAG 案例变成可浏览产品——案例库浏览（8 类分类 / 搜索）+ 金融素养知识卡 + 防坑手册（F11）。展示面 = 静态公开投影（title/summary/category/source/legalBasis/benefitTags），不含任何用户数据（08 §5.4）。
 - **布局分区**：
   ```
   ┌──────────────────────────┬────────────┐
