@@ -91,7 +91,7 @@ const WINDOW_WORDS: readonly { window: TimeWindow; words: readonly string[] }[] 
  * 意图关键词（优先级从高到低，命中即停）：
  * 1. balance（结余/盈余/收入/存了）——收支结余问题，只看月度收支汇总；
  * 2. subscription（订阅/会员/续费）——订阅类支出与疑似订阅商户；
- * 3. top_merchant（哪家/哪店/哪个商户/花最多/最贵/商家）——商户排行；
+ * 3. top_merchant（哪家/哪店/哪个商户/花最多/最贵/商家/排行/排名）——商户排行；
  * 4. mom_compare（为什么/涨了/涨/降了/变多/变少/增加/减少/环比/变化）——环比涨跌；
  * 5. night_spend（深夜/凌晨/半夜/夜宵）——深夜时段支出；
  * 6. budget（预算/超支/超标/还剩）——预算使用情况；
@@ -103,7 +103,7 @@ const WINDOW_WORDS: readonly { window: TimeWindow; words: readonly string[] }[] 
  */
 const BALANCE_WORDS = ["结余", "盈余", "收入", "存了"] as const;
 const SUBSCRIPTION_WORDS = ["订阅", "会员", "续费"] as const;
-const TOP_MERCHANT_WORDS = ["哪家", "哪店", "哪个商户", "花最多", "最贵", "商家"] as const;
+const TOP_MERCHANT_WORDS = ["哪家", "哪店", "哪个商户", "花最多", "最贵", "商家", "排行", "排名"] as const;
 const MOM_COMPARE_WORDS = ["为什么", "涨了", "涨", "降了", "变多", "变少", "增加", "减少", "环比", "变化"] as const;
 const NIGHT_SPEND_WORDS = ["深夜", "凌晨", "半夜", "夜宵"] as const;
 const BUDGET_WORDS = ["预算", "超支", "超标", "还剩"] as const;

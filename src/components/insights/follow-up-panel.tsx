@@ -32,7 +32,8 @@ import { usePipeline } from "@/lib/pipeline/store";
  * 2. 本地规则（qa-engine）——意图解析 + 白名单聚合 SQL 直接读取账单数据回答，
  *    数字全部来自查询结果，答案气泡挂「已按你的账单数据计算」脚注；
  * 3. 在线兜底——本地答不了的问题，拼汇总统计上下文（只含统计、不含逐笔明细）
- *    与最近对话交给在线服务流式回答，气泡挂「在线生成 · 仅发送汇总统计」脚注。
+ *    与最近对话交给在线服务流式回答，气泡挂「在线生成 · 仅发送汇总统计」脚注；
+ *    没有账单数据时不进这一环，直接回「先导入账单」。
  *
  * 与页面的协作方式保持既有契约：锚点来自洞察卡「深挖」或账本图表数据点点击，
  * 页面通过 ref 触发「/」快捷键聚焦输入框；折叠窄轨、锚点确认条、快捷键均不变。
@@ -68,6 +69,9 @@ const ONLINE_CONTEXT_PREFIX = "以下是我的账单汇总数据（只含统计�
 
 /** 在线接口的消息总长上限（与 /api/ai/chat 的参数校验同口径） */
 const MESSAGE_BUDGET = 8000;
+
+/** 在线请求超时（毫秒）：超时即中止并落本地提示，避免思考态卡死面板 */
+const ONLINE_TIMEOUT_MS = 30_000;
 
 /** 在线兜底携带的最近对话轮数上限 */
 const HISTORY_TURNS = 10;
@@ -197,6 +201,22 @@ export function FollowUpPanel({
     setThinking("live");
     const controller = new AbortController();
     abortRef.current = controller;
+    // 超时保险：接口或上游长时间不响应时主动中止，防止思考态卡死面板
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, ONLINE_TIMEOUT_MS);
+
+    // 中止原因分流：组件卸载 → 静默返回；超时中止 → 补一条本地提示
+    function bailIfStopped(): boolean {
+      if (!aliveRef.current) return true;
+      if (controller.signal.aborted) {
+        if (timedOut) appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+        return true;
+      }
+      return false;
+    }
 
     try {
       // 汇总上下文：任何一组统计查不到就由引擎省略该组，空串表示没有任何可发送的统计
@@ -206,7 +226,14 @@ export function FollowUpPanel({
       } catch {
         context = "";
       }
-      if (!aliveRef.current || controller.signal.aborted) return;
+      if (bailIfStopped()) return;
+      // 没有任何可发送的统计（未导入账单或引擎读不到数据）：不空手转在线，
+      // 直接本地回答「先导入账单」，避免模型因拿不到数据而答非所问
+      if (!context) {
+        setThinking(null);
+        appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
+        return;
+      }
 
       const messages: { role: "user" | "assistant"; content: string }[] = [];
       if (context) {
@@ -239,7 +266,7 @@ export function FollowUpPanel({
       let accumulated = "";
       for (;;) {
         const { done, value } = await reader.read();
-        if (!aliveRef.current || controller.signal.aborted) return;
+        if (bailIfStopped()) return;
         if (done) break;
         accumulated += decoder.decode(value, { stream: true });
         updateTurnText(turnId, accumulated);
@@ -248,12 +275,29 @@ export function FollowUpPanel({
       updateTurnText(turnId, accumulated);
       markTurnLive(turnId);
     } catch {
-      // 网络异常 / 流中断：补一条本地提示气泡；主动中止（组件已卸载）则静默返回
-      if (!aliveRef.current || controller.signal.aborted) return;
+      // 组件卸载触发的中止 → 静默返回（不触碰已卸载组件的状态）；
+      // 超时中止 → 补一条本地提示气泡（提示只补一次）；
+      // 其余网络异常 / 流中断 → 同样补本地提示
+      if (!aliveRef.current) return;
+      if (controller.signal.aborted && !timedOut) return;
       appendTurn({ role: "assistant", text: onlineFallbackTipText() });
     } finally {
+      clearTimeout(timeoutId);
       if (aliveRef.current) setThinking(null);
     }
+  }
+
+  /**
+   * 转在线兜底前的最后一道本地闸门：没有账单数据时直接回「先导入账单」，
+   * 不空手转在线（模型拿不到统计只会把问题挡回来）。
+   */
+  async function fallToOnline(text: string) {
+    if (usePipeline.getState().datasetTxHash === null) {
+      setThinking(null);
+      appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
+      return;
+    }
+    await runOnlineFallback(text);
   }
 
   /**
@@ -288,7 +332,7 @@ export function FollowUpPanel({
         const answer = await answerLocalQuestion(getRunner(), intent, anchorAtAsk);
         if (!aliveRef.current) return;
         if (answer.kind === "unhandled") {
-          await runOnlineFallback(text);
+          await fallToOnline(text);
         } else {
           setThinking(null);
           appendTurn({ role: "assistant", text: answer.text, note: "local" });
@@ -296,11 +340,11 @@ export function FollowUpPanel({
         return;
       } catch {
         // 本地查询失败（数据库接线 / 白名单拒绝等）→ 转在线兜底
-        await runOnlineFallback(text);
+        await fallToOnline(text);
         return;
       }
     }
-    await runOnlineFallback(text);
+    await fallToOnline(text);
   }
 
   function handleSubmit() {

@@ -137,6 +137,11 @@ describe("analyzeQuestion 意图解析", () => {
     expect(analyzeQuestion("哪家花得最多", null)).toEqual({ kind: "top_merchant", window: "this_month" });
     expect(analyzeQuestion("哪个商户最贵", null)?.kind).toBe("top_merchant");
     expect(analyzeQuestion("这个月商家排行", null)?.kind).toBe("top_merchant");
+    expect(analyzeQuestion("我现在的商户排行是有哪些", null)).toEqual({
+      kind: "top_merchant",
+      window: "this_month",
+    });
+    expect(analyzeQuestion("商户排名", null)?.kind).toBe("top_merchant");
     expect(analyzeQuestion("哪家外卖花得最多", null)).toEqual({
       kind: "top_merchant",
       category: "餐饮",

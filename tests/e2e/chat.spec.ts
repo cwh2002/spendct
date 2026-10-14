@@ -6,8 +6,9 @@
  *    自动跳转洞察页（写法与 pipeline.spec.ts 全动线一致），随后在追问面板
  *    输入两个账单问题，验证回答直接来自本地账单数据，且「类目支出 ≤ 总支出」。
  * 2. 空数据集：直接访问 /insights（本会话未跑体检、无任何账单数据），验证
- *    面板空态的示例问题 chips 可点击提问、闲聊输入走问候文案，并确认旧版
- *    写死的占位回答文案及其固定数字不再出现在页面上。
+ *    面板空态的示例问题 chips 可点击提问、闲聊输入走问候文案，且无数据时
+ *    本地认识与不认识的账单问法都回「还没有账单数据」引导文案（不空手转在线），
+ *    并确认旧版写死的占位回答文案及其固定数字不再出现在页面上。
  *
  * 数据真实性约束：本文件不硬编码任何金额或笔数——金额一律从回答气泡里
  * 用正则解析，再做关系校验；旧版占位文案按整页断言排除。
@@ -117,11 +118,22 @@ test("空数据集：示例问题 chips 与闲聊分流动线", async ({ page })
     panel.getByText("可以围绕你的账单数据回答问题").first(),
   ).toBeVisible({ timeout: 15_000 });
 
-  // 4) 旧版写死的占位回答文案与固定数字不得出现在整页任何位置
+  // 4) 无数据 + 本地认识的问法（商户排行）：意图解析后直接本地回引导文案
+  await input.fill("我现在的商户排行是有哪些");
+  await input.press("Enter");
+  await expect(panel.getByText("还没有账单数据").last()).toBeVisible({ timeout: 15_000 });
+
+  // 5) 无数据 + 本地不认识的账单问法（旧版会空手转在线、被模型挡回）：
+  //    新增的无数据闸门应本地回引导文案，不发在线请求
+  await input.fill("帮我分析一下我的消费");
+  await input.press("Enter");
+  await expect(panel.getByText("还没有账单数据").last()).toBeVisible({ timeout: 15_000 });
+
+  // 6) 旧版写死的占位回答文案与固定数字不得出现在整页任何位置
   await expect(page.locator("body")).not.toContainText("内置回答");
   await expect(page.locator("body")).not.toContainText("1,286 元");
   await expect(page.locator("body")).not.toContainText("42 笔");
 
-  // 5) 全程零 console error
+  // 7) 全程零 console error
   expect(errors).toEqual([]);
 });
