@@ -45,8 +45,12 @@ import { STAGE_DISPLAY_NAMES } from "@/lib/pipeline/stage";
 import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
 import type { InsightCard as RunInsightCard } from "@/lib/schema/insight-card";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
+import { useMounted } from "@/lib/use-mounted";
 
 type ViewMode = "cards" | "gallery" | "ledger";
+
+/** 挂载前的空收藏快照：稳定引用，避免 activeFavorites 每次渲染生成新数组 */
+const EMPTY_FAVORITES: string[] = [];
 
 const VIEW_OPTIONS: { key: ViewMode; label: string; icon: typeof Rows3 }[] = [
   { key: "cards", label: "卡片流", icon: Rows3 },
@@ -422,8 +426,12 @@ function InsightsView() {
 
   const [filters, setFilters] = useState<InsightFilters>(DEFAULT_INSIGHT_FILTERS);
   // 收藏与演示开关在初始 state 里同步读取：本子树经 Suspense 客户端渲染，无 SSR HTML 需要对齐；
-  // 隐私模式抛异常时 readFavorites 已兜底返回空列表，demoOff 用 typeof window 守卫
+  // 隐私模式抛异常时 readFavorites 已兜底返回空列表，demoOff 用 typeof window 守卫。
+  // 渲染侧仍按 mounted 门控：即便未来移除 Suspense 客户端门控，
+  // 挂载前两端也同口径渲染空收藏，不产生水合不一致
+  const mounted = useMounted();
   const [favorites, setFavorites] = useState<string[]>(() => readFavorites());
+  const activeFavorites = mounted ? favorites : EMPTY_FAVORITES;
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [anchor, setAnchor] = useState<FollowUpAnchor | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
@@ -656,8 +664,8 @@ function InsightsView() {
 
   // 收藏夹与卡流同源（真实卡 id=cardId 与演示卡 id 天然兼容同一套收藏键）
   const favoriteInsights = useMemo(
-    () => cards.filter((insight) => favorites.includes(insight.id)),
-    [cards, favorites],
+    () => cards.filter((insight) => activeFavorites.includes(insight.id)),
+    [cards, activeFavorites],
   );
 
   return (
@@ -697,17 +705,17 @@ function InsightsView() {
             type="button"
             onClick={() => setFavoritesOpen((v) => !v)}
             aria-pressed={favoritesOpen}
-            aria-label={`收藏夹（${favorites.length} 项）`}
+            aria-label={`收藏夹（${activeFavorites.length} 项）`}
             className="inline-flex h-11 items-center gap-2 rounded-full border border-(--color-border) bg-(--color-surface) px-4 text-sm font-medium text-(--color-ink-secondary) transition-colors hover:border-(--color-border-strong) hover:text-(--color-ink)"
           >
             <Star
-              className={`size-4 ${favorites.length > 0 ? "fill-(--color-accent) text-(--color-accent)" : ""}`}
+              className={`size-4 ${activeFavorites.length > 0 ? "fill-(--color-accent) text-(--color-accent)" : ""}`}
               aria-hidden
             />
             收藏夹
-            {favorites.length > 0 ? (
+            {activeFavorites.length > 0 ? (
               <span className="rounded-full bg-(--color-primary-soft) px-2 py-0.5 text-xs font-semibold text-(--color-brand-600) tabular-nums">
-                {favorites.length}
+                {activeFavorites.length}
               </span>
             ) : null}
           </button>
@@ -828,7 +836,7 @@ function InsightsView() {
                   index={index}
                   compact={view === "gallery"}
                   focused={clampedFocus === index}
-                  favorite={favorites.includes(insight.id)}
+                  favorite={activeFavorites.includes(insight.id)}
                   onToggleFavorite={handleToggleFavorite}
                   onDelve={handleDelve}
                 />

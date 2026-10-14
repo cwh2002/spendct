@@ -2,6 +2,7 @@
 
 import { Check, Copy, ListChecks } from "lucide-react";
 import { useState } from "react";
+import { useMounted } from "@/lib/use-mounted";
 
 export interface CancelGuideProps {
   subId: string;
@@ -61,7 +62,11 @@ export function CancelGuide({
   nextChargeDate,
   onToast,
 }: CancelGuideProps) {
+  const mounted = useMounted();
   const [done, setDone] = useState<number[]>(() => loadProgress()[subId] ?? []);
+  // 渲染时门控：挂载前两端同口径渲染「0/4 步」空进度，
+  // 挂载后再展示本地勾选进度，避免 SSR 水合不一致
+  const activeDone = mounted ? done : [];
 
   const toggleStep = (step: number) => {
     const next = done.includes(step) ? done.filter((s) => s !== step) : [...done, step];
@@ -107,7 +112,7 @@ export function CancelGuide({
           取消攻略
         </p>
         <p className="text-xs text-(--color-ink-muted) tabular-nums">
-          已完成 {done.length}/{CANCEL_STEPS.length} 步
+          已完成 {activeDone.length}/{CANCEL_STEPS.length} 步
         </p>
       </div>
       <div
@@ -116,13 +121,13 @@ export function CancelGuide({
       >
         <div
           className="h-full rounded-full bg-(--color-primary) transition-all"
-          style={{ width: `${(done.length / CANCEL_STEPS.length) * 100}%` }}
+          style={{ width: `${(activeDone.length / CANCEL_STEPS.length) * 100}%` }}
         />
       </div>
 
       <ul className="mt-3 flex flex-col gap-1.5">
         {CANCEL_STEPS.map((step, i) => {
-          const checked = done.includes(i);
+          const checked = activeDone.includes(i);
           return (
             <li key={i}>
               {/* 整行可点：触控目标 ≥44px */}

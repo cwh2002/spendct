@@ -29,13 +29,13 @@ import { chartTokens, cssVar, EChart, type ECOption } from "@/components/charts/
 import { Container } from "@/components/layout/container";
 import { RankBadge } from "@/components/report/rank-badge";
 import { renderPosterPng } from "@/components/report/poster-canvas";
-import { ACHIEVEMENT_DEFS, getUnlockedIds, unlockAchievement } from "@/lib/achievements";
+import { ACHIEVEMENT_DEFS, unlockAchievement, useUnlockedIds } from "@/lib/achievements";
 import { DEMO_ACCOUNT_META, DEMO_REPORT } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { featureFlags } from "@/lib/feature-flags";
 import { fmtMonth, fmtYuan, numAt, valAt } from "@/lib/pipeline/stages/spec";
 import { usePipeline } from "@/lib/pipeline/store";
-import { getRankTier, saveRankTier } from "@/lib/rank";
+import { saveRankTier, useRankTier } from "@/lib/rank";
 import type { InsightCard } from "@/lib/schema/insight-card";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
@@ -939,7 +939,8 @@ function buildStoryOption(seg: ReportStorySegment): () => ECOption {
 }
 
 export default function ReportPage() {
-  const [unlockedIds, setUnlockedIds] = useState<string[]>(() => getUnlockedIds());
+  // 成就属客户端本地数据：订阅式读取，SSR 首帧空集与水合后本地集合口径一致
+  const unlockedIds = useUnlockedIds();
   const [posterBusy, setPosterBusy] = useState(false);
   const [toast, setToast] = useState<{ id: number; text: string; kind: "ok" | "error" } | null>(
     null,
@@ -1022,11 +1023,9 @@ export default function ReportPage() {
   }, [lastRun]);
 
   // 报告页是段位的计算源头：真实健康分算出后按分分档并写回本地，个人中心与海报
-  // 读同一份；内置数据路径不写档位（2g：只在真实 healthIndex 算出后保存）
-  const rank = useMemo(
-    () => getRankTier(report.healthIndexReal ? { healthIndex: report.healthIndex } : undefined),
-    [report.healthIndexReal, report.healthIndex],
-  );
+  // 读同一份；内置数据路径不写档位（2g：只在真实 healthIndex 算出后保存）。
+  // 用订阅式读取：SSR 首帧按纯分档渲染，水合后再读本地存储档位
+  const rank = useRankTier(report.healthIndexReal ? report.healthIndex : undefined);
 
   useEffect(() => {
     if (report.healthIndexReal) saveRankTier(rank.tier);
@@ -1068,8 +1067,9 @@ export default function ReportPage() {
       // 延迟回收：等浏览器取完 Blob 再释放对象 URL
       window.setTimeout(() => URL.revokeObjectURL(url), 3000);
       showToast("海报已生成，开始下载");
-      // 生成海报即解锁对应成就，成就墙对新徽章播放弹入动画
-      setUnlockedIds(unlockAchievement("annual-poster"));
+      // 生成海报即解锁对应成就：unlockAchievement 持久化并通知订阅组件，
+      // 成就墙对新徽章播放弹入动画
+      unlockAchievement("annual-poster");
     } catch {
       showToast("海报生成失败，请重试", "error");
     } finally {

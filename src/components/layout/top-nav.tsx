@@ -24,6 +24,7 @@ import {
   type NotifSubscription,
 } from "@/lib/notifications";
 import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
+import { useMounted } from "@/lib/use-mounted";
 
 const NAV_ITEMS = [
   { href: "/", label: "首页" },
@@ -137,8 +138,12 @@ function formatNotifTime(ts: number): string {
  * 无任何网络请求；开关与已读 id 共用 localStorage 单键（spendct:notif:v1）。
  * 真实体检完成后从 DuckDB 拉订阅与预算快照，尚未体检时走内置数据口径。
  */
+/** 挂载前的派生结果：首帧两端同口径渲染空铃铛（不读任何本地存储） */
+const EMPTY_NOTIFS: NotificationItem[] = [];
+
 function NotificationBell() {
   const lastRun = usePipeline((s) => s.lastRun);
+  const mounted = useMounted();
   const [open, setOpen] = useState(false);
   const [storage, setStorage] = useState(() => readNotifStorage());
   // 真实数据异步加载：记录来源 run，只有与当前 lastRun 同源才采用，
@@ -184,6 +189,10 @@ function NotificationBell() {
   }, [open]);
 
   const items = useMemo<NotificationItem[]>(() => {
+    // 挂载前不派生：断点/预算覆盖/手动记账/已读集都来自本地存储，
+    // 派生还依赖系统时钟（notifId 按本机日历日生成），服务器与客户端
+    // 口径可能不同；首帧两端统一渲染空铃铛，挂载后再按真实存储派生
+    if (!mounted) return EMPTY_NOTIFS;
     const checkpoint = readPausedCheckpoint();
     // 真实口径：数据与当前体检结果同源才采用
     if (realData && realData.run === lastRun) {
@@ -210,7 +219,7 @@ function NotificationBell() {
       checkpoint,
       settings: storage.settings,
     });
-  }, [realData, lastRun, storage]);
+  }, [realData, lastRun, storage, mounted]);
 
   const unread = countUnread(items, storage.read);
 

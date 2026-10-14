@@ -4,6 +4,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import { Lock, Trophy } from "lucide-react";
 
 import { ACHIEVEMENT_DEFS } from "@/lib/achievements";
+import { useMounted } from "@/lib/use-mounted";
 
 export interface AchievementWallProps {
   /** 已解锁成就 ID 集合；不在集合内的徽章按锁定态展示 */
@@ -17,10 +18,14 @@ export interface AchievementWallProps {
  * 解锁态显示品牌色底；身份不只靠颜色，名称与条件同时以文字呈现。
  *
  * 弹入动画的实现方式：徽章的 key 绑定解锁状态，锁→解锁的瞬间 key
- * 变化导致重挂载，initial 的弹簧动画随之播放；已解锁徽章在墙首次
- * 出现时播放一次入场动画。系统开启「减少动态效果」时不播放。
+ * 变化导致重挂载，initial 的弹簧动画随之播放。useReducedMotion 在
+ * 服务端返回 null、客户端首帧即返回真实布尔（同步读 matchMedia），
+ * 直接取反会让两端 initial 不一致（style 属性水合告警），因此挂载前
+ * 一律不输出 initial 内联样式，挂载后按系统「减少动态效果」设置决定
+ * 是否播放；锁→解锁的重挂载发生在挂载之后，弹入动画不受影响。
  */
 export function AchievementWall({ unlockedIds, compact = false }: AchievementWallProps) {
+  const mounted = useMounted();
   const reducedMotion = useReducedMotion();
   const unlocked = new Set(unlockedIds);
   const unlockedCount = ACHIEVEMENT_DEFS.filter((def) => unlocked.has(def.id)).length;
@@ -52,7 +57,7 @@ export function AchievementWall({ unlockedIds, compact = false }: AchievementWal
             <motion.li
               // key 带解锁状态：锁→解锁的重挂载是弹入动画的触发点
               key={`${def.id}-${isUnlocked ? "unlocked" : "locked"}`}
-              initial={isUnlocked && !reducedMotion ? { scale: 0.3, opacity: 0 } : false}
+              initial={isUnlocked && mounted && !reducedMotion ? { scale: 0.3, opacity: 0 } : false}
               animate={{ scale: 1, opacity: 1 }}
               transition={{ type: "spring", stiffness: 380, damping: 24 }}
               className="group relative flex flex-col items-center gap-2 rounded-(--radius-lg) border border-(--color-border) p-3 text-center sm:p-4"

@@ -22,6 +22,7 @@ import {
   WandSparkles,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
+import { useSyncExternalStore } from "react";
 
 import { DEMO_ACHIEVEMENTS } from "@/lib/demo-data";
 
@@ -88,6 +89,8 @@ function readStored(): string[] | null {
 /**
  * 读取已解锁成就 ID。未写过本地记录时返回演示解锁集并把演示集写入，
  * 这样「生成海报解锁成就」等后续写入可以继续叠加，而不是每次回退重来。
+ * 注意：本函数在服务端与客户端返回不同值（服务端没有本地存储），
+ * 组件渲染期应改用 useUnlockedIds() 订阅式读取，避免 SSR 水合不一致。
  */
 export function getUnlockedIds(): string[] {
   if (typeof window === "undefined") return [...DEMO_ACHIEVEMENTS.unlockedIds];
@@ -102,9 +105,52 @@ export function getUnlockedIds(): string[] {
   return demo;
 }
 
+/* ---- 订阅式读取：SSR 首帧渲染空集（与服务器同口径），水合后再读本地集合 ---- */
+
+const achievementListeners = new Set<() => void>();
+
+/** 快照缓存：useSyncExternalStore 要求 getSnapshot 返回稳定引用 */
+let achievementSnapshotCache: string[] | null = null;
+
+/** 服务器与首帧快照：空集与服务器渲染一致，水合后立即替换为真实解锁集 */
+const EMPTY_ACHIEVEMENT_IDS: string[] = [];
+
+function subscribeAchievements(onChange: () => void): () => void {
+  achievementListeners.add(onChange);
+  // 跨标签页解锁（storage 事件）；同页解锁由 unlockAchievement 直接通知
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === ACHIEVEMENT_STORAGE_KEY) {
+      achievementSnapshotCache = null;
+      onChange();
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    achievementListeners.delete(onChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+function getAchievementSnapshot(): string[] {
+  if (achievementSnapshotCache === null) {
+    achievementSnapshotCache = getUnlockedIds();
+  }
+  return achievementSnapshotCache;
+}
+
+/**
+ * 组件内读取已解锁成就（外部存储订阅）。服务端与水合首帧为空集，
+ * 挂载后替换为本地集合——解锁徽章的弹入动画正好由「空 → 真实」的
+ * key 变化触发，与成就墙的动画设计一致。
+ */
+export function useUnlockedIds(): string[] {
+  return useSyncExternalStore(subscribeAchievements, getAchievementSnapshot, () => EMPTY_ACHIEVEMENT_IDS);
+}
+
 /**
  * 解锁一枚成就并持久化，返回更新后的解锁集。
- * 报告页生成海报后调用（annual-poster），成就墙据此对新徽章播放弹入动画。
+ * 报告页生成海报后调用（annual-poster），同时通知订阅组件重渲染，
+ * 成就墙据此对新徽章播放弹入动画。
  */
 export function unlockAchievement(id: string): string[] {
   const current = getUnlockedIds();
@@ -115,5 +161,7 @@ export function unlockAchievement(id: string): string[] {
   } catch {
     // 隐私模式不可写：解锁仅本次会话生效
   }
+  achievementSnapshotCache = next;
+  for (const listener of achievementListeners) listener();
   return next;
 }

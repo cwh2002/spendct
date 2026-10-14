@@ -12,11 +12,17 @@ import {
 import { useMemo, useState } from "react";
 
 import type { DemoSubscription } from "@/lib/demo-data";
+import { useMounted } from "@/lib/use-mounted";
 
 import { CancelGuide } from "./cancel-guide";
 import { ChargeSparkline } from "./charge-sparkline";
 
-const NOTIF_KEY = "spendct:notif:v1";
+/**
+ * 扣费提醒记录键。独立于通知设置键（spendct:notif:v1，对象形态）：
+ * 两处曾共用一键导致数组/对象互覆（设提醒清掉通知设置、开关通知清掉提醒），
+ * 故提醒记录单独用 spendct:reminder:v1 存储数组。
+ */
+const REMINDER_KEY = "spendct:reminder:v1";
 const LABEL_KEY = "spendct:sub-labels";
 
 type SubLabel = "confirm" | "false-positive";
@@ -106,9 +112,16 @@ export interface SubscriptionCardProps {
  */
 export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCardProps) {
   const cycleMeta = CYCLE_META[sub.cycle];
+  const mounted = useMounted();
 
-  // 下次扣费日：从最近扣费日按周期外推至 >= 今天；倒计时天数随之真实计算
-  const { nextDate, daysLeft } = useMemo(() => {
+  // 下次扣费日：从最近扣费日按周期外推至 >= 今天；倒计时天数随之真实计算。
+  // 「今天」依赖本机时钟，服务器与客户端时区可能不同（部署服务器常用 UTC），
+  // 挂载前不计算：首帧两端同口径渲染占位文案，挂载后按本地时钟算出真实值
+  const { nextDate, daysLeft } = useMemo((): {
+    nextDate: Date | null;
+    daysLeft: number | null;
+  } => {
+    if (!mounted) return { nextDate: null, daysLeft: null };
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     let next = new Date(`${sub.lastChargeDate}T00:00:00`);
@@ -119,7 +132,7 @@ export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCa
     }
     const days = Math.round((next.getTime() - today.getTime()) / 86_400_000);
     return { nextDate: next, daysLeft: days };
-  }, [sub.cycle, sub.lastChargeDate]);
+  }, [sub.cycle, sub.lastChargeDate, mounted]);
 
   // 沉默订阅口径：相邻扣费间隔超过 90 天视为长时间无使用（与洞察卡叙事一致）
   const isSilent = useMemo(() => {
@@ -130,21 +143,31 @@ export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCa
     return false;
   }, [sub.charges]);
 
-  // 倒计时徽标三档：≤7 天红 / ≤14 天黄 / 其余灰
+  // 倒计时徽标三档：≤7 天红 / ≤14 天黄 / 其余灰；挂载前按中性色渲染
   const tone =
-    daysLeft <= 7 ? "critical" : daysLeft <= 14 ? "warning" : "neutral";
+    daysLeft === null
+      ? "neutral"
+      : daysLeft <= 7
+        ? "critical"
+        : daysLeft <= 14
+          ? "warning"
+          : "neutral";
   const toneClass = {
     critical: "bg-(--color-critical)/10 text-(--color-critical-ink) dark:text-(--color-critical)",
     warning: "bg-(--color-warning)/15 text-(--color-warning-ink) dark:text-(--color-warning)",
     neutral: "bg-(--color-surface-2) text-(--color-ink-secondary)",
   }[tone];
 
+  // 提醒与标记都持久化在本地存储：state 惰性初始化只读真实值，
+  // 渲染时经 mounted 门控——挂载前两端同口径渲染「未提醒/未标记」，
+  // 挂载后再展示本地记录，避免 SSR 水合不一致
   const [reminded, setReminded] = useState<boolean>(() =>
-    loadJson<NotifRecord[]>(NOTIF_KEY, []).some((n) => n.id === sub.id),
+    loadJson<NotifRecord[]>(REMINDER_KEY, []).some((n) => n.id === sub.id),
   );
+  const activeReminded = mounted && reminded;
 
   const toggleReminder = () => {
-    const all = loadJson<NotifRecord[]>(NOTIF_KEY, []);
+    const all = loadJson<NotifRecord[]>(REMINDER_KEY, []);
     const next = reminded
       ? all.filter((n) => n.id !== sub.id)
       : [
@@ -152,12 +175,12 @@ export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCa
           {
             id: sub.id,
             merchantRef: sub.merchantRef,
-            nextChargeDate: fmtDate(nextDate),
+            nextChargeDate: nextDate ? fmtDate(nextDate) : "",
             amountCents: sub.amountCents,
             createdAt: Date.now(),
           },
         ];
-    saveJson(NOTIF_KEY, next);
+    saveJson(REMINDER_KEY, next);
     setReminded(!reminded);
     onToast(reminded ? "已取消提醒" : "已设扣费提醒");
   };
@@ -165,6 +188,7 @@ export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCa
   const [label, setLabel] = useState<SubLabel | null>(() =>
     loadJson<Record<string, SubLabel>>(LABEL_KEY, {})[sub.id] ?? null,
   );
+  const activeLabel: SubLabel | null = mounted ? label : null;
 
   const markLabel = (next: SubLabel) => {
     const all = loadJson<Record<string, SubLabel>>(LABEL_KEY, {});
@@ -199,7 +223,11 @@ export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCa
           className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium tabular-nums ${toneClass}`}
         >
           <CalendarClock className="size-3.5" aria-hidden />
-          {daysLeft === 0 ? "今天扣费" : `距离下次扣费 ${daysLeft} 天`}
+          {daysLeft === null
+            ? "扣费日计算中"
+            : daysLeft === 0
+              ? "今天扣费"
+              : `距离下次扣费 ${daysLeft} 天`}
         </span>
       </div>
 
@@ -222,13 +250,13 @@ export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCa
       </div>
 
       {/* 标记状态条：反馈的去向在页面下方说明 */}
-      {label === "confirm" ? (
+      {activeLabel === "confirm" ? (
         <p className="flex items-center gap-1.5 rounded-(--radius-sm) bg-(--color-good)/10 px-3 py-2 text-xs font-medium text-(--color-good-ink) dark:text-(--color-good)">
           <Check className="size-3.5" aria-hidden />
           已标记为订阅，谢谢你的反馈！
         </p>
       ) : null}
-      {label === "false-positive" ? (
+      {activeLabel === "false-positive" ? (
         <p className="flex items-center gap-1.5 rounded-(--radius-sm) bg-(--color-critical)/10 px-3 py-2 text-xs font-medium text-(--color-critical-ink) dark:text-(--color-critical)">
           <Flag className="size-3.5" aria-hidden />
           已标记为误报，我们会减少对这类扣费的打扰
@@ -239,7 +267,7 @@ export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCa
         subId={sub.id}
         amountCents={sub.amountCents}
         cycleLabel={cycleMeta.full}
-        nextChargeDate={fmtDate(nextDate)}
+        nextChargeDate={nextDate ? fmtDate(nextDate) : ""}
         onToast={onToast}
       />
 
@@ -248,24 +276,26 @@ export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCa
         <button
           type="button"
           onClick={toggleReminder}
-          aria-pressed={reminded}
+          aria-pressed={activeReminded}
           className={`inline-flex min-h-11 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${
-            reminded
+            activeReminded
               ? "bg-(--color-primary-soft) text-(--color-brand-600)"
               : "border border-(--color-border) hover:border-(--color-border-strong)"
           }`}
         >
-          {reminded ? <BellRing className="size-4" aria-hidden /> : <Bell className="size-4" aria-hidden />}
-          {reminded ? `已设提醒 · ${fmtDate(nextDate)}` : "设为提醒"}
+          {activeReminded ? <BellRing className="size-4" aria-hidden /> : <Bell className="size-4" aria-hidden />}
+          {activeReminded
+            ? `已设提醒 · ${nextDate ? fmtDate(nextDate) : ""}`
+            : "设为提醒"}
         </button>
 
         <div className="ml-auto flex items-center gap-1.5">
           <button
             type="button"
             onClick={() => markLabel("confirm")}
-            aria-pressed={label === "confirm"}
+            aria-pressed={activeLabel === "confirm"}
             className={`inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm font-medium transition-colors ${
-              label === "confirm"
+              activeLabel === "confirm"
                 ? "bg-(--color-good)/15 text-(--color-good-ink) dark:text-(--color-good)"
                 : "border border-(--color-border) text-(--color-ink-secondary) hover:border-(--color-border-strong)"
             }`}
@@ -276,9 +306,9 @@ export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCa
           <button
             type="button"
             onClick={() => markLabel("false-positive")}
-            aria-pressed={label === "false-positive"}
+            aria-pressed={activeLabel === "false-positive"}
             className={`inline-flex min-h-11 items-center gap-1 rounded-full px-3 text-sm font-medium transition-colors ${
-              label === "false-positive"
+              activeLabel === "false-positive"
                 ? "bg-(--color-critical)/10 text-(--color-critical-ink) dark:text-(--color-critical)"
                 : "border border-(--color-border) text-(--color-ink-secondary) hover:border-(--color-border-strong)"
             }`}

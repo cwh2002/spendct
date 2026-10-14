@@ -1,19 +1,15 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { useEffect, useEffectEvent, useId, useRef, useSyncExternalStore } from "react";
+import { useEffect, useEffectEvent, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { CalendarClock, X } from "lucide-react";
 import type { Capability } from "@/lib/capabilities";
+import { useMounted } from "@/lib/use-mounted";
 
 interface ComingSoonModalProps {
   capability: Capability;
   onClose: () => void;
-}
-
-/** 空订阅：只做「挂载后才有 document」的客户端检测，无外部状态变化 */
-function noopSubscribe(): () => void {
-  return () => {};
 }
 
 /**
@@ -26,7 +22,7 @@ export function ComingSoonModal({ capability, onClose }: ComingSoonModalProps) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   // 服务端快照 false：SSR 首帧不渲染 portal；挂载后为 true 再渲染，避免直接引用 document
-  const mounted = useSyncExternalStore(noopSubscribe, () => true, () => false);
+  const mounted = useMounted();
   // 关闭回调始终取最新值：退出动画期间父组件重渲染产生新 onClose 时，不重复执行焦点/滚动副作用
   const closeEvent = useEffectEvent(onClose);
 

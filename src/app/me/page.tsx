@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { animate, useMotionValue, useMotionValueEvent, useReducedMotion } from "framer-motion";
@@ -33,7 +33,7 @@ import type { LucideIcon } from "lucide-react";
 import { AuthGuard } from "@/components/auth/route-guard";
 import { AchievementWall } from "@/components/achievements/achievement-wall";
 import { Container } from "@/components/layout/container";
-import { ACHIEVEMENT_DEFS, getUnlockedIds } from "@/lib/achievements";
+import { ACHIEVEMENT_DEFS, useUnlockedIds } from "@/lib/achievements";
 import { PBKDF2_ITERATIONS, hashPassword, validateNickname, validatePassword } from "@/lib/account/auth";
 import { deleteBook, listBooks, openDb, upsertUser } from "@/lib/account/db";
 import { useAuth } from "@/lib/account/store";
@@ -42,7 +42,7 @@ import { DEMO_ACCOUNT_META } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { featureFlags } from "@/lib/feature-flags";
 import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
-import { getRankTier } from "@/lib/rank";
+import { useRankTier } from "@/lib/rank";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
 /** 当前激活账本在本机存储中的键，与数据管理页共用 */
@@ -581,8 +581,9 @@ function MeContent() {
     toastTimer.current = window.setTimeout(() => setToast(null), 2600);
   }, []);
 
-  const unlockedIds = useMemo(() => getUnlockedIds(), []);
-  const rank = useMemo(() => getRankTier(), []);
+  // 成就与段位都属客户端本地数据：订阅式读取，SSR 首帧与服务器同口径
+  const unlockedIds = useUnlockedIds();
+  const rank = useRankTier();
 
   // 数据概览真实统计：体检后按 lastRun 从 DuckDB 装载；渲染期按 run 身份
   // 同步清空（不在 effect 里同步 setState），未体检/查询失败保持内置口径

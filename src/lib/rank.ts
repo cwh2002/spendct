@@ -6,7 +6,10 @@
  * 真实健康分由报告页从 v_health_inputs 六维聚合算出后经
  * getRankTier({ healthIndex }) 传入；本文件只负责「分数 → 档位」的
  * 确定性映射，不访问数据库、不含任何虚构对比口径。
+ * 组件渲染期改用 useRankTier() 订阅式读取，避免 SSR 水合不一致。
  */
+
+import { useSyncExternalStore } from "react";
 
 export interface RankTier {
   /** 档位 1-5，数字越大越健康 */
@@ -35,9 +38,64 @@ const TIER_BANDS: readonly { min: number; tier: number }[] = [
 
 const RANK_STORAGE_KEY = "spendct:rank:v1";
 
+/** 纯分档计算：不读本地存储，供服务器快照与无存储记录时的兜底共用 */
+function rankFromScore(input?: { healthIndex?: number }): RankTier {
+  const score = input?.healthIndex ?? 78;
+  for (const band of TIER_BANDS) {
+    if (score >= band.min) {
+      return RANK_TIERS[band.tier - 1] ?? RANK_TIERS[2]!;
+    }
+  }
+  return RANK_TIERS[2]!;
+}
+
+/* ---- 订阅式读取：SSR 首帧与服务器同口径（纯分档），水合后读本地存储 ---- */
+
+const rankListeners = new Set<() => void>();
+
+/** 快照缓存按健康分口径分桶：报告页算出真实分后切换口径也不会读旧缓存 */
+const rankSnapshotCache = new Map<string, RankTier>();
+
+function subscribeRankTier(onChange: () => void): () => void {
+  rankListeners.add(onChange);
+  // 跨标签页更新（storage 事件）；同页写入由 saveRankTier 直接通知
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === RANK_STORAGE_KEY) {
+      rankSnapshotCache.clear();
+      onChange();
+    }
+  };
+  window.addEventListener("storage", onStorage);
+  return () => {
+    rankListeners.delete(onChange);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
+/**
+ * 组件内读取段位（外部存储订阅）。healthIndex 传入时按其分档口径缓存
+ * （报告页真实健康分算出后传入）；服务端与水合首帧按纯分档渲染，
+ * 与服务器 HTML 一致，挂载后替换为本地存储档位。
+ */
+export function useRankTier(healthIndex?: number): RankTier {
+  const cacheKey = healthIndex !== undefined ? String(healthIndex) : "default";
+  return useSyncExternalStore(
+    subscribeRankTier,
+    () => {
+      const cached = rankSnapshotCache.get(cacheKey);
+      if (cached) return cached;
+      const value = getRankTier(healthIndex !== undefined ? { healthIndex } : undefined);
+      rankSnapshotCache.set(cacheKey, value);
+      return value;
+    },
+    () => rankFromScore(healthIndex !== undefined ? { healthIndex } : undefined),
+  );
+}
+
 /**
  * 持久化当前档位：报告页算出真实健康分后写入，个人中心/年度海报直接读同一份，
- * 避免两处口径漂移。隐私模式写入失败静默忽略。
+ * 避免两处口径漂移。写入后清快照并通知订阅组件（本页与其他页面同步刷新）。
+ * 隐私模式写入失败静默忽略。
  */
 export function saveRankTier(tier: number): void {
   if (typeof window === "undefined") return;
@@ -46,12 +104,15 @@ export function saveRankTier(tier: number): void {
   } catch {
     // 隐私模式不可写：仅本次会话生效
   }
+  rankSnapshotCache.clear();
+  for (const listener of rankListeners) listener();
 }
 
 /**
  * 取段位。优先级：本地存储档位 > 健康分分档（可传参）> 内置数据兜底。
  * 兜底值 78 与 DEMO_REPORT.healthIndex 保持一致（内置数据口径落 3 档），
  * 保证离线评审与个人中心静态展示始终有档位可显示。
+ * 服务端与客户端返回可能不同（客户端有本地存储），渲染期请用 useRankTier。
  */
 export function getRankTier(input?: { healthIndex?: number }): RankTier {
   if (typeof window !== "undefined") {
@@ -67,11 +128,5 @@ export function getRankTier(input?: { healthIndex?: number }): RankTier {
       // 存储损坏：回落分档计算
     }
   }
-  const score = input?.healthIndex ?? 78;
-  for (const band of TIER_BANDS) {
-    if (score >= band.min) {
-      return RANK_TIERS[band.tier - 1] ?? RANK_TIERS[2]!;
-    }
-  }
-  return RANK_TIERS[2]!;
+  return rankFromScore(input);
 }
