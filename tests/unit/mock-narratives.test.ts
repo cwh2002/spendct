@@ -1,7 +1,8 @@
 /**
  * mock 叙事模板库单测（T6 LLM 接入层验收）：
  * 模板完整性（每 task 有模板、narrative 覆盖六阶段、段长 80-200）、
- * fillTemplate 数字替换、AI 腔禁用词、确定性选段与降级函数口径。
+ * fillTemplate 数字替换、AI 腔禁用词、确定性选段与降级函数口径，
+ * 另含 chat（追问对话兜底档）的专属断言。
  */
 import { describe, expect, it } from "vitest";
 
@@ -115,5 +116,37 @@ describe("fillTemplate 与确定性选段", () => {
       "case-demo-2",
       "case-demo-3",
     ]);
+  });
+});
+
+describe("chat 任务（追问对话兜底档）", () => {
+  it("chat 在任务枚举内，default 档至少 2 段，全段为确定性文案", () => {
+    expect(LLM_TASKS).toContain("chat");
+    // 档位缺失时退为空数组，靠段数断言兜住「default 档存在」这一前提
+    const segments = MOCK_NARRATIVES.chat.default ?? [];
+    expect(segments.length).toBeGreaterThanOrEqual(2);
+    // 兜底文案不含任何占位符：mock 流必须逐字可复现，不能依赖运行时数字
+    for (const segment of segments) {
+      expect(segment, "chat 兜底段不应含占位符").not.toMatch(/\{\w+\}/);
+    }
+  });
+
+  it("chat 兜底文案含 3 个本地可回答的示例问句，与追问面板提示口径一致", () => {
+    const text = pickMockText("chat");
+    expect(text).toContain("这个月花了多少");
+    expect(text).toContain("这个月餐饮花了多少");
+    expect(text).toContain("这个月结余多少");
+    // 两次取文一致（确定性）
+    expect(pickMockText("chat")).toBe(text);
+    for (const banned of BANNED_PHRASES) {
+      expect(text, `出现禁用词「${banned}」`).not.toContain(banned);
+    }
+  });
+
+  it("chat 兜底文案不含任何演示/内置字样，金额口径声明只指向用户账单", () => {
+    const text = pickMockText("chat");
+    expect(text).not.toContain("演示");
+    expect(text).not.toContain("内置");
+    expect(text).toContain("来自你导入的账单");
   });
 });

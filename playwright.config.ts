@@ -22,5 +22,8 @@ export default defineConfig({
     url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 120_000,
+    // e2e 固定跑 mock：本地 .env.local 可能配了真实 DeepSeek key，
+    // 测试动线（追问兜底、体检叙事）必须可复现，不依赖外部模型
+    env: { DEMO_MODE: "mock" },
   },
 });

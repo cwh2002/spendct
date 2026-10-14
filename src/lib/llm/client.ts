@@ -20,8 +20,10 @@ import { pickMockText, type LlmTask } from "./mock-narratives";
 export { LLM_TASKS } from "./mock-narratives";
 export type { LlmTask } from "./mock-narratives";
 
-/** 叙事类任务走 DeepSeek 主脑；其余为轻任务走 Qwen（07 §12） */
-const DEEPSEEK_TASKS: readonly LlmTask[] = ["narrative", "annual-story"];
+/** 叙事类 + 追问对话任务走 DeepSeek 主脑；其余为轻任务走 Qwen（07 §12）。
+ *  chat 归入 DeepSeek：追问兜底需要强阅读理解与中文口语表达，且仅配置 DeepSeek key
+ *  的部署也能直接跑通（否则 chat 走 Qwen 分支会在无 Qwen key 时 503）。 */
+const DEEPSEEK_TASKS: readonly LlmTask[] = ["narrative", "annual-story", "chat"];
 
 /** DeepSeek 官方 chat 模型名（01 §1 锁表：deepseek → DeepSeek-V3 系） */
 const DEEPSEEK_MODEL_ID = "deepseek-chat";
@@ -81,6 +83,9 @@ const TASK_INSTRUCTIONS: Record<LlmTask, string> = {
     "你是年度账单编辑。按输入的分段素材写年度故事，每段数字必须能在输入里找到来源，语气克制、像财经编辑。",
   "tip-personalize":
     "你是省钱贴士适配器。只为输入里出现过的案例写适配理由，不引用输入里没有的案例编号。",
+  // chat 是追问面板的对话任务：输入里只有汇总统计（不含逐笔明细），据此限定回答边界。
+  // 路由口径：已归入 DEEPSEEK_TASKS（见上），走 DeepSeek 主脑。
+  chat: "你是账单助手。只能依据用户消息里提供的账单汇总数据回答，绝不编造汇总里没有的数字，没有把握就直接说不清楚。回答用简体中文，口语化、直接，一般不超过三句。",
 };
 
 /** 按路由表取模型；对应 key 缺失抛 LlmExhaustedError */
