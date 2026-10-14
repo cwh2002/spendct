@@ -245,7 +245,7 @@
     开发团队：2 人团队（队长 1 名 · 队员 1 名）<br />
     提交日期：<span>2026 年 11 月</span>
   </div>
-  <div class="foot">账单数据全程不出浏览器 —— 这是产品承诺，也是技术架构的第一性原理</div>
+  <div class="foot">账单解析与体检默认全在浏览器内完成，服务端只转发、零存储 —— 这是产品承诺，也是技术架构的第一性原理</div>
 </section>
 
 <!-- ════════════════════ 目录 ════════════════════ -->
@@ -290,7 +290,7 @@
   <ul class="tight">
     <li><b>结果先于对话</b>：AI 先把体检结论写成带证据的洞察卡流（可审阅、可存档），用户带着具体问题点卡片追问，而不是从空白聊天窗开始；</li>
     <li><b>结论可溯源</b>：每张洞察卡带置信度、图表证据与引用（聚合 SQL / 订阅规则 / 案例库 / 工具），低置信度结论自动挂起（宁缺毋滥）；</li>
-    <li><b>隐私可见</b>：账单明细只在浏览器内计算，服务端只转发脱敏聚合摘要，数据可见性对照表公开在产品内。</li>
+    <li><b>隐私可见</b>：账单明细默认只在浏览器内计算；追问在线兜底只发送汇总统计与最近 150 笔明细快照；服务端只转发、零存储，数据可见性对照表公开在产品内。</li>
   </ul>
 </section>
 
@@ -328,7 +328,7 @@
   <div class="two-col avoid-break">
     <figure>
       <img src="../scripts/.shots/01-home.png" alt="首页" />
-      <figcaption><b>图 1　首页</b> —— 三句话讲清产品：账单体检、数据不出浏览器、示例账单即点即用</figcaption>
+      <figcaption><b>图 1　首页</b> —— 三句话讲清产品：账单体检、浏览器内计算、示例账单即点即用</figcaption>
     </figure>
   </div>
 </section>
@@ -343,13 +343,13 @@
     <tr><td>Cleo</td><td>欧美年轻人</td><td>银行连接</td><td>聊天窗（AI 人设对话）</td><td>云端</td><td>对话式财务问答</td></tr>
     <tr><td>随手记</td><td>国内记账人群</td><td>手动 + 模板导入</td><td>账本列表</td><td>本地 + 云同步</td><td>基础分类</td></tr>
     <tr><td>钱迹</td><td>极简记账用户</td><td>手动为主</td><td>账本 + 报表</td><td>本地</td><td>无</td></tr>
-    <tr><td><b>SpendCT（本作）</b></td><td><b>大学生 / 年轻上班族</b></td><td><b>微信 / 支付宝 CSV + 截图</b></td><td><b>AI 先体检 → 洞察卡流 → 锚点追问</b></td><td><b>明细不出浏览器，LLM 仅见聚合摘要</b></td><td><b>六阶段流水线 + 订阅雷达 + RAG</b></td></tr>
+    <tr><td><b>SpendCT（本作）</b></td><td><b>大学生 / 年轻上班族</b></td><td><b>微信 / 支付宝 CSV + 截图</b></td><td><b>AI 先体检 → 洞察卡流 → 锚点追问</b></td><td><b>明细默认不出浏览器，追问时 LLM 见统计与明细快照</b></td><td><b>六阶段流水线 + 订阅雷达 + RAG</b></td></tr>
   </table>
 
   <p>对手三选一：要么云端全量账单（隐私弱），要么聊天窗（结论不可审阅），要么没有 AI。SpendCT 在<b>交互范式</b>与<b>隐私模型</b>两个维度同时不同：</p>
   <ul class="tight">
     <li><b>交互范式</b>：结果先于对话——AI 先把结论写成卡片流（可审阅、可存档、可纠错），用户带着具体问题点卡片追问，而不是从空白聊天窗开始；</li>
-    <li><b>隐私模型</b>：账单明细只在浏览器内计算（DuckDB-WASM），大模型只看到聚合后的摘要数字，任何一步都不需要上传账单原文。</li>
+    <li><b>隐私模型</b>：账单明细默认只在浏览器内计算（DuckDB-WASM），大模型以聚合统计为主；本地答不了的追问会发送「汇总统计 + 最近 150 笔明细快照」并在产品内明确标注，任何一步都不需要上传账单原文。</li>
   </ul>
   <p class="note">竞品信息整理自各产品官网（2026-10），来源链接与完整对照表见 docs/competitor-benchmark.md。</p>
 </section>
@@ -377,7 +377,7 @@
       <div class="box"><b>展示层</b><span>Next.js 16 + React 19<br />ECharts · Tailwind 4</span></div>
     </div>
     <div class="row">
-      <div class="box"><b>LLM 接入层（服务端转发）</b><span>deepseek → qwen → 模板<br />只收发脱敏聚合摘要</span></div>
+      <div class="box"><b>LLM 接入层（服务端转发）</b><span>deepseek → qwen → 模板<br />统计为主 · 追问含明细快照</span></div>
       <div class="arrow">↔</div>
       <div class="box"><b>RAG 案例库（本地）</b><span>60 条案例 · TF-IDF 检索<br />引用可溯源</span></div>
       <div class="arrow">↔</div>
@@ -401,14 +401,14 @@
 <section class="chapter" id="c5">
   <h2><span class="no">05</span>隐私与数据安全（亮点）</h2>
   <p class="kicker">PRIVACY BY ARCHITECTURE</p>
-  <p>传统账单工具需要把账单上传云端才能做分析。SpendCT 的隐私不是「承诺不偷看」，而是<b>架构上就没有上传通道</b>：解析、聚合、体检全部发生在浏览器内的 DuckDB-WASM 列式引擎里。</p>
+  <p>传统账单工具需要把账单上传云端才能做分析。SpendCT 的隐私不是「承诺不偷看」，而是<b>默认就没有上传通道</b>：解析、聚合、体检默认全部发生在浏览器内的 DuckDB-WASM 列式引擎里；唯一按需离开浏览器的，是追问在线兜底时发送的「汇总统计 + 最近 150 笔明细快照」，服务端只转发、不留存。</p>
 
   <h3><span class="tag">对照表</span>每一步的数据可见性</h3>
   <table>
     <tr><th style="width:24%">环节</th><th style="width:42%">数据形态</th><th>去向</th></tr>
     <tr><td>账单导入</td><td>原始 CSV（含交易明细）</td><td>仅浏览器内存，不落盘、不上传</td></tr>
     <tr><td>六阶段聚合</td><td>SQL 分组聚合结果（9 预计算表 / 13 视图）</td><td>浏览器内</td></tr>
-    <tr><td>LLM 叙事 / 建议</td><td>聚合统计值（金额分箱脱敏 + 数据集哈希）</td><td>服务端转发，不存任何请求日志</td></tr>
+    <tr><td>LLM 叙事 / 建议</td><td>聚合统计值（金额分箱脱敏 + 数据集哈希）；追问在线兜底时附最近 150 笔明细快照，气泡标注「已发送明细与统计」</td><td>服务端转发，不存任何请求日志</td></tr>
     <tr><td>字段映射 AI 兜底</td><td>表头 + 至多 1 条样本行（≤6KB 截断）</td><td>仅在探测链全失败且用户确认后发送</td></tr>
     <tr><td>账户凭据</td><td>PBKDF2-SHA256 加盐哈希（15 万次迭代）</td><td>IndexedDB 本地</td></tr>
     <tr><td>断点 / 缓存键</td><td>阶段进度 + 数据集哈希</td><td>localStorage 仅存键（红线：不落任何行数据与聚合明细）</td></tr>
@@ -422,7 +422,7 @@
   </ul>
 
   <h3><span class="tag">账户</span>本地账户模式</h3>
-  <p>账户体系完全本地化：注册 / 登录 / 会话全部在 IndexedDB 完成（PBKDF2-SHA256 加盐哈希），演示账户 <b>demo / demo123</b> 即开即用；个人中心提供成就段位、数据导出与删除入口。选择本地账户而非云端账户，是「账单数据不出浏览器」承诺的自然延伸——<b>没有账户服务器，就不存在账户数据泄露面</b>。</p>
+  <p>账户体系完全本地化：注册 / 登录 / 会话全部在 IndexedDB 完成（PBKDF2-SHA256 加盐哈希），演示账户 <b>demo / demo123</b> 即开即用；个人中心提供成就段位、数据导出与删除入口。选择本地账户而非云端账户，是「账单数据默认本地处理」承诺的自然延伸——<b>没有账户服务器，就不存在账户数据泄露面</b>。</p>
 </section>
 
 <!-- ════════════════════ 6 六阶段管线 ════════════════════ -->
@@ -505,7 +505,7 @@
   <div class="two-col avoid-break">
     <figure>
       <img src="../scripts/.shots/02-login.png" alt="登录" />
-      <figcaption><b>图 4　登录</b> —— 沉浸式卡片 + 信任条（数据不出浏览器承诺）</figcaption>
+      <figcaption><b>图 4　登录</b> —— 沉浸式卡片 + 信任条（明细默认不出浏览器 · 追问时可见统计与明细）</figcaption>
     </figure>
     <figure>
       <img src="../scripts/.shots/03-register.png" alt="注册" />
@@ -591,7 +591,7 @@
   <h3><span class="tag">测试</span>分层测试矩阵</h3>
   <table>
     <tr><th style="width:34%">层</th><th style="width:22%">数量</th><th>覆盖</th></tr>
-    <tr><td><b>单元测试（Vitest）</b></td><td class="good">271 用例</td><td>SQL 白名单、账户、导入清洗、事件协议、管线引擎、卡片 schema、运行桥、LLM 层</td></tr>
+    <tr><td><b>单元测试（Vitest）</b></td><td class="good">278 用例</td><td>SQL 白名单、账户、导入清洗、事件协议、管线引擎、卡片 schema、运行桥、LLM 层、追问引擎</td></tr>
     <tr><td><b>端到端（Playwright）</b></td><td class="good">23 用例</td><td>13 页冒烟（0 console error）+ 示例账单全动线（上传 → 真实管线 → 洞察真实卡，32.2s）+ 账户登录</td></tr>
     <tr><td><b>静态质量</b></td><td class="good">0 错误</td><td>tsgo 全量类型检查、ESLint、生产构建 17 路由（14 静态 + 2 API）</td></tr>
   </table>
@@ -643,7 +643,7 @@
   <div class="lead">
     消费CT 想做的，是让每一个年轻人的账单都值得被认真对待——<b>体检出问题，处方给动作，数据留本地</b>。
   </div>
-  <p>从「账单零散」到「体检 + 处方」，从「云上分析」到「明细不出浏览器」，从「空白聊天窗」到「可审阅的洞察卡流」——SpendCT 在交互范式与隐私模型两个维度上给出了自己的答案。项目的每一行代码、每一条契约、每一个测试，都记录在公开仓库的完整提交历史里。</p>
+  <p>从「账单零散」到「体检 + 处方」，从「云上分析」到「明细默认本地处理」，从「空白聊天窗」到「可审阅的洞察卡流」——SpendCT 在交互范式与隐私模型两个维度上给出了自己的答案。项目的每一行代码、每一条契约、每一个测试，都记录在公开仓库的完整提交历史里。</p>
   <p>感谢评委的时间与关注。</p>
 
   <h3><span class="tag">附录</span>仓库与文档索引</h3>
