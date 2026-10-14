@@ -56,6 +56,30 @@ describe("parseable:true 用例（金额单位一律整数分）", () => {
     expect(result.amountCents).toBe(3000);
     expect(result.category).toBe("其他");
   });
+
+  it("「兼职赚了 200」→ income（兼职/赚 属于收入词）", () => {
+    const result = parseQuickEntryText("昨天兼职赚了 200", TODAY);
+    expect(result.parseable).toBe(true);
+    expect(result.amountCents).toBe(20000);
+    expect(result.direction).toBe("income");
+    expect(result.dateIso).toBe("2026-10-12");
+  });
+
+  it("「月初房租 1500」→ 居住 / 今天", () => {
+    const result = parseQuickEntryText("月初房租 1500", TODAY);
+    expect(result.parseable).toBe(true);
+    expect(result.amountCents).toBe(150000);
+    expect(result.category).toBe("居住");
+    expect(result.dateIso).toBe(TODAY);
+  });
+
+  it("「昨天打车 23.5」→ 交通 / 昨天 / 2350 分", () => {
+    const result = parseQuickEntryText("昨天打车 23.5", TODAY);
+    expect(result.parseable).toBe(true);
+    expect(result.amountCents).toBe(2350);
+    expect(result.category).toBe("交通");
+    expect(result.dateIso).toBe("2026-10-12");
+  });
 });
 
 describe("parseable:false 用例（08 §⑥.1 规则①④）", () => {
@@ -75,6 +99,12 @@ describe("parseable:false 用例（08 §⑥.1 规则①④）", () => {
     const result = parseQuickEntryText("我今天花了多少？", TODAY);
     expect(result.parseable).toBe(false);
     expect(result.reason).toBeDefined();
+  });
+
+  it("「兼职赚了多少钱」这类查询句拒绝，并给出引导", () => {
+    const result = parseQuickEntryText("我今天兼职赚了多少钱，昨天兼职赚了多少钱", TODAY);
+    expect(result.parseable).toBe(false);
+    expect(result.reason).toContain("记一笔");
   });
 
   it("没有金额拒绝", () => {

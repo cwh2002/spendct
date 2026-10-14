@@ -62,7 +62,7 @@ const KNOWLEDGE_CARDS = [
   { title: "七天无理由", body: "网购商品 7 日内可退；定制、鲜活、数字商品除外。" },
   { title: "未成年人支付", body: "家长开启青少年模式与支付限额，大额充值可追回。" },
   { title: "保留凭证", body: "付款截图与订单号至少保留 6 个月，维权靠证据。" },
-  { title: "分期不等于免费", body: "免息分期也有服务费口径，年化利率要自己换算。" },
+  { title: "分期不等于免费", body: "免息分期也可能收服务费，年化利率要自己换算。" },
   { title: "学生认证", body: "外卖、出行、视频平台学生认证通常省 20%-40%。" },
   { title: "应急金先行", body: "先存够 1 个月生活费，再考虑理财与投资。" },
 ] as const;
@@ -394,7 +394,7 @@ export default function LearnPage() {
         <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-(--color-ink-secondary)">
           <span className="inline-flex items-center gap-1.5">
             <Database className="size-3.5 text-(--color-ink-muted)" aria-hidden />
-            静态公开资料投影
+            内容全部来自公开资料
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Lock className="size-3.5 text-(--color-ink-muted)" aria-hidden />

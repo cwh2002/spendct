@@ -56,59 +56,31 @@ function NarrativeEvent({ text, active }: { text: string; active: boolean }) {
   );
 }
 
-/** SQL 事件：3 行 × 160 字符截断，整行头可点展开（≥44px 触控），徽标为白名单透明声明 */
+/** SQL 事件：不再展示 SQL 原文与内部标识，只呈现一句结论式说明 + 安全徽标 */
 function SqlEvent({ ev }: { ev: ThinkingEvent }) {
-  const [expanded, setExpanded] = useState(false);
-  const lines = ev.text.split("\n");
-  const collapsible = lines.length > 3 || lines.slice(0, 3).some((l) => l.length > 160);
-  const clipped = lines.slice(0, 3).map((l) => (l.length > 160 ? `${l.slice(0, 160)}…` : l));
-
   return (
-    <div className="mx-3 my-1.5 overflow-hidden rounded-(--radius-md) border border-(--color-border) bg-(--color-surface)">
-      <button
-        type="button"
-        onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        className="flex min-h-11 w-full flex-wrap items-center gap-x-2 gap-y-1 px-3 py-2 text-left"
-      >
-        <Database className="size-4 shrink-0 text-(--color-primary)" aria-hidden />
-        <span className="text-xs font-medium">执行 SQL</span>
-        <span className="inline-flex items-center gap-1 rounded-full bg-(--color-good)/10 px-2 py-0.5 text-[11px] font-medium text-(--color-good-ink)">
-          <ShieldCheck className="size-3" aria-hidden />
-          已聚合 · 只读 · 白名单通过
-        </span>
-        <span className="ml-auto flex items-center gap-1 font-(--font-mono) text-[11px] text-(--color-ink-muted)">
-          {ev.meta?.replace(/^sql:/, "")}
-          <ChevronDown
-            className={`size-4 transition-transform ${expanded ? "rotate-180" : ""}`}
-            aria-hidden
-          />
-        </span>
-      </button>
-      {expanded ? (
-        <pre className="overflow-x-auto border-t border-(--color-border) bg-(--color-surface-2) p-3 font-(--font-mono) text-xs leading-relaxed whitespace-pre-wrap break-words text-(--color-ink)">
-          {ev.text}
-        </pre>
-      ) : (
-        <div className="border-t border-(--color-border) bg-(--color-surface-2) px-3 py-2">
-          {clipped.map((line, i) => (
-            <p
-              key={`${i}-${line}`}
-              className="max-w-full truncate font-(--font-mono) text-xs leading-relaxed text-(--color-ink-secondary)"
-            >
-              {line}
-            </p>
-          ))}
-          {collapsible ? <p className="mt-1 text-[11px] text-(--color-ink-muted)">点击展开全文</p> : null}
-        </div>
-      )}
+    <div className="mx-3 my-1.5 flex items-start gap-2 rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2">
+      <Database className="mt-0.5 size-4 shrink-0 text-(--color-primary)" aria-hidden />
+      <p className="min-w-0 flex-1 text-sm leading-relaxed text-(--color-ink-secondary)">{ev.text}</p>
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-(--color-good)/10 px-2 py-0.5 text-[11px] font-medium text-(--color-good-ink)">
+        <ShieldCheck className="size-3" aria-hidden />
+        已通过安全检查
+      </span>
     </div>
   );
 }
 
-/** RAG 案例 chip：点击展开案例摘要（meta 承载摘要全文） */
+/** RAG 案例条目：有摘要（meta）时点击展开；无摘要时只显示一行结论 */
 function RagEvent({ ev }: { ev: ThinkingEvent }) {
   const [open, setOpen] = useState(false);
+  if (!ev.meta) {
+    return (
+      <div className="mx-3 my-1.5 flex items-center gap-2 rounded-(--radius-md) border border-(--color-border) bg-(--color-primary-soft)/60 px-3 py-2">
+        <ScrollText className="size-4 shrink-0 text-(--color-primary)" aria-hidden />
+        <span className="min-w-0 flex-1 text-sm text-(--color-ink-secondary)">{ev.text}</span>
+      </div>
+    );
+  }
   return (
     <div className="mx-3 my-1.5">
       <button
@@ -118,17 +90,14 @@ function RagEvent({ ev }: { ev: ThinkingEvent }) {
         className="flex min-h-11 w-full items-center gap-2 rounded-(--radius-md) border border-(--color-border) bg-(--color-primary-soft)/60 px-3 py-2 text-left"
       >
         <ScrollText className="size-4 shrink-0 text-(--color-primary)" aria-hidden />
-        <span className="min-w-0 flex-1 truncate text-sm">
-          <span className="text-xs font-medium text-(--color-primary)">案例库命中 </span>
-          <span className="text-(--color-ink-secondary)">{ev.text}</span>
-        </span>
+        <span className="min-w-0 flex-1 truncate text-sm text-(--color-ink-secondary)">{ev.text}</span>
         <ChevronDown
           className={`size-4 shrink-0 text-(--color-ink-muted) transition-transform ${open ? "rotate-180" : ""}`}
           aria-hidden
         />
       </button>
       <AnimatePresence>
-        {open && ev.meta ? (
+        {open ? (
           <motion.p
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
@@ -280,13 +249,13 @@ export function ThinkingPanel({ events, stageName, className = "" }: ThinkingPan
 
   return (
     <section
-      aria-label="思考过程"
+      aria-label="体检动态"
       className={`flex flex-col overflow-hidden rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) shadow-(--shadow-sm) ${className}`.trim()}
     >
-      {/* 无障碍公告区（视觉隐藏）：aria-live=polite 只公告阶段切换与错误，
+      {/* 无障碍公告区（视觉隐藏）：aria-live=polite 只公告步骤切换与错误，
           内容随 stageName / toast 派生变化，不逐条播报事件流 */}
       <div aria-live="polite" role="status" className="sr-only">
-        {stageName ? `进入「${stageName}」阶段` : ""}
+        {stageName ? `进入「${stageName}」步骤` : ""}
       </div>
       <div aria-live="polite" role="status" className="sr-only">
         {toast ? toast.text : ""}
@@ -295,14 +264,14 @@ export function ThinkingPanel({ events, stageName, className = "" }: ThinkingPan
       <div className="flex items-center justify-between gap-3 border-b border-(--color-border) px-4 py-3">
         <div className="flex min-w-0 items-center gap-2">
           <Brain className="size-5 shrink-0 text-(--color-primary)" aria-hidden />
-          <h2 className="text-sm font-semibold">思考过程</h2>
+          <h2 className="text-sm font-semibold">体检动态</h2>
           {stageName ? (
             <span className="rounded-full bg-(--color-primary-soft) px-2 py-0.5 text-xs font-medium text-(--color-primary)">
               {stageName}
             </span>
           ) : null}
         </div>
-        <span className="shrink-0 text-xs tabular-nums text-(--color-ink-muted)">{events.length} 条事件</span>
+        <span className="shrink-0 text-xs tabular-nums text-(--color-ink-muted)">{events.length} 条动态</span>
       </div>
 
       {/* 降级 toast */}
@@ -333,7 +302,7 @@ export function ThinkingPanel({ events, stageName, className = "" }: ThinkingPan
           <div ref={contentRef}>
             {foldedCount > 0 ? (
               <p className="px-3 py-1.5 text-center text-xs text-(--color-ink-muted)">
-                …（{foldedCount} 条已折叠）
+                …（更早的 {foldedCount} 条已收起）
               </p>
             ) : null}
             {visible.map((ev) => (
@@ -346,7 +315,7 @@ export function ThinkingPanel({ events, stageName, className = "" }: ThinkingPan
                   <span className="size-1.5 animate-pulse rounded-full bg-(--color-primary) [animation-delay:150ms]" />
                   <span className="size-1.5 animate-pulse rounded-full bg-(--color-primary) [animation-delay:300ms]" />
                 </span>
-                <p className="text-xs text-(--color-ink-muted)">等待第一个事件…</p>
+                <p className="text-xs text-(--color-ink-muted)">正在准备，马上开始…</p>
               </div>
             ) : null}
           </div>

@@ -295,10 +295,10 @@ function buildReportData(agg: RealAggregates, cards: InsightCard[]): ReportData 
   const merchantSegment: ReportStorySegment =
     agg.merchants.length > 0 && topMerchant
       ? {
-          headline: `近 90 天支出 Top ${agg.merchants.length} 商户 · ${shortMerchant(topMerchant.merchant)} 居首`,
+          headline: `近 90 天花钱最多的 ${agg.merchants.length} 家商户 · ${shortMerchant(topMerchant.merchant)} 排第一`,
           narrative:
-            `近 90 天支出集中在 Top ${agg.merchants.length} 商户，合计 ¥${fmtYuan(merchantTotalCents)}；` +
-            `${shortMerchant(topMerchant.merchant)} 以 ¥${fmtYuan(topMerchant.totalCents)}（${topMerchant.txCount} 笔）居首。`,
+            `近 90 天的支出集中在 ${agg.merchants.length} 家商户，合计 ¥${fmtYuan(merchantTotalCents)}；` +
+            `其中 ${shortMerchant(topMerchant.merchant)} 花得最多，共 ¥${fmtYuan(topMerchant.totalCents)}（${topMerchant.txCount} 笔）。`,
           chartKind: "bar",
           chartData: agg.merchants.map((point) => point.totalCents), // 单位分：bar 段 tooltip/y 轴按 /100 换算元（与 demo 订阅段同口径）
           chartLabels: agg.merchants.map((point) => shortMerchant(point.merchant)),
@@ -425,7 +425,7 @@ function drawReportPoster(ctx: CanvasRenderingContext2D, report: ReportData): vo
   ctx.fillStyle = "rgba(255,255,255,0.82)";
   ctx.font = `400 28px ${POSTER_FONT_STACK}`;
   ctx.fillText(
-    `六阶段体检 · 覆盖 ${report.meta.monthsCovered} 个月 · ${report.meta.totalTransactions.toLocaleString("zh-CN")} 笔 · 年度支出 ¥${fmtYuan(report.meta.totalExpenseCents)}`,
+    `六步体检 · 覆盖 ${report.meta.monthsCovered} 个月 · ${report.meta.totalTransactions.toLocaleString("zh-CN")} 笔 · 年度支出 ¥${fmtYuan(report.meta.totalExpenseCents)}`,
     cx,
     326,
   );
@@ -483,7 +483,7 @@ function drawReportPoster(ctx: CanvasRenderingContext2D, report: ReportData): vo
     ctx.fillText(m.value, x + 28, y + 96);
     ctx.fillStyle = "rgba(255,255,255,0.6)";
     ctx.font = `400 22px ${POSTER_FONT_STACK}`;
-    ctx.fillText(`同龄基准 ${m.benchmark}`, x + 28, y + 130);
+    ctx.fillText(`同龄人平均 ${m.benchmark}`, x + 28, y + 130);
   });
 
   // 段位条
@@ -504,7 +504,7 @@ function drawReportPoster(ctx: CanvasRenderingContext2D, report: ReportData): vo
   ctx.textAlign = "center";
   ctx.fillStyle = "rgba(255,255,255,0.72)";
   ctx.font = `400 24px ${POSTER_FONT_STACK}`;
-  ctx.fillText("数据由 DuckDB-WASM 在浏览器本地计算", cx, rankY + 112 + 72);
+  ctx.fillText("你的账单全程只在浏览器本地分析，数据不会上传", cx, rankY + 112 + 72);
 
   // 底部：Logo + 二维码占位
   const footerY = POSTER_H - 360;
@@ -889,7 +889,7 @@ export default function ReportPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold">{report.meta.year} 年度报告</h1>
           <p className="text-sm text-(--color-ink-secondary)">
-            六阶段体检的年度汇总：健康指数、四段数据故事、段位与成就
+            六步体检的年度汇总：健康指数、四段数据故事、段位与成就
           </p>
         </div>
         <div className="ml-auto hidden items-center gap-2 sm:flex">
@@ -949,7 +949,7 @@ export default function ReportPage() {
                     <DeltaIcon className="size-4" aria-hidden />
                     {m.delta}
                   </span>
-                  <span className="text-(--color-ink-muted)">同龄基准 {m.benchmark}</span>
+                  <span className="text-(--color-ink-muted)">同龄人平均 {m.benchmark}</span>
                 </p>
                 <p className="mt-2 text-xs leading-relaxed text-(--color-ink-muted)">
                   {m.explain}
@@ -1032,7 +1032,7 @@ export default function ReportPage() {
         <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm) md:p-6">
           <h2 className="text-lg font-bold">海报与导出</h2>
           <p className="mt-1 text-sm text-(--color-ink-secondary)">
-            生成一张 1080×1920 的年度海报，长按可分享；海报在浏览器本地绘制，不上传任何数据。
+            生成一张高清年度海报，长按可分享；海报在你的设备上直接生成，不上传任何数据。
           </p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <button
@@ -1055,7 +1055,7 @@ export default function ReportPage() {
           </div>
           <p className="mt-3 flex items-center gap-1.5 text-xs text-(--color-ink-muted)">
             <CircleCheck className="size-3.5" aria-hidden />
-            生成海报会自动解锁「年度海报」成就；PDF 导出将在正式版接入。
+            生成海报会自动解锁「年度海报」成就；PDF 导出功能即将开放。
           </p>
         </div>
       </section>

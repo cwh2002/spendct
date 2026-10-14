@@ -72,14 +72,14 @@ const FORMAT_META = {
   unknown: { label: "来源未知", dotClass: "bg-(--color-serious)" },
 } as const;
 
-/** 置信度三色（高=绿 / 中=黄 / 低=橙红），与状态色规范对齐 */
+/** 识别质量三色（好=绿 / 一般=黄 / 需留意=橙红），与状态色规范对齐 */
 const CONFIDENCE_META = {
-  high: { label: "高", dotClass: "bg-(--color-good)", textClass: "text-(--color-good-ink)" },
-  medium: { label: "中", dotClass: "bg-(--color-warning)", textClass: "text-(--color-warning-ink)" },
-  low: { label: "低", dotClass: "bg-(--color-serious)", textClass: "text-(--color-serious-ink)" },
+  high: { label: "好", dotClass: "bg-(--color-good)", textClass: "text-(--color-good-ink)" },
+  medium: { label: "一般", dotClass: "bg-(--color-warning)", textClass: "text-(--color-warning-ink)" },
+  low: { label: "需留意", dotClass: "bg-(--color-serious)", textClass: "text-(--color-serious-ink)" },
 } as const;
 
-/** 标准字段 → 中文展示名（映射确认表用） */
+/** 标准字段 → 中文展示名（识别结果确认表用） */
 const STANDARD_LABELS: Record<string, string> = {
   dateIso: "交易日期",
   amountCents: "金额",
@@ -104,13 +104,14 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** 导入失败文案：识别引擎加载类错误（首次访问需下载 wasm），给可操作提示 */
+/** 导入失败文案：引擎加载类错误（首次访问需联网加载）与一般失败分开提示；原始报错只留开发者日志 */
 function describeImportError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
+  console.warn("[upload] 导入失败，原始错误：", message || err);
   if (/worker|wasm|webassembly|instantiate/i.test(message)) {
-    return "DuckDB 引擎加载失败：首次导入需要在线下载引擎文件，请检查网络后重试";
+    return "账单识别引擎还没加载成功：首次使用需要联网加载，请检查网络后点「重试」";
   }
-  return `导入失败：${message || "未知错误"}`;
+  return "文件格式不识别，请确认是银行或支付平台导出的账单文件";
 }
 
 /* ---------------- 页面状态 ---------------- */
@@ -120,7 +121,7 @@ type ImportStatus = "idle" | "importing" | "failed";
 
 interface UploadState {
   stage: Stage;
-  /** 解析中阶段的分步文案（「正在嗅探格式…」→「解析中…」） */
+  /** 解析中阶段的分步文案（「正在识别文件…」→「正在整理数据…」） */
   progressText: string;
   fileName: string;
   result: ParseResult | null;
@@ -163,7 +164,7 @@ function EmptyPreview() {
       </div>
       <p className="font-semibold text-(--color-ink)">还没有账单——从左侧选择一个入口开始</p>
       <p className="max-w-xs text-sm text-(--color-ink-muted)">
-        支持微信 / 支付宝账单 CSV：拖入文件、加载示例，或稍后用截图识别
+        拖入账单文件，或者点左侧「示例账单」直接体验
       </p>
     </div>
   );
@@ -177,7 +178,7 @@ function ParsingPreview({ text, fileName }: { text: string; fileName: string }) 
         <p className="font-semibold text-(--color-ink)">{text}</p>
         <p className="mt-1 truncate text-sm text-(--color-ink-muted)">{fileName || "本地文件"}</p>
       </div>
-      <p className="text-xs text-(--color-ink-muted)">文件只在本地解析，不会上传到任何服务器</p>
+      <p className="text-xs text-(--color-ink-muted)">文件只在本地处理，不会上传到任何服务器</p>
     </div>
   );
 }
@@ -189,7 +190,7 @@ function RejectedPreview({ warnings, onReselect }: { warnings: string[]; onResel
         <CircleAlert className="size-7 text-(--color-critical)" aria-hidden />
       </div>
       <div className="max-w-sm">
-        <p className="font-semibold text-(--color-ink)">这份文件没有解析出可用账单</p>
+        <p className="font-semibold text-(--color-ink)">这份文件里没有识别出可用账单</p>
         <p className="mt-1 text-sm text-(--color-ink-muted)">
           {warnings[0] ?? "请确认导出的是微信 / 支付宝「账单」文件"}
         </p>
@@ -248,7 +249,7 @@ interface ParsedPreviewProps {
   onReselect: () => void;
 }
 
-/** 预览态：格式/置信度徽标 + 警告 + 字段映射确认 + 前 3 行数据 + 导入按钮 */
+/** 预览态：格式/识别质量徽标 + 警告 + 识别结果确认 + 前 3 笔数据 + 导入按钮 */
 function ParsedPreview({
   result,
   fileName,
@@ -267,7 +268,7 @@ function ParsedPreview({
 
   return (
     <div className="flex flex-1 flex-col">
-      {/* 头部：格式 + 置信度 + 文件名 + 行数 */}
+      {/* 头部：格式 + 识别质量 + 文件名 + 记录数 */}
       <div className="flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface-2) px-2.5 py-0.5 text-xs font-medium text-(--color-ink-secondary)">
           <span className={`size-1.5 rounded-full ${formatMeta.dotClass}`} aria-hidden />
@@ -277,17 +278,17 @@ function ParsedPreview({
           className={`inline-flex items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface-2) px-2.5 py-0.5 text-xs font-medium ${confidenceMeta.textClass}`}
         >
           <span className={`size-1.5 rounded-full ${confidenceMeta.dotClass}`} aria-hidden />
-          置信度 {confidenceMeta.label}
+          识别质量 {confidenceMeta.label}
         </span>
         <span className="max-w-40 truncate text-sm text-(--color-ink-muted)" title={fileName}>
           {fileName}
         </span>
         <span className="ml-auto text-sm text-(--color-ink-muted) tabular-nums">
-          {rows.length.toLocaleString("zh-CN")} 笔
+          共 {rows.length.toLocaleString("zh-CN")} 条记录
         </span>
       </div>
 
-      {/* 警告列表：编码/跳过行/疑似重复等，逐条渲染 */}
+      {/* 警告列表：乱码/被跳过的记录/疑似重复等，逐条渲染 */}
       {warnings.length > 0 ? (
         <div className="mt-4 rounded-(--radius-md) border-l-4 border-(--color-warn) bg-(--color-warn-soft) px-4 py-3">
           <p className="flex items-center gap-1.5 text-sm font-medium text-(--color-warning-ink)">
@@ -307,26 +308,27 @@ function ParsedPreview({
         </div>
       ) : null}
 
-      {/* 字段映射确认：原始表头 → 标准字段；低置信度整表黄底提示核对 */}
+      {/* 识别结果确认：文件里的栏目 → 识别为；低质量整表黄底提示核对 */}
       <div className="mt-5">
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-(--color-ink)">字段映射确认</h3>
+          <h3 className="text-sm font-semibold text-(--color-ink)">识别结果确认</h3>
           {lowConfidence ? (
             <span className="inline-flex items-center gap-1 text-xs text-(--color-warning-ink)">
               <Info className="size-3.5" aria-hidden />
-              字段已按规则猜测，可在表内核对
+              下面这些栏目是自动识别的，如果不准请重点核对
             </span>
           ) : null}
         </div>
+        <p className="mb-2 text-xs text-(--color-ink-muted)">确认一下两边栏目的对应关系</p>
         <div className="overflow-hidden rounded-(--radius-md) border border-(--color-border)">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-(--color-border) bg-(--color-surface-2)">
                 <th scope="col" className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)">
-                  原始表头
+                  账单文件里的栏目
                 </th>
                 <th scope="col" className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)">
-                  标准字段
+                  识别为
                 </th>
               </tr>
             </thead>
@@ -341,15 +343,14 @@ function ParsedPreview({
                   >
                     <td className="px-3 py-2 text-(--color-ink-secondary)">{rawHeader}</td>
                     <td className="px-3 py-2 font-medium text-(--color-ink)">
-                      {STANDARD_LABELS[standard] ?? standard}
-                      <span className="ml-1.5 font-normal text-(--color-ink-muted)">{standard}</span>
+                      {STANDARD_LABELS[standard] ?? "其他栏目"}
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td colSpan={2} className="px-3 py-3 text-sm text-(--color-ink-muted)">
-                    未识别到可用字段映射
+                    没有识别出栏目对应关系
                   </td>
                 </tr>
               )}
@@ -453,7 +454,7 @@ function ParsedPreview({
           {importing ? (
             <>
               <Loader2 className="size-4 animate-spin" aria-hidden />
-              正在导入 DuckDB…
+              正在整理账单…
             </>
           ) : (
             <>
@@ -509,14 +510,14 @@ export function UploadWorkspace() {
   /** 解析主链路：分步文案 → 真实解析。seq 校验保证只有最新一次请求能落状态 */
   const startParse = useCallback(async (text: string, fileName: string) => {
     const seq = ++parseSeqRef.current;
-    setState({ ...INITIAL_STATE, stage: "parsing", progressText: "正在嗅探格式…", fileName });
-    // 解析本身很快，分两步推进让「嗅探 → 解析」的动作可感知
+    setState({ ...INITIAL_STATE, stage: "parsing", progressText: "正在识别文件…", fileName });
+    // 解析本身很快，分两步推进让「识别文件 → 整理数据」的动作可感知
     await delay(420);
     if (seq !== parseSeqRef.current) return;
-    setState((prev) => ({ ...prev, progressText: "解析中…" }));
+    setState((prev) => ({ ...prev, progressText: "正在整理数据…" }));
     await delay(480);
     if (seq !== parseSeqRef.current) return;
-    // 大文件解析是同步阻塞操作，放进宏任务让「解析中…」先完成一次绘制
+    // 大文件解析是同步阻塞操作，放进宏任务让「正在整理数据…」先完成一次绘制
     await new Promise<void>((resolve) => {
       setTimeout(() => {
         const result = parseBillCsv(text, fileName);
@@ -533,8 +534,8 @@ export function UploadWorkspace() {
   }, [startParse]);
 
   const handleOcrClick = useCallback(() => {
-    // OCR 入口需要视觉模型密钥，尚未接通：先给反馈，完整链路走 CSV
-    showToast("截图识别正在准备中，先用 CSV 体验完整链路");
+    // OCR 入口需要视觉模型密钥，尚未接通：先给反馈，引导走账单文件或示例
+    showToast("截图识别正在准备中，可以先用账单文件或示例账单体验");
   }, [showToast]);
 
   const resetToEmpty = useCallback(() => {
@@ -547,7 +548,7 @@ export function UploadWorkspace() {
   const handleFile = useCallback(
     (file: File) => {
       if (!/\.csv$/i.test(file.name)) {
-        setEntryError("请选择 .csv 格式的账单文件（微信 / 支付宝导出的账单均为 CSV）");
+        setEntryError("请选择微信、支付宝等 App 导出的账单文件");
         return;
       }
       if (file.size > MAX_FILE_BYTES) {
@@ -667,7 +668,7 @@ export function UploadWorkspace() {
             上传账单
           </h1>
           <p className="mt-2 text-sm text-(--color-ink-secondary) md:text-base">
-            微信 / 支付宝账单 CSV，本地解析去重——先核对字段映射，再开始六阶段体检
+            支持支付宝、微信、银行 App 导出的账单文件，确认识别无误后一键开始六阶段体检
           </p>
         </header>
 
@@ -675,6 +676,25 @@ export function UploadWorkspace() {
           {/* 左：入口区 */}
           <section aria-label="选择导入入口" className="space-y-4 lg:col-span-2">
             <ResumeBanner />
+
+            <button
+              type="button"
+              onClick={handleSample}
+              className="flex w-full items-center gap-4 rounded-(--radius-card) border border-(--color-border) bg-(--color-surface) p-4 text-left shadow-(--shadow-sm) transition-colors hover:border-(--color-primary)"
+            >
+              <span className="grid size-11 shrink-0 place-items-center rounded-(--radius-md) bg-(--color-primary-soft)">
+                <Sparkles className="size-5 text-(--color-primary)" aria-hidden />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block font-semibold text-(--color-ink)">
+                  没有账单文件？先拿示例账单体验
+                </span>
+                <span className="mt-0.5 block text-sm text-(--color-ink-muted)">
+                  一键生成 {SAMPLE_ROW_COUNT.toLocaleString("zh-CN")} 笔模拟账单，走完上传到体检的完整流程
+                </span>
+              </span>
+              <ChevronRight className="size-4 shrink-0 text-(--color-ink-muted)" aria-hidden />
+            </button>
 
             {featureFlags.ocr ? (
               <button
@@ -720,9 +740,9 @@ export function UploadWorkspace() {
                   }
                   aria-hidden
                 />
-                <span className="font-semibold text-(--color-ink)">CSV 账单文件</span>
+                <span className="font-semibold text-(--color-ink)">账单文件</span>
                 <span className="text-sm text-(--color-ink-muted)">
-                  {dragging ? "松开鼠标开始解析" : "拖拽文件到这里，或点击选择（.csv，不超过 20MB）"}
+                  {dragging ? "松开鼠标，开始识别" : "拖拽文件到这里，或点击选择（不超过 20MB）"}
                 </span>
               </label>
               {entryError ? (
@@ -736,35 +756,13 @@ export function UploadWorkspace() {
               ) : null}
               <div className="mt-3 rounded-(--radius-md) bg-(--color-surface-2) p-3">
                 <p className="text-xs font-semibold text-(--color-ink-secondary)">
-                  已实测支持的导出格式
+                  支持支付宝、微信、银行 App 导出的账单文件
                 </p>
-                <ul className="mt-1.5 space-y-1 text-xs leading-relaxed text-(--color-ink-muted)">
-                  <li>· 微信支付账单导出（v8.0.x，11 列；v7.0.x，10 列）</li>
-                  <li>· 支付宝账单导出（v10.5.x，16 列；v10.2.x，15 列）</li>
-                </ul>
-                <p className="mt-2 text-xs leading-relaxed text-(--color-ink-muted)">
-                  微信：我 → 服务 → 钱包 → 账单 → 下载账单；支付宝：我的 → 账单 →
-                  开具交易流水证明
+                <p className="mt-1.5 text-xs leading-relaxed text-(--color-ink-muted)">
+                  微信：我 → 服务 → 钱包 → 账单 → 下载账单；支付宝：我的 → 账单 → 开具交易流水证明
                 </p>
               </div>
             </div>
-
-            <button
-              type="button"
-              onClick={handleSample}
-              className="flex w-full items-center gap-4 rounded-(--radius-card) border border-(--color-border) bg-(--color-surface) p-4 text-left shadow-(--shadow-sm) transition-colors hover:border-(--color-primary)"
-            >
-              <span className="grid size-11 shrink-0 place-items-center rounded-(--radius-md) bg-(--color-surface-2)">
-                <Sparkles className="size-5 text-(--color-accent)" aria-hidden />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-(--color-ink)">示例账单</span>
-                <span className="mt-0.5 block text-sm text-(--color-ink-muted)">
-                  生成 {SAMPLE_ROW_COUNT.toLocaleString("zh-CN")} 笔微信形态演示账单，体验完整流程
-                </span>
-              </span>
-              <ChevronRight className="size-4 shrink-0 text-(--color-ink-muted)" aria-hidden />
-            </button>
 
             {featureFlags.budget ? (
               <Link
@@ -772,7 +770,7 @@ export function UploadWorkspace() {
                 className="flex h-11 items-center justify-center gap-2 rounded-full border border-dashed border-(--color-border-strong) text-sm font-medium text-(--color-ink-secondary) transition-colors hover:border-(--color-primary) hover:text-(--color-primary)"
               >
                 <PenLine className="size-4" aria-hidden />
-                随手记一笔？不走 CSV，直接记
+                随手记一笔？不用上传文件，直接记
               </Link>
             ) : null}
           </section>

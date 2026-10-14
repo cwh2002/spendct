@@ -231,10 +231,10 @@ export const DEMO_FORECAST = {
 export const DEMO_REPORT = {
   healthIndex: 78,
   namedMetrics: [
-    { id: "hidden-subscription", name: "隐形订阅率", value: "4.1%", benchmark: "3.2%", delta: "+0.9pp", status: "warn", explain: "订阅支出占年度总支出的比例，高于同龄基准" },
-    { id: "impulse", name: "冲动消费浓度", value: "12.7%", benchmark: "18.5%", delta: "-5.8pp", status: "good", explain: "深夜与促销日集中消费占比，低于同龄基准" },
-    { id: "dining-share", name: "餐饮占比", value: "34%", benchmark: "28%", delta: "+6pp", status: "serious", explain: "餐饮支出占总支出比例，显著高于同龄基准" },
-    { id: "save-rate", name: "结余率", value: "18.2%", benchmark: "15.6%", delta: "+2.6pp", status: "good", explain: "月均结余占收入比例，略高于同龄基准" },
+    { id: "hidden-subscription", name: "隐形订阅率", value: "4.1%", benchmark: "3.2%", delta: "+0.9 个百分点", status: "warn", explain: "订阅支出占年度总支出的比例，高于同龄人平均" },
+    { id: "impulse", name: "冲动消费浓度", value: "12.7%", benchmark: "18.5%", delta: "-5.8 个百分点", status: "good", explain: "深夜与促销日集中消费占比，低于同龄人平均" },
+    { id: "dining-share", name: "餐饮占比", value: "34%", benchmark: "28%", delta: "+6 个百分点", status: "serious", explain: "餐饮支出占总支出比例，显著高于同龄人平均" },
+    { id: "save-rate", name: "结余率", value: "18.2%", benchmark: "15.6%", delta: "+2.6 个百分点", status: "good", explain: "月均结余占收入比例，略高于同龄人平均" },
   ],
   rank: { tier: 3, name: "进阶规划师", desc: "开始控制固定成本层，预算意识成型" },
   storySegments: [

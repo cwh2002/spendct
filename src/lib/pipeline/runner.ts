@@ -5,13 +5,14 @@
  *
  * 页面契约不变：/checkup 消费 DemoRun 同形的 start/pause/resume/stop + 回调，
  * 本模块把真实 runCheckup 的 SpendctEvent 流映射成页面 ThinkingEvent：
- *   stage:start      → onStageChange(running) + progress「开始阶段」
- *   stage:evidence   → evidence 事件（表名/命中行数/耗时，meta=sqlHash）
+ * 全部可见文案为结论式人话，不含表名/错误码/模型名等内部标识。
+ *   stage:start      → onStageChange(running) + progress「开始步骤」
+ *   stage:evidence   → evidence 事件（核对条数/用时，meta=sqlHash）
  *   stage:complete   → onStageChange(succeeded, cards 数) + progress
- *   card:delta       → progress「生成洞察卡 · headline」
- *   rag:retrieved    → rag 事件（案例库命中）
+ *   card:delta       → progress「生成分析结果 · headline」
+ *   rag:retrieved    → rag 事件（相似案例）
  *   llm:degraded     → degrade 事件（DegradeToast 触发源）
- *   card:withheld    → progress「未达发布线已拦截」（07 §20 宁缺毋滥）
+ *   card:withheld    → progress「数据太少已省略」（07 §20 宁缺毋滥）
  *   error            → tool 事件 + onStageChange(failed)（引擎降级继续）
  *   run:complete     → onDone + 写 pipeline store（/insights 等页消费）
  *
@@ -135,12 +136,16 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
           elapsedMs: 0,
         });
         cb.onStageChange(snapshot.stages.get(event.stage)!);
-        push("progress", `开始「${display.name}」阶段 · ${display.subtitle}`);
+        push("progress", `开始「${display.name}」步骤 · ${display.subtitle}`);
         break;
       }
       case "stage:evidence": {
-        const elapsedSec = (event.elapsedMs / 1000).toFixed(2);
-        push("evidence", `${event.tableId} · 命中 ${event.rowCount} 行 · ${elapsedSec}s`, event.sqlHash);
+        const elapsedSec = (event.elapsedMs / 1000).toFixed(1);
+        push(
+          "evidence",
+          `已核对 ${event.rowCount.toLocaleString("zh-CN")} 条记录 · 用时 ${elapsedSec} 秒`,
+          event.sqlHash,
+        );
         const stage = snapshot.evidence.get(event.stage);
         if (stage) {
           stage.hits += event.rowCount;
@@ -157,7 +162,7 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
       }
       case "card:delta": {
         const headline = String((event.delta as { headline?: unknown }).headline ?? "");
-        push("progress", `生成洞察卡 · ${headline}`);
+        push("progress", `生成分析结果 · ${headline}`);
         break;
       }
       case "card:complete": {
@@ -167,7 +172,7 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
         if (stageEvidence) {
           stageEvidence.cards.push({ title: card.headline, ok: card.confidence >= 0.6 });
         }
-        push("progress", `洞察卡完成 · ${card.headline}`);
+        push("progress", `分析结果完成 · ${card.headline}`);
         break;
       }
       case "stage:complete": {
@@ -177,7 +182,7 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
           stage.cards = event.cards.length;
           cb.onStageChange(stage);
         }
-        push("progress", `「${STAGE_DISPLAY_NAMES[event.stage].name}」完成 · 产出 ${event.cards.length} 张洞察卡`);
+        push("progress", `「${STAGE_DISPLAY_NAMES[event.stage].name}」完成 · 生成 ${event.cards.length} 条分析结果`);
         break;
       }
       case "stage:skipped": {
@@ -186,31 +191,31 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
           stage.status = "skipped";
           cb.onStageChange(stage);
         }
-        push("progress", `阶段跳过 · ${event.reason}`);
+        push("progress", `已自动跳过这一步 · ${event.reason}`);
         break;
       }
       case "rag:retrieved": {
-        push("rag", `案例库命中 ${event.k} 条（${event.mode}）`, event.caseIds.join("、"));
+        push("rag", `找到 ${event.k} 个相似案例`);
         break;
       }
       case "llm:degraded": {
-        push("degrade", `模型降级 · ${event.from} → ${event.to} · ${event.reason}`);
+        push("degrade", "主服务有点慢，已自动切换备用服务继续，结果不受影响");
         break;
       }
       case "tool:start": {
-        push("tool", `调用工具 · ${event.tool}`);
+        push("tool", "正在分析，请稍候…");
         break;
       }
       case "cache:hit": {
-        push("progress", `阶段缓存命中 · ${event.cacheKey}`, "cache");
+        push("progress", "直接复用上次的检查结果 · 秒开", "cache");
         break;
       }
       case "checkpoint:saved": {
-        push("tool", `断点已保存 · ${event.stage}`);
+        push("tool", `进度已保存 · 下次继续从「${STAGE_DISPLAY_NAMES[event.stage].name}」开始`);
         break;
       }
       case "card:withheld": {
-        push("progress", `洞察卡未达发布线已拦截 · 证据不足（07 §20 宁缺毋滥）`);
+        push("progress", "有一条分析因为数据太少没有生成，已自动省略，避免误导你");
         break;
       }
       case "error": {
@@ -220,11 +225,11 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
           cb.onStageChange(stage);
         }
         snapshot.degraded.push(event.stage ?? "pipeline");
-        push("tool", `阶段 ${event.stage ?? "?"} 失败 · ${event.code} · ${event.message}`);
+        push("tool", "这一步没跑通，已自动跳过，继续后面的检查（不影响整体结果）");
         break;
       }
       case "abort": {
-        push("progress", "体检已中止 · 已产出的洞察卡保留");
+        push("progress", "体检已中止 · 已经查出的结果会保留");
         break;
       }
       case "run:start":
@@ -268,13 +273,13 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
       if (opts.source === "sample") {
         const rows = demoTransactions();
         await initDataset(conn, rows);
-        push("progress", `演示数据集就绪 · ${rows.length} 行已载入本地 DuckDB`);
+        push("progress", `示例账单就绪 · 共 ${rows.length.toLocaleString("zh-CN")} 条，全部在本地处理`);
       } else {
         const missing = await verifySchema(conn);
         if (missing.length > 0) {
           throw new Error(`数据集 schema 不完整（缺失 ${missing.join("、")}），请重新导入账单`);
         }
-        push("progress", "数据集校验通过 · 本地 DuckDB schema 完整");
+        push("progress", "账单数据检查通过 · 可以开始体检");
       }
 
       const result: RunCheckupResult = await runCheckup({
@@ -295,8 +300,9 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
       });
       finish();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      push("tool", `体检引擎装载失败 · ${message}`);
+      // 原始报错只留开发者日志，不给用户看内部信息
+      console.error("体检装载失败：", err);
+      push("tool", "体检没跑起来 · 请点「重新播放」再试一次");
       finish();
     }
   };

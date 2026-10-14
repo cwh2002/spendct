@@ -15,7 +15,7 @@ import { DEMO_INSIGHTS } from "@/lib/demo-data";
 import type { FollowUpAnchor } from "./follow-up-panel";
 
 interface LedgerViewProps {
-  /** 图表数据点点击 → 锚定追问（05 §1.6 核心交互） */
+  /** 图表数据点点击 → 选中追问（05 §1.6 核心交互） */
   onAnchor(anchor: FollowUpAnchor): void;
 }
 
@@ -190,7 +190,7 @@ function MiniTable({ headers, rows }: { headers: [string, string]; rows: [string
 
 /**
  * 账本汇总视图（05 §1.6，原 /ledger 并入 /insights）：
- * 筛选行 + 支出时间序列 / 类别 donut / 商户排行三图（内置数据表切换与锚点点击）+ 明细表。
+ * 筛选行 + 支出走势 / 类别 donut / 商户排行三图（内置数据表切换与选中点击）+ 明细表。
  */
 export function LedgerView({ onAnchor }: LedgerViewProps) {
   const [range, setRange] = useState<LedgerRange>("90d");
@@ -312,7 +312,7 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
         <div>
           <h2 className="text-lg font-bold">账本汇总</h2>
           <p className="mt-0.5 text-sm text-(--color-ink-secondary)">
-            点击任意图表数据点即可锚定追问 · 日期范围作用于全部图表与明细
+            点击任意图表数据点即可追问 · 日期范围会同步到全部图表与明细
           </p>
         </div>
         {filtersDirty ? (
@@ -390,8 +390,8 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
       <div className="grid gap-4 md:grid-cols-2">
         <div className="md:col-span-2">
           <ChartCard
-            title="支出时间序列（月）"
-            caption="DEMO_INSIGHTS.ins-4 · 点击数据点锚定追问"
+            title="支出走势（月）"
+            caption="演示数据 · 点击柱子可以追问"
             chart={
               <EChart
                 option={lineOption}
@@ -413,7 +413,7 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
         </div>
         <ChartCard
           title="类别构成"
-          caption={category === "all" ? "所选时间范围 · 点击切片锚定追问" : `高亮：${category}（其余切片淡显）`}
+          caption={category === "all" ? "所选时间范围 · 点击扇区可以追问" : `高亮：${category}（其余扇区淡显）`}
           chart={
             <EChart option={donutOption} height={260} ariaLabel="类别构成环图" onClick={handleDonutClick} />
           }
@@ -450,12 +450,10 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
           <div>
             <h3 className="text-sm font-semibold">明细表</h3>
             <p className="mt-0.5 text-xs text-(--color-ink-muted)">
-              共 3,214 行 · 显示前 100 行{tableRows.length !== 100 ? `（筛选后 ${tableRows.length} 行）` : ""}
+              共 3,214 笔 · 展示最近 100 笔{tableRows.length !== 100 ? `（筛选后 ${tableRows.length} 笔）` : ""}
             </p>
           </div>
-          <p className="text-xs text-(--color-ink-muted)">
-            全量明细接入 DuckDB 后启用虚拟滚动（10k 行不卡顿），当前为演示生成窗口
-          </p>
+          <p className="text-xs text-(--color-ink-muted)">当前展示的是演示数据</p>
         </div>
         <div className="max-h-[420px] overflow-y-auto">
           <table className="w-full text-sm">

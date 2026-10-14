@@ -1,8 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Check, Copy, Database, FileText, Layers, ShieldCheck, Timer, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Database, FileText, Layers, ShieldCheck, Timer, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { lockBodyScroll, unlockBodyScroll } from "./scroll-lock";
 import { formatMs } from "./pipeline-stepper";
 import type { StageEvidence, StageState, StageStatus } from "./types";
@@ -40,17 +40,29 @@ export interface StageEvidenceDrawerProps {
   onClose: () => void;
 }
 
+/** 各步骤的结论式说明模板：动词句 + 数量单位，数字取自本步骤证据（不再展示 SQL 原文） */
+const STAGE_CONCLUSION: Record<string, { lead: string; unit: string }> = {
+  clean: { lead: "整理账单并去除重复，共核对", unit: "条记录" },
+  profile: { lead: "按类别汇总账单，共核对", unit: "条记录" },
+  anomaly: { lead: "排查深夜消费与退款异常，查出", unit: "个疑点" },
+  subscription: { lead: "排查规律性连续扣费，查出", unit: "笔可疑扣费" },
+  attribution: { lead: "对比本月与上月支出，拆解", unit: "项变化" },
+  annual: { lead: "汇总全年账单走势，共", unit: "个月" },
+};
+
+/** 组装结论句：动词 + 数量 + 用时 */
+function stageConclusion(stageId: string, evidence: StageEvidence): string {
+  const tpl = STAGE_CONCLUSION[stageId] ?? { lead: "完成检查，共核对", unit: "条记录" };
+  return `${tpl.lead} ${evidence.hits.toLocaleString("zh-CN")} ${tpl.unit}，用时 ${formatMs(evidence.elapsedMs)}。`;
+}
+
 /**
- * 阶段证据抽屉：右侧滑出，展示该阶段聚合 SQL 全文 / 命中数 / 耗时 / 产出卡缩略。
- * SQL 是白名单校验通过的聚合产物（07 §6），固定挂「已聚合 · 只读 · 白名单通过」徽标——
- * 既是数据透明，也是防注入的宣传点（05 §2.5）。
+ * 阶段证据抽屉：右侧滑出，展示该步骤查出什么 / 耗时 / 生成的分析结果缩略。
+ * 结论式说明固定挂「已通过安全检查」徽标——既是数据透明，也是防误改的宣传点。
  */
 export function StageEvidenceDrawer({ stage, evidence, onClose }: StageEvidenceDrawerProps) {
   const open = stage !== null;
   const closeBtnRef = useRef<HTMLButtonElement>(null);
-  // 「已复制」与阶段绑定存储：切换阶段时反馈自然失效，无需 effect 复位
-  const [copiedFor, setCopiedFor] = useState<string | null>(null);
-  const copied = stage !== null && copiedFor === stage.id;
 
   // Esc 关闭 + 打开时锁定页面滚动并把焦点移入抽屉
   useEffect(() => {
@@ -67,16 +79,6 @@ export function StageEvidenceDrawer({ stage, evidence, onClose }: StageEvidenceD
     };
   }, [open, onClose]);
 
-  const copySql = async () => {
-    if (!evidence || !stage) return;
-    try {
-      await navigator.clipboard.writeText(evidence.sql);
-      setCopiedFor(stage.id);
-    } catch {
-      // 非安全上下文剪贴板可能被拒，静默失败即可
-    }
-  };
-
   return (
     <AnimatePresence>
       {open && stage ? (
@@ -92,7 +94,7 @@ export function StageEvidenceDrawer({ stage, evidence, onClose }: StageEvidenceD
           <motion.aside
             role="dialog"
             aria-modal="true"
-            aria-label={`${stage.name}阶段证据`}
+            aria-label={`${stage.name}步骤详情`}
             className="fixed top-0 right-0 z-50 flex h-full w-full max-w-md flex-col bg-(--color-surface) shadow-(--shadow-lg)"
             initial={{ x: "100%" }}
             animate={{ x: 0 }}
@@ -109,7 +111,7 @@ export function StageEvidenceDrawer({ stage, evidence, onClose }: StageEvidenceD
                 ref={closeBtnRef}
                 type="button"
                 onClick={onClose}
-                aria-label="关闭证据抽屉"
+                aria-label="关闭详情"
                 className="grid size-11 shrink-0 place-items-center rounded-full text-(--color-ink-secondary) transition hover:bg-(--color-surface-2)"
               >
                 <X className="size-5" aria-hidden />
@@ -119,12 +121,12 @@ export function StageEvidenceDrawer({ stage, evidence, onClose }: StageEvidenceD
             <div className="flex-1 overflow-y-auto px-5 py-5">
               {evidence ? (
                 <div className="space-y-6">
-                  {/* 指标行：命中 / 耗时 / 产出卡 */}
+                  {/* 指标行：查出问题 / 耗时 / 分析结果 */}
                   <dl className="grid grid-cols-3 gap-3">
                     <div className="rounded-(--radius-md) border border-(--color-border) p-3">
                       <dt className="flex items-center gap-1 text-xs text-(--color-ink-muted)">
                         <Database className="size-3.5" aria-hidden />
-                        命中
+                        查出问题
                       </dt>
                       <dd className="mt-1 text-lg font-semibold tabular-nums">
                         {evidence.hits.toLocaleString("zh-CN")}
@@ -142,38 +144,29 @@ export function StageEvidenceDrawer({ stage, evidence, onClose }: StageEvidenceD
                     <div className="rounded-(--radius-md) border border-(--color-border) p-3">
                       <dt className="flex items-center gap-1 text-xs text-(--color-ink-muted)">
                         <Layers className="size-3.5" aria-hidden />
-                        产出卡
+                        分析结果
                       </dt>
                       <dd className="mt-1 text-lg font-semibold tabular-nums">{evidence.cards.length}</dd>
                     </div>
                   </dl>
 
-                  {/* SQL 全文 */}
-                  <section aria-label="执行 SQL">
+                  {/* 这一步做了什么：结论式说明（不再展示 SQL 原文） */}
+                  <section aria-label="这一步做了什么">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <h3 className="text-sm font-semibold">执行 SQL</h3>
+                      <h3 className="text-sm font-semibold">这一步做了什么</h3>
                       <span className="inline-flex items-center gap-1 rounded-full bg-(--color-good)/10 px-2 py-0.5 text-xs font-medium text-(--color-good-ink)">
                         <ShieldCheck className="size-3" aria-hidden />
-                        已聚合 · 只读 · 白名单通过
+                        已通过安全检查
                       </span>
-                      <button
-                        type="button"
-                        onClick={copySql}
-                        aria-label={copied ? "已复制 SQL" : "复制 SQL"}
-                        className="ml-auto inline-flex h-11 min-w-20 items-center justify-center gap-1.5 rounded-full border border-(--color-border) px-3 text-xs font-medium text-(--color-ink-secondary) transition hover:border-(--color-border-strong)"
-                      >
-                        {copied ? <Check className="size-3.5" aria-hidden /> : <Copy className="size-3.5" aria-hidden />}
-                        {copied ? "已复制" : "复制"}
-                      </button>
                     </div>
-                    <pre className="overflow-x-auto rounded-(--radius-md) bg-(--color-surface-2) p-3 font-(--font-mono) text-xs leading-relaxed whitespace-pre-wrap break-words text-(--color-ink)">
-                      {evidence.sql}
-                    </pre>
+                    <p className="text-sm leading-relaxed text-(--color-ink-secondary)">
+                      {stageConclusion(stage.id, evidence)}
+                    </p>
                   </section>
 
-                  {/* 产出卡缩略 */}
-                  <section aria-label="本阶段产出">
-                    <h3 className="mb-2 text-sm font-semibold">本阶段产出 {evidence.cards.length} 张卡</h3>
+                  {/* 分析结果缩略 */}
+                  <section aria-label="这一步生成的分析结果">
+                    <h3 className="mb-2 text-sm font-semibold">这一步生成 {evidence.cards.length} 条分析结果</h3>
                     <ul className="space-y-2">
                       {evidence.cards.map((card) => (
                         <li
@@ -195,9 +188,9 @@ export function StageEvidenceDrawer({ stage, evidence, onClose }: StageEvidenceD
               ) : (
                 <div className="flex h-full min-h-48 flex-col items-center justify-center gap-2 text-center">
                   <Database className="size-8 text-(--color-ink-muted)" aria-hidden />
-                  <p className="text-sm font-medium text-(--color-ink-secondary)">该阶段尚未产出证据</p>
+                  <p className="text-sm font-medium text-(--color-ink-secondary)">这个阶段还没跑完</p>
                   <p className="max-w-60 text-xs text-(--color-ink-muted)">
-                    阶段完成后，这里会展示聚合 SQL、命中数与产出卡清单。
+                    跑完后，这里会告诉你它查出了什么、生成了几张分析卡。
                   </p>
                 </div>
               )}

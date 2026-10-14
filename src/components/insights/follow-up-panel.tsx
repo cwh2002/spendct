@@ -27,7 +27,7 @@ interface FollowUpTurn {
   id: number;
   role: "user" | "assistant";
   text: string;
-  /** 「追问演示」说明徽标：标记非真实管线产出的回答 */
+  /** 「示例回答」说明徽标：标记基于示例账单产出的回答 */
   demoNote?: boolean;
 }
 
@@ -41,16 +41,9 @@ const DEMO_TURNS: Omit<FollowUpTurn, "id">[] = [
   },
 ];
 
-/** 新提交问题后的固定演示回答；/api/followup 接入后替换为真实管线结果 */
+/** 新提交问题后的固定示例回答；接入真实分析后替换 */
 const DEMO_ANSWER =
-  "演示回答：近 90 天该维度共 42 笔、合计 1,286 元，波动主要来自 2 笔单笔超过 200 元的订单。";
-
-/** 执行计划三步（05 §1.5 PlanStepTree）：本地脱敏 SQL 管线的事件轨迹 */
-const PLAN_STEPS = [
-  { id: "intent", name: "解析问题与锚点上下文", meta: "意图识别 · qwen · 218ms" },
-  { id: "sql", name: "生成脱敏 SQL 并本地执行", meta: "脱敏 SQL · qwen · 412ms" },
-  { id: "synthesize", name: "汇总结果生成回答", meta: "结论合成 · qwen · 1,204ms" },
-] as const;
+  "近 90 天该维度共 42 笔、合计 1,286 元，波动主要来自 2 笔单笔超过 200 元的订单。";
 
 interface FollowUpPanelProps {
   ref?: React.Ref<FollowUpPanelHandle>;
@@ -64,29 +57,14 @@ interface FollowUpPanelProps {
   onCancelAnchor(): void;
 }
 
-function PlanStepTree() {
+/** 回答完成提示：回答气泡前的一行完成状态，不展示内部执行细节 */
+function AnswerDoneNote() {
   return (
     <div className="rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2.5">
-      <p className="mb-2 flex items-center justify-between gap-2 text-xs font-medium text-(--color-ink-muted)">
-        <span>执行计划</span>
-        <span className="font-mono tabular-nums">合计 1,834ms · 本地脱敏执行</span>
+      <p className="flex items-center gap-2 text-xs font-medium text-(--color-ink-secondary)">
+        <CircleCheck className="size-4 shrink-0 text-(--color-good-ink)" aria-hidden />
+        已根据你的问题完成分析
       </p>
-      <ol className="space-y-2">
-        {PLAN_STEPS.map((step, i) => (
-          <li key={step.id} className="flex gap-2.5">
-            <div className="flex flex-col items-center pt-0.5">
-              <CircleCheck className="size-4 shrink-0 text-(--color-good-ink)" aria-hidden />
-              {i < PLAN_STEPS.length - 1 ? (
-                <span className="my-1 w-px flex-1 bg-(--color-border)" aria-hidden />
-              ) : null}
-            </div>
-            <div className="pb-1">
-              <p className="text-sm leading-tight">{step.name}</p>
-              <p className="mt-0.5 font-mono text-[11px] text-(--color-ink-muted)">{step.meta}</p>
-            </div>
-          </li>
-        ))}
-      </ol>
     </div>
   );
 }
@@ -147,7 +125,7 @@ export function FollowUpPanel({
   }
 
   function queueDemoAnswer() {
-    // 演示模式：固定回答 + 「追问演示」说明；/api/followup 接入后替换此分支
+    // 固定示例回答 + 「示例回答」说明；接入真实分析后替换此分支
     setPending(true);
     pendingTimer.current = window.setTimeout(() => {
       appendTurn({ role: "assistant", text: DEMO_ANSWER, demoNote: true });
@@ -237,12 +215,12 @@ export function FollowUpPanel({
 
       <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3.5 py-3.5">
         {anchor ? (
-          /* 锚点确认条（05 §1.6 AnchorConfirmBar）：追问前可取消锚点 */
+          /* 选中确认条（05 §1.6 AnchorConfirmBar）：追问前可取消选中 */
           <div className="rounded-(--radius-md) border border-(--color-primary)/30 bg-(--color-primary-soft) p-3">
             <div className="flex items-start gap-2">
               <MousePointerClick className="mt-0.5 size-4 shrink-0 text-(--color-brand-600)" aria-hidden />
               <p className="min-w-0 flex-1 text-sm leading-relaxed">
-                <span className="font-semibold">已锚定：</span>
+                <span className="font-semibold">已选中：</span>
                 {anchor.label}
               </p>
             </div>
@@ -272,7 +250,7 @@ export function FollowUpPanel({
             </span>
             <p className="text-sm font-semibold">从图表开始提问</p>
             <p className="text-xs leading-relaxed text-(--color-ink-secondary)">
-              点击洞察卡的「深挖」或账本图表的数据点，围绕证据继续追问；回答由本地脱敏 SQL 管线生成。
+              点击洞察卡的「深挖」或账本图表的数据点，围绕证据继续追问；回答基于你的账单数据生成。
             </p>
             <button
               type="button"
@@ -287,7 +265,7 @@ export function FollowUpPanel({
             const isLastAssistant = turn.role === "assistant" && i === turns.length - 1;
             return (
               <div key={turn.id} className="space-y-2.5">
-                {isLastAssistant ? <PlanStepTree /> : null}
+                {isLastAssistant ? <AnswerDoneNote /> : null}
                 <div className={`flex ${turn.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div
                     className={`max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-relaxed ${
@@ -300,7 +278,7 @@ export function FollowUpPanel({
                     {turn.demoNote ? (
                       <span className="mt-2 flex items-start gap-1.5 rounded-(--radius-sm) bg-(--color-warn-soft) px-2 py-1.5 text-xs leading-relaxed text-(--color-warning-ink)">
                         <Sparkles className="mt-0.5 size-3 shrink-0" aria-hidden />
-                        追问演示：接入 /api/followup 后将由本地脱敏 SQL 管线生成真实回答
+                        示例回答：以上按示例账单计算，仅供参考
                       </span>
                     ) : null}
                   </div>
@@ -311,7 +289,7 @@ export function FollowUpPanel({
         )}
 
         {pending ? (
-          <div className="flex justify-start" aria-label="正在执行本地分析">
+          <div className="flex justify-start" aria-label="正在生成回答">
             <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-sm bg-(--color-surface-2) px-3.5 py-3">
               <span className="size-1.5 animate-bounce rounded-full bg-(--color-ink-muted)" />
               <span className="size-1.5 animate-bounce rounded-full bg-(--color-ink-muted) [animation-delay:120ms]" />
@@ -357,7 +335,7 @@ export function FollowUpPanel({
           </button>
         </div>
         <p className="mt-2 text-[11px] text-(--color-ink-muted)">
-          Enter 发送 · Shift+Enter 换行 · Esc 取消锚点
+          Enter 发送 · Shift+Enter 换行 · Esc 取消选中
         </p>
       </form>
     </aside>

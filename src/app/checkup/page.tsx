@@ -45,10 +45,10 @@ const DEMO_ACTION_JUMP_LAST_STAGE = "jump-last-stage";
 const JUMP_ANNUAL_MS = 700;
 
 const PHASE_LABEL: Record<Phase, { chip: string; sub: string }> = {
-  boot: { chip: "准备中", sub: "正在准备体检引擎 · 本地 DuckDB-WASM 初始化" },
-  playing: { chip: "运行中", sub: "六阶段流水线正在本地执行 · 账单明细不出浏览器" },
-  paused: { chip: "已暂停", sub: "进度已保存于本机 · 点击「继续」从当前阶段恢复" },
-  done: { chip: "已完成", sub: "六阶段全部跑完 · 洞察卡已就绪" },
+  boot: { chip: "准备中", sub: "正在准备，稍等几秒…" },
+  playing: { chip: "运行中", sub: "正在检查你的账单，六个步骤依次进行 · 账单不会上传到任何服务器" },
+  paused: { chip: "已暂停", sub: "进度已保存在你的设备上 · 点击「继续」接着检查" },
+  done: { chip: "已完成", sub: "六项检查全部完成 · 分析结果已就绪" },
 };
 
 /** 播放前的骨架屏：与路由级 loading.tsx 视觉同源，数据到达后无缝切走 */
@@ -178,7 +178,7 @@ export default function CheckupPage() {
         const syntheticError: ThinkingEvent = {
           id: `console-ev-${consoleEventSeqRef.current}`,
           kind: "tool",
-          text: "阶段 anomaly 失败 · PARSE_FAILED · 已降级继续下一阶段",
+          text: "这一步没跑通，已自动跳过，继续后面的检查（不影响整体结果）",
           meta: "demo-action",
           ts: Date.now(),
         };
@@ -277,10 +277,10 @@ export default function CheckupPage() {
   // 数据来源徽章：sample/upload 分支换成真实口径文案，demo 分支保持现状
   const badgeText =
     mode === "sample"
-      ? "演示数据 · 示例账单 789 行"
+      ? "示例账单 · 789 条交易"
       : mode === "upload"
         ? "本地账单 · 数据不出浏览器"
-        : "演示数据 · 示例账单 10,000 行";
+        : "示例账单 · 10,000 条交易";
 
   const totalCards = stages.reduce((sum, s) => sum + (s.status === "succeeded" ? s.cards : 0), 0);
 
@@ -321,8 +321,8 @@ export default function CheckupPage() {
         <BootSkeleton />
       ) : (
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-          {/* 左 3：流水线步骤 + 断点条 */}
-          <section aria-label="体检流水线" className="lg:col-span-3">
+          {/* 左 3：体检步骤 + 断点条 */}
+          <section aria-label="体检步骤" className="lg:col-span-3">
             <PipelineStepper stages={stages} onStageClick={(s) => setDrawerStageId(s.id)} />
             {phase !== "done" ? (
               <CheckpointBar
@@ -341,15 +341,15 @@ export default function CheckupPage() {
               className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) text-sm font-medium text-(--color-ink-secondary) shadow-(--shadow-sm) transition hover:border-(--color-border-strong) lg:hidden"
             >
               <PanelBottomOpen className="size-4" aria-hidden />
-              查看思考过程
+              查看体检动态
               <span className="rounded-full bg-(--color-surface-2) px-2 py-0.5 text-xs tabular-nums">
                 {events.length}
               </span>
             </button>
           </section>
 
-          {/* 右 2：思考过程面板（sticky 跟随，顶部让出导航高度） */}
-          <section aria-label="思考过程面板" className="hidden lg:col-span-2 lg:block">
+          {/* 右 2：体检动态面板（sticky 跟随，顶部让出导航高度） */}
+          <section aria-label="体检动态面板" className="hidden lg:col-span-2 lg:block">
             <div className="lg:sticky lg:top-20">
               <ThinkingPanel
                 events={events}
@@ -377,10 +377,10 @@ export default function CheckupPage() {
               <div>
                 <p className="font-semibold">体检完成</p>
                 <p className="text-sm text-(--color-ink-secondary)">
-                  六阶段全部跑完 · 共产出 <span className="tabular-nums">{totalCards}</span>{" "}
-                  张洞察卡 ·{" "}
+                  六项检查全部完成 · 共生成 <span className="tabular-nums">{totalCards}</span>{" "}
+                  条分析结果 ·{" "}
                   <span className="text-(--color-primary) tabular-nums">{countdown}</span>{" "}
-                  秒后自动进入洞察流
+                  秒后自动带你查看报告
                 </p>
               </div>
             </div>

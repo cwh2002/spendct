@@ -139,7 +139,7 @@ describe("金额与退款标记", () => {
     ]);
     const result = parseBillCsv(csv, "微信账单.csv");
     expect(result.rows).toHaveLength(1);
-    expect(result.warnings).toContain("跳过 1 行：金额为 0（多为不计收支的转账/红包）");
+    expect(result.warnings).toContain("有 1 笔金额为 0，多为转账或红包，不记入收支");
   });
 });
 
@@ -160,7 +160,7 @@ describe("日期解析", () => {
     const result = parseBillCsv(csv, "微信账单.csv");
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0]!.merchant).toBe("C");
-    expect(result.warnings).toContain("跳过 2 行：日期无法解析");
+    expect(result.warnings).toContain("有 2 笔记录没认出来：日期格式不认识");
   });
 });
 
@@ -168,7 +168,9 @@ describe("编码异常提示", () => {
   it("文本含替换符时提示另存 UTF-8", () => {
     const csv = "金额(元),收/支\n�12.34,支出";
     const result = parseBillCsv(csv, "微信账单.csv");
-    expect(result.warnings).toContain("文件可能是 GBK/GB2312 编码，请用记事本另存为 UTF-8 后重试");
+    expect(result.warnings).toContain(
+      "文件里的中文显示乱码了，可能是保存格式的问题。用记事本打开文件，点『文件 → 另存为』，把最下面的『编码』选成 UTF-8 保存后，再上传一次",
+    );
   });
 
   it("GBK 按 Latin-1 解码的乱码特征同样触发提示，且置信度降为 low", () => {
@@ -176,7 +178,9 @@ describe("编码异常提示", () => {
       "2026-01-05 12:00:00,商户消费,美团外卖,外卖订单,支出,¥36.50,零钱,支付成功,TX1,SP1,½ð¶î»ìÂÒ",
     ]);
     const result = parseBillCsv(csv, "微信账单.csv");
-    expect(result.warnings).toContain("文件可能是 GBK/GB2312 编码，请用记事本另存为 UTF-8 后重试");
+    expect(result.warnings).toContain(
+      "文件里的中文显示乱码了，可能是保存格式的问题。用记事本打开文件，点『文件 → 另存为』，把最下面的『编码』选成 UTF-8 保存后，再上传一次",
+    );
     expect(result.confidence).toBe("low");
     expect(result.rows).toHaveLength(1);
   });
@@ -223,9 +227,9 @@ describe("首行非表头的兜底", () => {
       direction: "expense",
       note: "外卖订单",
     });
-    expect(result.warnings.some((warning) => warning.includes("首行不是表头"))).toBe(true);
-    expect(result.mapping["第1列"]).toBe("dateIso");
-    expect(result.mapping["第6列"]).toBe("amountCents");
+    expect(result.warnings.some((warning) => warning.includes("第一行直接就是账单数据"))).toBe(true);
+    expect(result.mapping["第1栏"]).toBe("dateIso");
+    expect(result.mapping["第6栏"]).toBe("amountCents");
   });
 });
 
@@ -242,7 +246,7 @@ describe("无法识别的格式", () => {
     expect(result.format).toBe("unknown");
     expect(result.confidence).toBe("low");
     expect(result.rows).toEqual([]);
-    expect(result.warnings.some((warning) => warning.includes("渠道"))).toBe(true);
+    expect(result.warnings.some((warning) => warning.includes("没认出这是微信还是支付宝的账单"))).toBe(true);
   });
 
   it("文件名提示微信时按微信解析（medium）", () => {

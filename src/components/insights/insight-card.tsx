@@ -89,14 +89,27 @@ function buildTableRows(insight: DemoInsight): { label: string; value: string; n
     const unit = insight.chartData.some((v) => v >= 100) ? "元" : "笔";
     return { label, value: `${raw} ${unit}` };
   });
-  if (insight.chartKind === "bar") {
-    const unit = insight.chartUnit ?? "元";
-    rows.push({
-      label: "口径",
-      value: unit === "元" ? "金额单位分，已换算为元" : `聚合计数，单位 ${unit}`,
-    });
-  }
   return rows;
+}
+
+/** 引用条目 → 口语化来源：带 kind 前缀的内部标识（sql:表名等）映射为人话，已是人话的原文原样直出 */
+function humanCitation(citation: string): string {
+  const sep = citation.indexOf(":");
+  if (sep < 0) return citation;
+  switch (citation.slice(0, sep)) {
+    case "sql":
+      return "来自你的账单明细";
+    case "rule":
+      return "依据内置识别规则";
+    case "rag":
+      return "参考常见消费案例";
+    case "tool":
+      return "由内置工具计算得出";
+    case "personal":
+      return "来自你的历史记录";
+    default:
+      return citation;
+  }
 }
 
 const CONFIDENCE_DOTS = [1, 2, 3, 4] as const;
@@ -116,7 +129,6 @@ export function InsightCard({
   const [tableMode, setTableMode] = useState(false);
   const [citationsOpen, setCitationsOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
-  const [confirmCount, setConfirmCount] = useState(0);
   const [confirmFlash, setConfirmFlash] = useState(false);
   const [disputed, setDisputed] = useState(false);
   const flashTimer = useRef<number | null>(null);
@@ -149,8 +161,7 @@ export function InsightCard({
     setConfirmed(next);
     setDisputed(false);
     if (next) {
-      // 主色高亮 800ms 后回落到已确认态；计数演示单用户审阅记录
-      setConfirmCount((c) => c + 1);
+      // 主色高亮 800ms 后回落到已确认态
       setConfirmFlash(true);
       flashTimer.current = window.setTimeout(() => setConfirmFlash(false), 800);
     }
@@ -163,7 +174,7 @@ export function InsightCard({
   }
 
   function handleChartClick(params: ECElementEvent) {
-    // 证据图点选 = 锚点追问入口（ChartAnchorLayer）：标签带阶段名便于面板展示
+    // 证据图点选 = 选中追问入口（ChartAnchorLayer）：标签带阶段名便于面板展示
     onDelve(insight.id, `${params.name ?? "数据点"}（${insight.stageName}）`);
   }
 
@@ -314,7 +325,7 @@ export function InsightCard({
                 aria-expanded={citationsOpen}
                 className="mt-2 flex items-center gap-1 text-xs font-medium text-(--color-ink-muted) transition-colors hover:text-(--color-ink-secondary)"
               >
-                引用 ({insight.citations.length})
+                来源 ({insight.citations.length})
                 <ChevronDown
                   className={`size-3.5 transition-transform ${citationsOpen ? "rotate-180" : ""}`}
                   aria-hidden
@@ -322,10 +333,10 @@ export function InsightCard({
               </button>
               {citationsOpen ? (
                 <ul className="mt-2 space-y-1 rounded-(--radius-md) bg-(--color-surface-2) px-3 py-2">
-                  {insight.citations.map((citation) => (
+                  {[...new Set(insight.citations.map(humanCitation))].map((citation) => (
                     <li
                       key={citation}
-                      className="truncate font-mono text-xs text-(--color-ink-secondary)"
+                      className="truncate text-xs text-(--color-ink-secondary)"
                       title={citation}
                     >
                       {citation}
@@ -349,7 +360,7 @@ export function InsightCard({
                 }`}
               >
                 <Check className="size-4" aria-hidden />
-                {confirmed ? `已确认 ${confirmCount}` : "确认"}
+                {confirmed ? "已确认 · 再点取消" : "确认"}
               </button>
               <button
                 type="button"
@@ -388,7 +399,7 @@ export function InsightCard({
               {confirmed ? (
                 <span className="ml-auto inline-flex items-center gap-1 text-xs text-(--color-good-ink)">
                   <ThumbsUp className="size-3.5" aria-hidden />
-                  已反馈给评测集
+                  谢谢反馈，我们会记下这个评价
                 </span>
               ) : null}
             </footer>

@@ -42,7 +42,7 @@ import { DEMO_ACCOUNT_META } from "@/lib/demo-data";
 import { featureFlags } from "@/lib/feature-flags";
 import { getRankTier } from "@/lib/rank";
 
-/** 当前激活账本（数据集）在 localStorage 中的键，与数据管理页共用 */
+/** 当前激活账本在本机存储中的键，与数据管理页共用 */
 const ACTIVE_BOOK_KEY = "spendct:active-book";
 
 /** 演示口径的累计体检次数：与演示成就解锁状态一致；正式接入后由体检记录统计 */
@@ -73,6 +73,24 @@ function formatDate(timestamp: number): string {
     month: "2-digit",
     day: "2-digit",
   });
+}
+
+/** 导入时间展示：当天显示「今天 14:30」，更早的显示日期 */
+function formatImportedAt(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (isToday) {
+    return `今天 ${date.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })}`;
+  }
+  return formatDate(timestamp);
 }
 
 /** 新盐：16 字节随机 hex，与注册流程同规格（修改密码时更换盐，避免同密码同哈希） */
@@ -237,7 +255,7 @@ function EditProfileModal({ user, onClose, onSaved }: EditProfileModalProps) {
       await upsertUser(updated);
       onSaved(updated);
     } catch {
-      setNicknameMsg("保存失败：本地存储不可用，请重试");
+      setNicknameMsg("保存失败，请重试");
       setNicknameBusy(false);
     }
   }
@@ -272,7 +290,7 @@ function EditProfileModal({ user, onClose, onSaved }: EditProfileModalProps) {
       await upsertUser(updated);
       onSaved(updated);
     } catch {
-      setPasswordMsg("保存失败：本地存储不可用，请重试");
+      setPasswordMsg("保存失败，请重试");
       setPasswordBusy(false);
     }
   }
@@ -421,7 +439,7 @@ function DangerAccountModal({ expectedNickname, busy, onConfirm, onClose }: Dang
   return (
     <Modal title="删除本地账户数据" onClose={onClose}>
       <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
-        此操作将删除当前账户记录、会话与个人配置，不可撤销。已上传的账单数据集保留在浏览器本地，不受影响。
+        此操作将删除当前账户记录、会话与个人配置，不可撤销。已上传的账单保留在浏览器本地，不受影响。
       </p>
       <label htmlFor="confirm-nickname" className="mt-4 block text-sm font-medium">
         输入「{expectedNickname}」以确认
@@ -464,14 +482,14 @@ interface QuickLinkDef {
   icon: LucideIcon;
   /** 关联功能开关：关闭时灰显「即将上线」 */
   flag?: keyof typeof featureFlags;
-  /** P2 能力角标（国赛窗口上线） */
-  tier?: "P2";
+  /** 「新功能」角标 */
+  isNew?: boolean;
 }
 
 const QUICK_LINKS: readonly QuickLinkDef[] = [
   { href: "/budget", label: "预算中心", desc: "12 类预算环与超支提醒", icon: Wallet, flag: "budget" },
-  { href: "/settings", label: "数据管理", desc: "数据集 · 导出 · 偏好", icon: Database },
-  { href: "/learn", label: "知识课堂", desc: "订阅陷阱与维权案例", icon: GraduationCap, flag: "learn", tier: "P2" },
+  { href: "/settings", label: "数据管理", desc: "账单 · 导出 · 偏好", icon: Database },
+  { href: "/learn", label: "知识课堂", desc: "订阅陷阱与维权案例", icon: GraduationCap, flag: "learn", isNew: true },
   { href: "/report", label: "年度报告", desc: "消费年报与年度海报", icon: BarChart3 },
   { href: "/subscriptions", label: "订阅雷达", desc: "连续扣费监控与倒计时", icon: BellRing },
   { href: "/privacy", label: "隐私说明", desc: "数据可见性对照表", icon: ShieldCheck },
@@ -570,7 +588,7 @@ function MeContent() {
       showToast(`已删除账本「${target.name}」`);
     } catch {
       setDeleteBookBusy(false);
-      showToast("删除失败：本地存储不可用，请重试");
+      showToast("删除失败，请重试");
     }
   }
 
@@ -596,7 +614,7 @@ function MeContent() {
       router.replace("/login");
     } catch {
       setDangerBusy(false);
-      showToast("删除失败：本地数据库不可用，请重试");
+      showToast("删除失败，请重试");
     }
   }
 
@@ -677,7 +695,7 @@ function MeContent() {
           icon={BookOpen}
           value={books.length}
           format={formatCount}
-          hint={booksLoading ? "读取中…" : "本机数据集"}
+          hint={booksLoading ? "读取中…" : "保存在本机"}
         />
         <StatTile
           label="累计笔数"
@@ -691,7 +709,7 @@ function MeContent() {
           icon={Wallet}
           value={DEMO_ACCOUNT_META.currentMonthExpenseCents}
           format={formatYuan}
-          hint="演示口径"
+          hint="示例数据"
         />
         <StatTile
           label="省下金额"
@@ -719,7 +737,7 @@ function MeContent() {
       {/* 我的账本 */}
       <section aria-label="我的账本">
         <div className="mb-3 flex items-center justify-between gap-3">
-          <SectionHeading icon={BookOpen} title="我的账本" sub="上传的账单数据集都归在这里" />
+          <SectionHeading icon={BookOpen} title="我的账本" sub="上传的账单都归在这里" />
           <Link
             href="/upload"
             className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-(--color-btn-primary) px-4 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover)"
@@ -739,7 +757,7 @@ function MeContent() {
             <FileSpreadsheet className="size-8 text-(--color-ink-muted)" aria-hidden />
             <p className="font-medium text-(--color-ink)">还没有账本——去上传第一份账单</p>
             <p className="max-w-sm text-xs text-(--color-ink-muted)">
-              支持微信 / 支付宝账单 CSV，也可以加载示例账单先看看效果
+              支持微信 / 支付宝的账单文件，也可以先加载示例账单看看效果
             </p>
             <Link
               href="/upload"
@@ -766,7 +784,9 @@ function MeContent() {
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate font-medium text-(--color-ink)">{book.name}</p>
+                      <p className="truncate font-medium text-(--color-ink)" title={book.id}>
+                        {book.name}
+                      </p>
                       {isActive ? (
                         <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-(--color-primary-soft) px-2 py-0.5 text-[10px] font-semibold text-(--color-primary)">
                           <Check className="size-3" aria-hidden />
@@ -775,11 +795,7 @@ function MeContent() {
                       ) : null}
                     </div>
                     <p className="mt-0.5 truncate text-xs text-(--color-ink-muted)">
-                      <span className="font-(--font-mono)">#{book.id.slice(0, 8)}</span>
-                      <span className="mx-1.5">·</span>
-                      {book.rowCount} 笔
-                      <span className="mx-1.5">·</span>
-                      {formatDate(book.createdAt)} 导入
+                      已导入 {book.rowCount} 条账单 · {formatImportedAt(book.createdAt)}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -831,12 +847,11 @@ function MeContent() {
                 <def.icon className="size-5" aria-hidden />
               </span>
             );
-            const badge =
-              def.tier === "P2" ? (
-                <span className="rounded-full bg-(--color-accent)/15 px-1.5 py-0.5 text-[10px] font-semibold text-(--color-accent)">
-                  P2
-                </span>
-              ) : null;
+            const badge = def.isNew ? (
+              <span className="rounded-full bg-(--color-accent)/15 px-1.5 py-0.5 text-[10px] font-semibold text-(--color-accent)">
+                新功能
+              </span>
+            ) : null;
             const content = (
               <>
                 {iconBox}
@@ -897,7 +912,7 @@ function MeContent() {
               <h2 className="text-lg font-bold text-(--color-critical-ink)">删除本地账户数据</h2>
             </div>
             <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--color-ink-secondary)">
-              删除当前账户、会话与个人配置，不可撤销。已上传的账单数据集保留在浏览器本地，不受影响；重新注册后即可继续使用。
+              删除当前账户、会话与个人配置，不可撤销。已上传的账单保留在浏览器本地，不受影响；重新注册后即可继续使用。
             </p>
             <button
               type="button"
@@ -920,7 +935,7 @@ function MeContent() {
           title="删除账本？"
           description={
             <>
-              将删除账本「{deleteBookTarget.name}」的记录。已导入的账单数据保留在本机数据集中，不受影响。
+              将删除账本「{deleteBookTarget.name}」的记录；已导入的账单数据仍保留在你的浏览器里。
             </>
           }
           confirmLabel="确认删除"

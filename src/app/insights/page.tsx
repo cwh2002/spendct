@@ -159,29 +159,24 @@ function mapChartUnit(measureField: string | undefined): DemoInsight["chartUnit"
 }
 
 /**
- * 引用 → 人类可读文案。ref 契约格式（07 §4 CitationSchema）：
- * sql:table|view:<id> / rule:<id> / rag:<caseId> / tool:<toolName> / personal:<anomalyId>。
+ * 引用 → 口语化来源文案（07 §4 CitationSchema 五类映射）：
+ * 表名、规则编号、案例编号等内部标识不直接展示，
+ * 统一说成账单明细、识别规则、消费案例等用户能懂的说法。
  */
 function formatCitation(source: RunInsightCard["sources"][number]): string {
-  const { kind, ref } = source;
-  const rest = ref.startsWith(`${kind}:`) ? ref.slice(kind.length + 1) : ref;
-  switch (kind) {
-    case "sql": {
-      // sql 引用带关系类型段：table → 「数据表」、view → 「视图」，其余形态原样兜底
-      if (rest.startsWith("table:")) return `数据表 ${rest.slice(6)}`;
-      if (rest.startsWith("view:")) return `视图 ${rest.slice(5)}`;
-      return `数据表 ${rest}`;
-    }
+  switch (source.kind) {
+    case "sql":
+      return "来自你的账单明细";
     case "rule":
-      return `规则 ${rest}`;
+      return "依据内置识别规则";
     case "rag":
-      return `案例 ${rest}`;
+      return "参考常见消费案例";
     case "tool":
-      return `工具 ${rest}`;
+      return "由内置工具计算得出";
     case "personal":
-      return `个人锚点 ${rest}`;
+      return "来自你的历史记录";
     default:
-      return ref;
+      return "其他来源";
   }
 }
 
@@ -294,7 +289,7 @@ function mapRunCard(card: RunInsightCard): DemoInsight {
     // 图表数据异步回填：查询中保持空数组，成功/退化后由 chartResults 覆盖
     chartData: [],
     chartLabels: [],
-    citations: card.sources.map(formatCitation),
+    citations: [...new Set(card.sources.map(formatCitation))],
   };
 }
 
@@ -641,7 +636,7 @@ function InsightsView() {
             <Kbd>/</Kbd> 追问
           </span>
           <span>
-            <Kbd>Esc</Kbd> 取消锚点
+            <Kbd>Esc</Kbd> 取消选中
           </span>
         </p>
       ) : null}

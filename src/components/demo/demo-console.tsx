@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 
 const THEME_STORAGE_KEY = "spendct:theme";
 
-/** 演示控制台动作：按钮触发 → 派发全局事件，各页按需监听（05 §7.3） */
+/** 演示讲解面板动作：按钮触发 → 派发全局事件，各页按需监听（05 §7.3） */
 export const DEMO_CONSOLE_EVENT = "spendct:demo-action";
 
 export type DemoAction =
@@ -39,10 +39,10 @@ const JUMP_KEYS: Record<string, string> = {
 };
 
 /**
- * 演示控制台（`?` 键呼出，05 §7.3）：
- * 评委提问时的应急武器——重放流水线、跳最后阶段、注入错误、切换暗色、
- * 断网模拟、恢复断点。mock 模式下全部计算在本机完成，断网不影响任何功能。
- * 注入/跳阶段/恢复三类动作由管线页监听 DEMO_CONSOLE_EVENT 执行（波 4 接真实引擎后生效）。
+ * 演示讲解面板（`?` 键呼出，05 §7.3）：
+ * 供演示讲解使用的小工具——重新演示体检过程、直接看结果、模拟一次失败、切换暗色、
+ * 试试断网也能用、接着上次演示继续。演示模式下全部计算在本机完成，断网不影响任何功能。
+ * 模拟失败/直接看结果/接着上次继续三类动作由体检页监听 DEMO_CONSOLE_EVENT 执行。
  */
 export function DemoConsole() {
   const router = useRouter();
@@ -106,22 +106,22 @@ export function DemoConsole() {
     }
     if (action === "simulate-offline") {
       flashToast(
-        "Mock 模式全部计算在本机完成：现在断开网络，所有功能照常可用（可现场验证）",
+        "本应用的计算都在你的浏览器里完成：断开网络试试，所有功能照样能用",
       );
       return;
     }
-    // 注入错误 / 跳最后阶段：派发全局事件，管线页监听执行（波 4 接真实引擎后生效）
+    // 模拟失败 / 直接看结果 / 接着上次继续：派发全局事件，体检页监听执行
     dispatchDemoAction(action);
     flashToast(hint);
   }
 
   const ACTIONS: { action: DemoAction; label: string; icon: typeof Play; hint: string }[] = [
-    { action: "replay-pipeline", label: "重放流水线", icon: Play, hint: "" },
-    { action: "jump-last-stage", label: "跳到最后阶段", icon: ArrowRightToLine, hint: "已请求跳到年度报告阶段" },
-    { action: "inject-error", label: "注入一次错误", icon: Bug, hint: "已注入一次错误（演示错误边界与降级）" },
+    { action: "replay-pipeline", label: "重新演示体检过程", icon: Play, hint: "" },
+    { action: "jump-last-stage", label: "直接看结果", icon: ArrowRightToLine, hint: "正在跳到结果页" },
+    { action: "inject-error", label: "模拟一次失败", icon: Bug, hint: "好的，接下来会演示遇到问题时 App 会怎么友好提示你" },
     { action: "toggle-dark", label: "切换暗色", icon: Moon, hint: "" },
-    { action: "simulate-offline", label: "断网模拟", icon: Wifi, hint: "" },
-    { action: "restore-checkpoint", label: "恢复断点", icon: RotateCcw, hint: "" },
+    { action: "simulate-offline", label: "试试断网也能用", icon: Wifi, hint: "" },
+    { action: "restore-checkpoint", label: "接着上次演示继续", icon: RotateCcw, hint: "" },
   ];
 
   return (
@@ -130,7 +130,7 @@ export function DemoConsole() {
         {open ? (
           <motion.div
             role="dialog"
-            aria-label="演示控制台"
+            aria-label="演示讲解面板"
             initial={{ opacity: 0, y: 12, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 12, scale: 0.98 }}
@@ -138,18 +138,18 @@ export function DemoConsole() {
             className="fixed bottom-20 right-4 z-50 w-72 rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-lg) md:bottom-6"
           >
             <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">演示控制台</p>
+              <p className="text-sm font-semibold">演示讲解面板</p>
               <button
                 type="button"
                 onClick={() => setOpen(false)}
-                aria-label="关闭演示控制台"
+                aria-label="关闭演示讲解面板"
                 className="grid size-7 place-items-center rounded-full text-(--color-ink-muted) transition-colors hover:bg-(--color-surface-2)"
               >
                 <X className="size-4" aria-hidden />
               </button>
             </div>
             <p className="mt-0.5 text-xs text-(--color-ink-muted)">
-              评委提问时的应急操作 · 再次按 ? 关闭
+              按 ? 开关 · 供演示讲解使用 · 再按 ? 收起
             </p>
             <div className="mt-3 grid grid-cols-2 gap-2">
               {ACTIONS.map(({ action, label, icon: Icon, hint }) => (
@@ -165,9 +165,9 @@ export function DemoConsole() {
               ))}
             </div>
             <p className="mt-3 border-t border-(--color-border) pt-2 text-[11px] leading-relaxed text-(--color-ink-muted)">
-              跳转快捷键：<kbd className="font-mono">b</kbd> 预算 ·{" "}
-              <kbd className="font-mono">l</kbd> 课堂 · <kbd className="font-mono">s</kbd>{" "}
-              设置
+              快捷跳转：按 <kbd className="font-mono">b</kbd> 去预算 ·{" "}
+              按 <kbd className="font-mono">l</kbd> 去课堂 · 按 <kbd className="font-mono">s</kbd>{" "}
+              去设置
             </p>
           </motion.div>
         ) : null}

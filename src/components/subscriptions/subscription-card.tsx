@@ -8,7 +8,6 @@ import {
   Check,
   Flag,
   Repeat,
-  Tag,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -95,15 +94,17 @@ function addCycle(date: Date, cycle: DemoSubscription["cycle"]): Date {
 
 export interface SubscriptionCardProps {
   sub: DemoSubscription;
+  /** 商户占位名：原始商户名已打码，由页面按卡片顺序生成「商户 A」式称呼 */
+  merchantLabel: string;
   onToast: (text: string, kind?: "ok" | "error") => void;
 }
 
 /**
- * 订阅卡：脱敏商户 + 规则徽标 + 周期徽标 + 下次扣费倒计时（按真实当天
+ * 订阅卡：商户名（已打码）+ 周期徽标 + 下次扣费倒计时（按真实当天
  * 从 lastChargeDate 按周期外推计算，不信任演示数据里的静态天数）+ 扣费轨迹
- * sparkline + 取消攻略 + 提醒/打标操作。
+ * sparkline + 取消攻略 + 提醒/标记操作。
  */
-export function SubscriptionCard({ sub, onToast }: SubscriptionCardProps) {
+export function SubscriptionCard({ sub, merchantLabel, onToast }: SubscriptionCardProps) {
   const cycleMeta = CYCLE_META[sub.cycle];
 
   // 下次扣费日：从最近扣费日按周期外推至 >= 今天；倒计时天数随之真实计算
@@ -179,16 +180,10 @@ export function SubscriptionCard({ sub, onToast }: SubscriptionCardProps) {
 
   return (
     <article className="flex flex-col gap-4 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)">
-      {/* 头行：脱敏商户 + 规则/周期徽标 + 倒计时徽标 */}
+      {/* 头行：商户名（已打码）+ 周期徽标 + 倒计时徽标 */}
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="font-(--font-mono) text-sm font-semibold tabular-nums">
-            {sub.merchantRef}
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-(--color-border) px-2 py-0.5 font-(--font-mono) text-[11px] text-(--color-ink-secondary)">
-            <Tag className="size-3" aria-hidden />
-            {sub.ruleId}
-          </span>
+          <span className="text-sm font-semibold">{merchantLabel}</span>
           <span className="inline-flex items-center gap-1 rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] text-(--color-ink-secondary)">
             <Repeat className="size-3" aria-hidden />
             {cycleMeta.short}
@@ -221,36 +216,34 @@ export function SubscriptionCard({ sub, onToast }: SubscriptionCardProps) {
       <div>
         <p className="mb-1.5 flex items-center gap-1.5 text-xs text-(--color-ink-secondary)">
           <Activity className="size-3.5" aria-hidden />
-          扣费轨迹（真实时间轴）
+          扣费轨迹
         </p>
         <ChargeSparkline charges={sub.charges} />
       </div>
 
-      {/* 打标状态条：反馈回流评测集的口径在页脚说明 */}
+      {/* 标记状态条：反馈的去向在页面下方说明 */}
       {label === "confirm" ? (
         <p className="flex items-center gap-1.5 rounded-(--radius-sm) bg-(--color-good)/10 px-3 py-2 text-xs font-medium text-(--color-good-ink) dark:text-(--color-good)">
           <Check className="size-3.5" aria-hidden />
-          已确认订阅，标记已进入规则评测集
+          已标记为订阅，谢谢你的反馈！
         </p>
       ) : null}
       {label === "false-positive" ? (
         <p className="flex items-center gap-1.5 rounded-(--radius-sm) bg-(--color-critical)/10 px-3 py-2 text-xs font-medium text-(--color-critical-ink) dark:text-(--color-critical)">
           <Flag className="size-3.5" aria-hidden />
-          已标记误报，规则将按此反馈迭代
+          已标记为误报，我们会减少对这类扣费的打扰
         </p>
       ) : null}
 
       <CancelGuide
         subId={sub.id}
-        merchantRef={sub.merchantRef}
-        ruleId={sub.ruleId}
         amountCents={sub.amountCents}
         cycleLabel={cycleMeta.full}
         nextChargeDate={fmtDate(nextDate)}
         onToast={onToast}
       />
 
-      {/* 操作行：提醒 + 打标 */}
+      {/* 操作行：提醒 + 标记 */}
       <div className="flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-4">
         <button
           type="button"

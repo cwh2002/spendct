@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-const TRUST_ITEMS = ["密码仅哈希存于本机", "无服务端数据库", "明细从不上传"] as const;
+const TRUST_ITEMS = ["密码只存在你的设备上", "你的数据不留在服务器", "账单明细从不上传"] as const;
 
 /**
  * 登录/注册卡片底部的信任条：三条本地化承诺 + 隐私说明入口。

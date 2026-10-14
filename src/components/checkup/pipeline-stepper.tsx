@@ -1,11 +1,18 @@
 "use client";
 
-import { Check, ChevronRight, CirclePause, X } from "lucide-react";
+import { STAGE_DISPLAY_NAMES } from "@/lib/pipeline/stage";
+import { Check, CirclePause, X } from "lucide-react";
 import type { StageState, StageStatus } from "./types";
 
-/** 耗时展示：不足 1s 显示毫秒，超过显示秒（保留 1 位） */
+/** 各步骤的用途说明（复用 stage.ts 展示名文案，让用户一眼看懂每一步在干什么） */
+const STAGE_SUBTITLES = STAGE_DISPLAY_NAMES as Record<
+  string,
+  { name: string; subtitle: string; order: number } | undefined
+>;
+
+/** 耗时展示：统一转成秒（保留 1 位），如「0.5 秒」 */
 export function formatMs(ms: number): string {
-  return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)} 秒`;
 }
 
 function StatusDot({ status }: { status: StageStatus }) {
@@ -69,13 +76,13 @@ function StageSummary({ stage }: { stage: StageState }) {
     case "succeeded":
       return (
         <p className="mt-1.5 text-sm tabular-nums text-(--color-ink-secondary)">
-          产出 {stage.cards} 张卡 · {formatMs(stage.elapsedMs)}
+          生成 {stage.cards} 条分析 · 用时 {formatMs(stage.elapsedMs)}
         </p>
       );
     case "paused":
-      return <p className="mt-1.5 text-sm text-(--color-warning-ink)">已暂停 · 进度已保存于本机</p>;
+      return <p className="mt-1.5 text-sm text-(--color-warning-ink)">已暂停 · 进度已保存在你的设备上</p>;
     case "failed":
-      return <p className="mt-1.5 text-sm text-(--color-critical-ink)">阶段失败 · 点开查看详情</p>;
+      return <p className="mt-1.5 text-sm text-(--color-critical-ink)">这步没跑通 · 点开查看详情</p>;
     case "skipped":
       return <p className="mt-1.5 text-sm text-(--color-ink-muted)">已跳过</p>;
     default:
@@ -95,10 +102,11 @@ export interface PipelineStepperProps {
  */
 export function PipelineStepper({ stages, onStageClick }: PipelineStepperProps) {
   return (
-    <ol aria-label="体检六阶段" className="flex flex-col gap-3">
+    <ol aria-label="体检六个步骤" className="flex flex-col gap-3">
       {stages.map((stage, i) => {
         const isLast = i === stages.length - 1;
         const skipped = stage.status === "skipped";
+        const subtitle = STAGE_SUBTITLES[stage.id]?.subtitle;
         return (
           <li key={stage.id} className="flex gap-3">
             {/* 左轨：状态圆点 + 连接线 */}
@@ -112,7 +120,7 @@ export function PipelineStepper({ stages, onStageClick }: PipelineStepperProps) 
             <button
               type="button"
               onClick={() => onStageClick?.(stage)}
-              aria-label={`${stage.name}阶段详情`}
+              aria-label={`${stage.name}步骤详情`}
               aria-current={stage.status === "running" ? "step" : undefined}
               className={`mb-3 flex min-h-16 w-full items-center justify-between gap-3 rounded-(--radius-lg) border bg-(--color-surface) p-4 text-left shadow-(--shadow-sm) transition ${
                 stage.status === "running"
@@ -131,12 +139,10 @@ export function PipelineStepper({ stages, onStageClick }: PipelineStepperProps) 
                     {stage.name}
                   </span>
                 </span>
+                {subtitle ? <p className="text-xs text-(--color-ink-muted)">{subtitle}</p> : null}
                 <StageSummary stage={stage} />
               </span>
-              <ChevronRight
-                className="size-4 shrink-0 text-(--color-ink-muted)"
-                aria-hidden
-              />
+              <span className="shrink-0 text-xs font-medium text-(--color-ink-secondary)">查看详情</span>
             </button>
           </li>
         );

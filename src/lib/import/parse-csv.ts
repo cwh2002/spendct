@@ -26,7 +26,8 @@ export const STANDARD_COLUMNS = [
 const DEFAULT_CATEGORY = "其他";
 
 /** 编码提示文案：上传页直接渲染，保持唯一措辞 */
-const ENCODING_WARNING = "文件可能是 GBK/GB2312 编码，请用记事本另存为 UTF-8 后重试";
+const ENCODING_WARNING =
+  "文件里的中文显示乱码了，可能是保存格式的问题。用记事本打开文件，点『文件 → 另存为』，把最下面的『编码』选成 UTF-8 保存后，再上传一次";
 
 type CanonicalField =
   | "datetime" // 同时产出 dateIso 与 timeIso
@@ -328,7 +329,7 @@ function pickPositional(colCount: number): {
     if (!field) return;
     map[field].push(index);
     const standard = FIELD_TO_STANDARD[field];
-    if (standard) mapping[`第${index + 1}列`] = standard;
+    if (standard) mapping[`第${index + 1}栏`] = standard;
   });
   return { map, mapping, layout };
 }
@@ -357,7 +358,7 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
   if (parsed.errors.length > 0) {
     const firstErrorLine = (parsed.errors[0]?.row ?? 0) + 1;
     warnings.push(
-      `CSV 结构异常 ${parsed.errors.length} 处（首次出现在第 ${firstErrorLine} 行附近），异常行之后的内容可能不完整`,
+      `文件里有 ${parsed.errors.length} 处格式不太对（第一次出现在第 ${firstErrorLine} 行附近），后面的内容可能读不全，建议重新导出一份完整账单`,
     );
   }
 
@@ -367,7 +368,7 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
       format: "unknown",
       confidence: "low",
       rows: [],
-      warnings: [...warnings, "文件为空或没有任何数据行"],
+      warnings: [...warnings, "文件是空的，里面没有账单内容"],
       mapping: {},
     };
   }
@@ -394,14 +395,14 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
     positional = true;
     dataStart = 0;
     warnings.push(
-      `首行不是表头，已按${fallback.layout === "wechat" ? "微信" : "支付宝"}列位置规则解析，请在预览页确认字段映射`,
+      `这个文件第一行直接就是账单数据（没有栏目行），已按${fallback.layout === "wechat" ? "微信" : "支付宝"}账单的常见格式识别，请在右侧确认识别结果`,
     );
   } else {
     return {
       format: "unknown",
       confidence: "low",
       rows: [],
-      warnings: [...warnings, "无法识别为微信或支付宝账单，请确认导出文件的表头结构"],
+      warnings: [...warnings, "无法识别为微信或支付宝账单，请确认你选择的是正确的账单文件"],
       mapping: {},
     };
   }
@@ -413,7 +414,7 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
       rows: [],
       warnings: [
         ...warnings,
-        "无法确定账单来源渠道：表头缺少「商户单号」「商家订单号」等渠道标识列，文件名也未能提示渠道",
+        "没认出这是微信还是支付宝的账单。请确认你导出的是微信『下载账单』或支付宝『开具交易流水证明』的文件，重新选择试试",
       ],
       mapping,
     };
@@ -428,10 +429,12 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
     else skipCounts[outcome.reason] += 1;
   }
 
-  if (skipCounts.badDate > 0) warnings.push(`跳过 ${skipCounts.badDate} 行：日期无法解析`);
-  if (skipCounts.badAmount > 0) warnings.push(`跳过 ${skipCounts.badAmount} 行：金额无法解析`);
+  if (skipCounts.badDate > 0) warnings.push(`有 ${skipCounts.badDate} 笔记录没认出来：日期格式不认识`);
+  if (skipCounts.badAmount > 0) {
+    warnings.push(`有 ${skipCounts.badAmount} 笔记录没认出来：金额格式不认识`);
+  }
   if (skipCounts.zeroAmount > 0) {
-    warnings.push(`跳过 ${skipCounts.zeroAmount} 行：金额为 0（多为不计收支的转账/红包）`);
+    warnings.push(`有 ${skipCounts.zeroAmount} 笔金额为 0，多为转账或红包，不记入收支`);
   }
 
   const duplicateCount = countDuplicates(rows);

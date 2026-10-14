@@ -9,8 +9,8 @@ import {
   Check,
   CheckCircle2,
   PencilLine,
-  Sparkles,
   Table,
+  Trash2,
   TrendingUp,
   X,
   Zap,
@@ -23,6 +23,7 @@ import { Container } from "@/components/layout/container";
 import { DEMO_BUDGET, DEMO_FORECAST } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { mockBudgetAdvice, type MockBudgetAdvice } from "@/lib/llm/mock-narratives";
+import { parseQuickEntryText } from "@/lib/llm/quick-entry-rule";
 import { usePipeline } from "@/lib/pipeline/store";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
@@ -50,6 +51,9 @@ const CATEGORIES_12 = [
 const KEY_MANUAL = "spendct:manual-entries";
 /** 分类预算覆盖值：{ 类别: 预算分 }，demo 预算为缺省值 */
 const KEY_BUDGET = "spendct:budget:v1";
+
+/** 快速记账示例：点一下自动带入并解析，零学习成本 */
+const QUICK_EXAMPLES = ["中午食堂花了 15", "昨天打车 23.5", "兼职赚了 200", "月初房租 1500"];
 
 interface ManualEntry {
   id: string;
@@ -89,6 +93,12 @@ function fmtPct(a: number, b: number): number {
   return b > 0 ? Math.round((a / b) * 100) : 0;
 }
 
+/** ISO 日期 → 「10月13日」短格式（手动记账列表与入账横幅用） */
+function fmtDateCN(iso: string): string {
+  const parts = iso.split("-");
+  return `${Number(parts[1])}月${Number(parts[2])}日`;
+}
+
 function toDateInput(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
@@ -120,7 +130,7 @@ function saveJson(key: string, value: unknown): void {
   }
 }
 
-/* —— 快速记账本地规则解析 —— */
+/* —— 快速记账：解析统一走 src/lib/llm/quick-entry-rule（单一来源，06 §⑥.1） —— */
 
 interface QuickDraft {
   amount: string; // 元，输入框字符串
@@ -132,69 +142,18 @@ interface QuickDraft {
 
 type ParseOutcome = { ok: true; draft: QuickDraft } | { ok: false; reason: string };
 
-/** 方向关键词：出现即判定收入（退款按收入方向记录，与导入口径一致） */
-const INCOME_KEYWORDS = ["收入", "退款", "报销", "工资", "红包", "转账", "返现", "奖学金", "入账", "收到"];
-
-/**
- * 类别关键词表（顺序即优先级，先命中先归类）：
- * 订阅置于娱乐之前，避免「视频会员充值」被「充值」误归娱乐；
- * 「红包」在方向层已判为收入，不再作为人情支出关键词。
- */
-const CATEGORY_KEYWORDS: Array<[string, string[]]> = [
-  ["餐饮", ["食堂", "外卖", "奶茶", "咖啡", "早餐", "午餐", "晚餐", "夜宵", "餐厅", "聚餐", "火锅", "烧烤", "麦当劳", "肯德基", "瑞幸", "饭"]],
-  ["交通", ["地铁", "公交", "打车", "滴滴", "高铁", "火车", "机票", "飞机", "单车", "加油", "停车"]],
-  ["购物", ["淘宝", "京东", "拼多多", "超市", "购物", "衣服", "鞋", "数码", "快递", "买"]],
-  ["订阅", ["会员", "订阅", "续费", "包月", "包年", "季卡", "月卡"]],
-  ["娱乐", ["电影", "游戏", "演唱会", "演出", "剧本杀", "KTV", "充值", "打赏", "游乐场", "直播"]],
-  ["居住", ["房租", "水电", "燃气", "物业", "网费", "住宿"]],
-  ["通讯", ["话费", "流量", "宽带"]],
-  ["医疗", ["医院", "药", "挂号", "体检", "诊所"]],
-  ["教育", ["学费", "教材", "课程", "培训", "报名", "书"]],
-  ["人情", ["份子", "礼物"]],
-  ["金融", ["基金", "理财", "股票", "利息"]],
-];
-
-/**
- * 一句话记账的本地规则解析：
- * 金额正则支持「15」「15 块」「15 元」「¥15」，「万」级金额直接拒绝（与 quick-entry
- * 提示词口径一致，06 §⑥.1）；日期只识别「昨天/前天」，缺省取今天。
- * LLM 解析任务接通后本函数退化为兜底，入口 UI 不变。
- */
-function parseQuickText(text: string, today: Date): ParseOutcome {
-  const trimmed = text.trim();
-  if (!trimmed) return { ok: false, reason: "先输入一句话，例如「中午食堂花了 15」" };
-  if (/[\d.]+\s*万/.test(trimmed)) {
-    return { ok: false, reason: "暂不支持「万」级金额，请直接输入数字" };
-  }
-  const match = trimmed.match(/(?:[¥￥]\s*)?(\d+(?:\.\d{1,2})?)\s*(?:元|块|块钱)?/);
-  const rawAmount = match?.[1] ?? "";
-  const yuan = Number(rawAmount);
-  if (!rawAmount || !Number.isFinite(yuan) || yuan <= 0) {
-    return { ok: false, reason: "没有识别到金额，试试「中午食堂花了 15」" };
-  }
-
-  const direction = INCOME_KEYWORDS.some((k) => trimmed.includes(k)) ? "income" : "expense";
-
-  let category = "其他";
-  for (const [cat, words] of CATEGORY_KEYWORDS) {
-    if (words.some((w) => trimmed.includes(w))) {
-      category = cat;
-      break;
-    }
-  }
-
-  const date = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  if (trimmed.includes("前天")) date.setDate(date.getDate() - 2);
-  else if (trimmed.includes("昨天")) date.setDate(date.getDate() - 1);
-
+/** 规则解析结果 → 可编辑草稿：金额从分转输入框字符串，日期已由规则解析填好 */
+function draftFromRule(text: string, todayIso: string): ParseOutcome {
+  const result = parseQuickEntryText(text, todayIso);
+  if (!result.parseable) return { ok: false, reason: result.reason ?? "没识别出金额，请补一句数字" };
   return {
     ok: true,
     draft: {
-      amount: formatAmountInput(Math.round(yuan * 100)),
-      direction,
-      category,
-      date: toDateInput(date),
-      note: trimmed.slice(0, 60),
+      amount: formatAmountInput(result.amountCents ?? 0),
+      direction: result.direction ?? "expense",
+      category: result.category ?? "其他",
+      date: result.dateIso ?? todayIso,
+      note: text.slice(0, 60),
     },
   };
 }
@@ -276,7 +235,6 @@ const EMPTY_REAL_DATA: RealBudgetData = {
 interface ForecastView {
   months: string[]; // YYYY-MM
   valuesCents: number[];
-  method: string;
   /** 是否来自真实数据外推（决定文案与免责声明口径） */
   real: boolean;
   /** 参与拟合的历史月数（demo 为 0） */
@@ -364,7 +322,6 @@ function extrapolateForecast(history: RealMonthRow[]): ForecastView | null {
   return {
     months,
     valuesCents,
-    method: n >= 2 ? "linear_trend_6m" : "recent_mean",
     real: true,
     historyMonths: n,
     slopeCentsPerMonth: Math.round(slope),
@@ -412,8 +369,6 @@ interface AdviceState {
   headline: string;
   advice: string;
   actions: AdviceAction[];
-  /** mock：/api/ai/task 服务端模板 JSON；live：/api/ai/chat 流式；local：本地模板兜底 */
-  source: "mock" | "live" | "local";
 }
 
 /**
@@ -583,7 +538,7 @@ function BudgetEditModal({ category, budgetCents, onSave, onClose }: BudgetEditM
         </div>
 
         <p className="mt-3 text-xs leading-relaxed text-(--color-ink-muted)">
-          预算对本月与未来两月生效；历史月份只读（06 §7 写入护栏）。
+          改完对本月和接下来两个月生效，之前的月份不能改。
         </p>
 
         <div className="mt-5 flex justify-end gap-2">
@@ -624,6 +579,8 @@ function BudgetContent() {
   // 快速记账
   const [entryText, setEntryText] = useState("");
   const [draft, setDraft] = useState<QuickDraft | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [lastSaved, setLastSaved] = useState<ManualEntry | null>(null);
   const [entries, setEntries] = useState<ManualEntry[]>(() => {
     const list = loadJson<unknown>(KEY_MANUAL, []);
     return Array.isArray(list) ? (list as ManualEntry[]) : [];
@@ -753,7 +710,6 @@ function BudgetContent() {
     return {
       months: [...DEMO_FORECAST.months],
       valuesCents: [...DEMO_FORECAST.valuesCents],
-      method: DEMO_FORECAST.method,
       real: false,
       historyMonths: 0,
       slopeCentsPerMonth: 0,
@@ -771,16 +727,42 @@ function BudgetContent() {
     });
   }, []);
 
-  // 本月手动记账笔数（账本接通前的本地统计口径）
+  // 本月手动记账笔数（本地账本口径）
   const monthEntryCount = useMemo(() => {
     const prefix = toDateInput(new Date()).slice(0, 7);
     return entries.filter((e) => e.ts.startsWith(prefix)).length;
   }, [entries]);
 
-  function handleParse() {
-    const outcome = parseQuickText(entryText, new Date());
+  // 最近手动记账（倒序 5 条）：入账后列表即时更新，每笔的去向一目了然
+  const recentEntries = useMemo(
+    () =>
+      [...entries]
+        .sort((a, b) => (a.ts === b.ts ? (a.id < b.id ? 1 : -1) : a.ts < b.ts ? 1 : -1))
+        .slice(0, 5),
+    [entries],
+  );
+
+  // 当前展示月份的手动记账汇总：与体检账单分开统计，避免两个口径混淆
+  const shownMonthManual = useMemo(() => {
+    const base = new Date();
+    const d = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const monthEntries = entries.filter((e) => e.ts.startsWith(key));
+    const incomeCents = monthEntries
+      .filter((e) => e.direction === "income")
+      .reduce((sum, e) => sum + e.amountCents, 0);
+    const expenseCents = monthEntries
+      .filter((e) => e.direction === "expense")
+      .reduce((sum, e) => sum + e.amountCents, 0);
+    return { count: monthEntries.length, incomeCents, expenseCents };
+  }, [entries, monthOffset]);
+
+  function handleParse(text: string = entryText) {
+    setParseError(null);
+    setLastSaved(null);
+    const outcome = draftFromRule(text, toDateInput(new Date()));
     if (!outcome.ok) {
-      showToast(outcome.reason, "error");
+      setParseError(outcome.reason);
       return;
     }
     setDraft(outcome.draft);
@@ -809,10 +791,18 @@ function BudgetContent() {
     const next = [...entries, entry];
     setEntries(next);
     saveJson(KEY_MANUAL, next);
-    showToast("已入账");
+    // 入账反馈：绿色横幅 + 下方「最近记账」列表即时出现这笔（替代一闪而过的 toast）
+    setLastSaved(entry);
     setDraft(null);
     setEntryText("");
     inputRef.current?.focus();
+  }
+
+  function handleDeleteEntry(id: string) {
+    const next = entries.filter((e) => e.id !== id);
+    setEntries(next);
+    saveJson(KEY_MANUAL, next);
+    if (lastSaved?.id === id) setLastSaved(null);
   }
 
   function handleSaveBudget(category: string, cents: number) {
@@ -847,7 +837,7 @@ function BudgetContent() {
     };
   }, [ratio, severity]);
 
-  // 预算 vs 实际：两组柱 + 图例（≥2 系列必配图例），数值轴为元
+  // 预算与实际对比：两组柱 + 图例（≥2 系列必配图例），数值轴为元
   const barOption = useCallback((): ECOption => {
     const t = chartInk();
     const budgetColor = cssVar("--color-chart-1");
@@ -1000,7 +990,6 @@ function BudgetContent() {
           headline: local.headline,
           advice: local.advice,
           actions: local.actions,
-          source: "local",
         },
       });
     };
@@ -1010,10 +999,9 @@ function BudgetContent() {
         key: adviceKey,
         state: {
           status: "loading",
-          headline: "正在生成 AI 建议…",
+          headline: "正在生成建议…",
           advice: "",
           actions: [],
-          source: "mock",
         },
       });
       try {
@@ -1043,7 +1031,6 @@ function BudgetContent() {
                         a === "adjust_budget" || a === "view_detail" || a === "dismiss",
                     )
                   : [],
-                source: "mock",
               },
             });
             return;
@@ -1068,7 +1055,6 @@ function BudgetContent() {
             headline: mockBudgetAdvice(ratio).headline,
             advice: "",
             actions: actionsForSeverity(severity),
-            source: "live",
           },
         });
         const reader = chatRes.body.getReader();
@@ -1116,7 +1102,7 @@ function BudgetContent() {
           </span>
         </div>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--color-ink-secondary)">
-          月度分类预算 + 一句话快速记账 + 超支提示 + 下月预测。预算与手动账单只保存在你的浏览器本地。
+          在这里定每月预算、一句话记账、看超支提醒和下月走势。所有数据只保存在你自己的浏览器里，别人看不到。
         </p>
       </header>
 
@@ -1129,16 +1115,11 @@ function BudgetContent() {
                 <Zap className="size-4.5 text-(--color-primary)" aria-hidden />
                 快速记账
               </h2>
-              <span className="text-xs text-(--color-ink-muted)">试试：「中午食堂花了 15」「昨天打车 23.5」</span>
+              <span className="text-xs text-(--color-ink-muted)">一句话记一笔，金额、类别和日期会自动识别，记完就出现在下方「最近记账」里</span>
             </div>
 
-            <p className="mt-3 flex items-center gap-1.5 text-xs text-(--color-ink-muted)">
-              <Sparkles className="size-3.5" aria-hidden />
-              AI 解析接入中，当前为本地规则模式
-            </p>
-
             <form
-              className="mt-2 flex gap-2"
+              className="mt-3 flex gap-2"
               onSubmit={(e) => {
                 e.preventDefault();
                 handleParse();
@@ -1147,9 +1128,13 @@ function BudgetContent() {
               <input
                 ref={inputRef}
                 value={entryText}
-                onChange={(e) => setEntryText(e.target.value)}
+                onChange={(e) => {
+                  setEntryText(e.target.value);
+                  if (parseError) setParseError(null);
+                  if (lastSaved) setLastSaved(null);
+                }}
                 maxLength={200}
-                placeholder="一句话记一笔，如「中午食堂花了 15」"
+                placeholder="例如「中午食堂花了 15」「兼职赚了 200」"
                 aria-label="记账内容"
                 className="h-11 min-w-0 flex-1 rounded-(--radius-md) border border-(--color-border) bg-(--color-surface-page) px-3.5 text-sm text-(--color-ink) outline-none transition-colors placeholder:text-(--color-ink-muted) focus:border-(--color-primary)"
               />
@@ -1157,9 +1142,38 @@ function BudgetContent() {
                 type="submit"
                 className="h-11 shrink-0 rounded-(--radius-md) bg-(--color-btn-primary) px-5 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover)"
               >
-                解析
+                识别
               </button>
             </form>
+
+            {/* 常用例子点一下即带入解析，零学习成本 */}
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-(--color-ink-muted)">试试：</span>
+              {QUICK_EXAMPLES.map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  onClick={() => {
+                    setEntryText(example);
+                    handleParse(example);
+                  }}
+                  className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary) transition-colors hover:border-(--color-primary) hover:text-(--color-primary)"
+                >
+                  {example}
+                </button>
+              ))}
+            </div>
+
+            {/* 解析失败的原因直接显示在输入框下方，不再是一闪而过的提示 */}
+            {parseError ? (
+              <p
+                className="mt-2 flex items-start gap-1.5 text-xs leading-relaxed text-(--color-critical-ink)"
+                role="alert"
+              >
+                <AlertCircle className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+                {parseError}
+              </p>
+            ) : null}
 
             <AnimatePresence>
               {draft ? (
@@ -1182,7 +1196,7 @@ function BudgetContent() {
                         <X className="size-4" aria-hidden />
                       </button>
                     </div>
-                    <p className="mt-0.5 text-xs text-(--color-ink-muted)">解析结果可编辑，确认后写入本地账本</p>
+                    <p className="mt-0.5 text-xs text-(--color-ink-muted)">识别结果可以直接改，确认后这笔账就算记上了</p>
 
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <label className="block">
@@ -1287,9 +1301,73 @@ function BudgetContent() {
               ) : null}
             </AnimatePresence>
 
-            <p className="mt-3 text-xs text-(--color-ink-muted)">
-              本月已手动记账 <span className="font-semibold tabular-nums text-(--color-ink-secondary)">{monthEntryCount}</span> 笔 · 数据仅存于浏览器本地
-            </p>
+            {/* 入账成功横幅：说明这笔记到了哪里（日期、收支、金额、类别） */}
+            <AnimatePresence>
+              {lastSaved ? (
+                <motion.div
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="mt-3 flex items-start gap-2 rounded-(--radius-md) border border-(--color-good)/40 bg-(--color-good)/10 px-3 py-2.5"
+                  role="status"
+                >
+                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-(--color-good-ink)" aria-hidden />
+                  <p className="text-sm text-(--color-ink)">
+                    已记一笔：{fmtDateCN(lastSaved.ts)} ·{" "}
+                    <span className={lastSaved.direction === "income" ? "text-(--color-good-ink)" : ""}>
+                      {lastSaved.direction === "income" ? "收入" : "支出"} ¥{fmtYuan(lastSaved.amountCents)}
+                    </span>{" "}
+                    · {lastSaved.category} · {lastSaved.note}
+                  </p>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            {/* 最近记账列表：每笔的去向都落在这里，可单笔删除 */}
+            <div className="mt-4 border-t border-(--color-border) pt-3">
+              <p className="flex items-baseline justify-between gap-2 text-xs text-(--color-ink-muted)">
+                <span>
+                  最近记账 · 本月已记{" "}
+                  <span className="font-semibold tabular-nums text-(--color-ink-secondary)">{monthEntryCount}</span>{" "}
+                  笔
+                </span>
+                <span>仅保存在这台设备的浏览器里</span>
+              </p>
+              {recentEntries.length > 0 ? (
+                <ul className="mt-2 divide-y divide-(--color-border)">
+                  {recentEntries.map((entry) => (
+                    <li key={entry.id} className="flex items-center gap-3 py-2">
+                      <span className="w-16 shrink-0 text-xs tabular-nums text-(--color-ink-muted)">
+                        {fmtDateCN(entry.ts)}
+                      </span>
+                      <span
+                        className={`w-20 shrink-0 text-sm font-medium tabular-nums ${
+                          entry.direction === "income" ? "text-(--color-good-ink)" : "text-(--color-ink)"
+                        }`}
+                      >
+                        {entry.direction === "income" ? "+" : "-"}¥{fmtYuan(entry.amountCents)}
+                      </span>
+                      <span className="shrink-0 rounded-full bg-(--color-surface-2) px-2 py-0.5 text-xs text-(--color-ink-secondary)">
+                        {entry.category}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-xs text-(--color-ink-muted)">{entry.note}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteEntry(entry.id)}
+                        aria-label={`删除这笔：${entry.note || entry.category} ${fmtYuan(entry.amountCents)} 元`}
+                        className="grid size-7 shrink-0 place-items-center rounded-full text-(--color-ink-muted) transition-colors hover:bg-(--color-critical)/10 hover:text-(--color-critical-ink)"
+                      >
+                        <Trash2 className="size-3.5" aria-hidden />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 rounded-(--radius-md) bg-(--color-surface-page) px-3 py-3 text-xs text-(--color-ink-muted)">
+                  还没有手动记的账——在上面说一句话记一笔，比如「中午食堂花了 15」。
+                </p>
+              )}
+            </div>
           </div>
         </section>
 
@@ -1322,8 +1400,8 @@ function BudgetContent() {
               {monthOffset > 0 ? (
                 <p className="mt-2 text-xs text-(--color-ink-muted)">
                   {lastRun
-                    ? "未来月为外推数据（基于近 90 天月均支出 ×0.9 逐月衰减）"
-                    : "未来月为演示外推数据（实际值 ×0.9 逐月衰减）"}
+                    ? "下月数字根据最近 90 天的月均支出估算，每月按 9 折递减"
+                    : "未来月份是示例估算，每月按 9 折递减"}
                 </p>
               ) : null}
 
@@ -1360,6 +1438,34 @@ function BudgetContent() {
                       tone={remainingCents >= 0 ? undefined : "critical"}
                     />
                   </div>
+                  <p className="text-xs text-(--color-ink-muted)">
+                    {shownMonthManual.count > 0 ? (
+                      <>
+                        本月手动记账{" "}
+                        <span className="font-semibold tabular-nums text-(--color-ink-secondary)">
+                          {shownMonthManual.count}
+                        </span>{" "}
+                        笔（单独统计，不计入上方预算数字）：收入{" "}
+                        <span className="tabular-nums text-(--color-good-ink)">
+                          ¥{fmtYuan(shownMonthManual.incomeCents, 0)}
+                        </span>{" "}
+                        · 支出{" "}
+                        <span className="tabular-nums text-(--color-ink-secondary)">
+                          ¥{fmtYuan(shownMonthManual.expenseCents, 0)}
+                        </span>{" "}
+                        <a href="#quick" className="text-(--color-primary) hover:underline">
+                          查看明细
+                        </a>
+                      </>
+                    ) : (
+                      <>
+                        本月还没有手动记账，{" "}
+                        <a href="#quick" className="text-(--color-primary) hover:underline">
+                          去快速记账记一笔
+                        </a>
+                      </>
+                    )}
+                  </p>
                   <p className="text-sm leading-relaxed text-(--color-ink-secondary)">
                     {severity === "ok" && `预算执行健康，剩余 ¥${fmtYuan(remainingCents, 0)} 可灵活支配。`}
                     {severity === "warn" && `已接近本月预算上限，未来支出建议对照分类预算执行。`}
@@ -1377,9 +1483,6 @@ function BudgetContent() {
                   <TrendingUp className="size-4.5 text-(--color-primary)" aria-hidden />
                   下月预测
                 </h2>
-                <span className="rounded-full border border-(--color-border) px-2 py-0.5 font-(--font-mono) text-[11px] text-(--color-ink-muted)">
-                  method={DEMO_FORECAST.method}
-                </span>
               </div>
 
               <EChart
@@ -1392,22 +1495,22 @@ function BudgetContent() {
               {forecastView.real ? (
                 <>
                   <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
-                    基于近 {forecastView.historyMonths} 个月真实支出的线性趋势外推：未来三个月月均支出约 ¥
+                    根据你最近 {forecastView.historyMonths} 个月的实际支出走势估算：未来三个月月均支出约 ¥
                     {forecastAvgYuan.toLocaleString("zh-CN")}
                     {forecastView.slopeCentsPerMonth === 0
                       ? "，走势基本持平"
-                      : `，趋势${forecastView.slopeCentsPerMonth > 0 ? "月增" : "月减"} ¥${fmtYuan(Math.abs(forecastView.slopeCentsPerMonth), 0)}`}
-                    。外推只延续历史斜率，不含一次性事件与你的计划变更。
+                      : `，预计每月${forecastView.slopeCentsPerMonth > 0 ? "多花" : "少花"} ¥${fmtYuan(Math.abs(forecastView.slopeCentsPerMonth), 0)}`}
+                    。这个估算只延续过去的走势，临时的大额花销和你的计划没算进去。
                   </p>
-                  <p className="mt-2 text-xs text-(--color-ink-muted)">线性趋势外推，仅作参考，不构成建议</p>
+                  <p className="mt-2 text-xs text-(--color-ink-muted)">自动估算，仅供参考</p>
                 </>
               ) : (
                 <>
                   <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
-                    近三月季节基线外推：未来三个月月均支出约 ¥{forecastAvgYuan.toLocaleString("zh-CN")}
-                    ，11 月受购物节影响略高、1 月回落。预测只反映季节模式，不含一次性事件。
+                    按季节规律估算：未来三个月月均支出约 ¥{forecastAvgYuan.toLocaleString("zh-CN")}
+                    ，11 月受购物节影响略高、1 月回落。临时的大额花销没算进去。
                   </p>
-                  <p className="mt-2 text-xs text-(--color-ink-muted)">朴素季节外推，仅作参考，不构成建议</p>
+                  <p className="mt-2 text-xs text-(--color-ink-muted)">自动估算，仅供参考</p>
                 </>
               )}
             </div>
@@ -1476,8 +1579,8 @@ function BudgetContent() {
           </div>
         </section>
 
-        {/* 超支贴士：demo 动线模板文案维持现状；真实动线接 budget-advice 任务
-            （mock 模板 JSON / live 流式逐字 / 本地模板兜底，状态诚实标注） */}
+        {/* 超支贴士：demo 动线用示例文案；真实动线接 budget-advice 任务生成
+            （模板 JSON / 流式逐字 / 本地兜底） */}
         <AnimatePresence>
           {adviceVisible ? (
             <motion.section
@@ -1492,19 +1595,17 @@ function BudgetContent() {
                     <AlertTriangle className="size-4.5" aria-hidden />
                     超支贴士
                   </h2>
-                  <span className="rounded-full border border-(--color-border) px-2 py-0.5 font-(--font-mono) text-[11px] text-(--color-ink-muted)">
-                    {!lastRun
-                      ? "budget-advice 任务接入中"
-                      : !advice || advice.status !== "done"
-                        ? `budget-advice · ${advice && advice.source === "live" ? "live · " : ""}生成中`
-                        : `budget-advice · ${advice.source === "live" ? "live" : "模板"}`}
-                  </span>
+                  {!lastRun || !advice || advice.status !== "done" ? (
+                    <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] text-(--color-ink-muted)">
+                      {!lastRun ? "示例建议" : "正在生成建议…"}
+                    </span>
+                  ) : null}
                 </div>
                 {lastRun ? (
                   advice ? (
                     <>
                       <p className="mt-3 text-sm font-medium text-(--color-ink)">
-                        {advice.status === "loading" ? "正在生成 AI 建议…" : advice.headline}
+                        {advice.status === "loading" ? "正在生成建议…" : advice.headline}
                       </p>
                       <p className="mt-2 text-sm leading-relaxed text-(--color-ink)">
                         {advice.advice}
@@ -1520,15 +1621,6 @@ function BudgetContent() {
                             调整预算
                           </button>
                         ) : null}
-                        {advice.actions.includes("view_detail") ? (
-                          <button
-                            type="button"
-                            onClick={() => showToast("明细查看即将在账本页上线")}
-                            className="inline-flex h-10 items-center rounded-full border border-(--color-border) px-4 text-sm font-medium text-(--color-ink-secondary) transition-colors hover:bg-(--color-surface-2)"
-                          >
-                            查看明细
-                          </button>
-                        ) : null}
                         <button
                           type="button"
                           onClick={() => setAdviceDismissed(true)}
@@ -1538,12 +1630,12 @@ function BudgetContent() {
                         </button>
                       </div>
                       <p className="mt-3 text-[11px] text-(--color-ink-muted)">
-                        建议由 budget-advice 任务按你的预算数据生成；服务不可用时自动回退内置模板，数字只来自你的账单聚合。
+                        建议根据你本月的预算数据自动生成，数字都来自你的账单，请结合实际情况判断。
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="mt-3 text-sm leading-relaxed text-(--color-ink)">正在生成 AI 建议…</p>
+                      <p className="mt-3 text-sm leading-relaxed text-(--color-ink)">正在生成建议…</p>
                       <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -1570,13 +1662,6 @@ function BudgetContent() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => showToast("明细查看即将在账本页上线")}
-                        className="inline-flex h-10 items-center rounded-full border border-(--color-border) px-4 text-sm font-medium text-(--color-ink-secondary) transition-colors hover:bg-(--color-surface-2)"
-                      >
-                        查看明细
-                      </button>
-                      <button
-                        type="button"
                         onClick={() => setAdviceDismissed(true)}
                         className="inline-flex h-10 items-center rounded-full px-3 text-sm font-medium text-(--color-ink-muted) transition-colors hover:text-(--color-ink-secondary)"
                       >
@@ -1584,7 +1669,7 @@ function BudgetContent() {
                       </button>
                     </div>
                     <p className="mt-3 text-[11px] text-(--color-ink-muted)">
-                      当前为模板文案；budget-advice 任务接入后由预算建议模型按你的数据生成建议。
+                      当前展示的是示例建议。上传账单完成体检后，这里会换成针对你的数据的建议。
                     </p>
                   </>
                 )}
@@ -1593,11 +1678,11 @@ function BudgetContent() {
           ) : null}
         </AnimatePresence>
 
-        {/* 预算 vs 实际 */}
+        {/* 预算与实际对比 */}
         <section aria-label="预算与实际对比">
           <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm) sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="font-semibold text-(--color-ink)">预算 vs 实际</h2>
+              <h2 className="font-semibold text-(--color-ink)">预算与实际对比</h2>
               <div className="flex rounded-full bg-(--color-surface-2) p-1" role="group" aria-label="视图切换">
                 <button
                   type="button"

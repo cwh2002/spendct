@@ -37,8 +37,8 @@ export interface Capability {
 const LIST: Capability[] = [
   {
     id: "checkup",
-    title: "六阶段体检",
-    desc: "清洗、画像、异常、订阅、归因、年报，一条流水线扫完。",
+    title: "六步体检",
+    desc: "从整理账单到年度报告，六步自动扫完。",
     icon: Stethoscope,
     href: "/checkup",
     tier: "P1",
@@ -46,7 +46,7 @@ const LIST: Capability[] = [
   {
     id: "subscriptions",
     title: "订阅雷达",
-    desc: "确定性 SQL 揪出连续小额扣费，附下次扣费倒计时。",
+    desc: "自动揪出连续小额扣费，附下次扣费倒计时。",
     icon: BellRing,
     href: "/subscriptions",
     tier: "P1",
@@ -63,7 +63,7 @@ const LIST: Capability[] = [
   {
     id: "quick-entry",
     title: "快速记账",
-    desc: "一句话记一笔：AI 解析金额、类别与方向，确认即入账。",
+    desc: "一句话记一笔：金额、类别与收支自动识别，确认即入账。",
     icon: PenLine,
     href: "/budget#quick",
     tier: "P1",
@@ -72,7 +72,7 @@ const LIST: Capability[] = [
   {
     id: "poster",
     title: "年度海报",
-    desc: "一键合成 1080×1920 年度账单海报，保存本地。",
+    desc: "一键生成年度账单海报，保存到手机随时分享。",
     icon: WandSparkles,
     href: "/report",
     tier: "P1",
@@ -81,7 +81,7 @@ const LIST: Capability[] = [
   {
     id: "achievements",
     title: "成就段位",
-    desc: "五档消费段位 + 12 枚成就徽章，全由确定性规则判定。",
+    desc: "五档消费段位 + 12 枚成就徽章，完成条件即自动解锁。",
     icon: Trophy,
     href: "/report#achievements",
     tier: "P1",
@@ -90,7 +90,7 @@ const LIST: Capability[] = [
   {
     id: "tips",
     title: "省钱贴士",
-    desc: "学生权益、隐藏优惠检索，贴士直接适配你的账单。",
+    desc: "学生权益、隐藏优惠搜罗，贴士直接贴合你的账单。",
     icon: PiggyBank,
     href: null,
     tier: "P2",
@@ -107,7 +107,7 @@ const LIST: Capability[] = [
   {
     id: "export",
     title: "数据导出",
-    desc: "CSV / JSON 一键导出，内存生成、不落盘、不经服务端。",
+    desc: "一键导出表格文件，全程在你本地完成。",
     icon: Download,
     href: "/settings",
     tier: "P1",
@@ -115,7 +115,7 @@ const LIST: Capability[] = [
   {
     id: "privacy",
     title: "隐私可见",
-    desc: "数据可见性对照表：浏览器、LLM、服务器各看到什么。",
+    desc: "你的数据谁能看到、谁看不到，一张表说清。",
     icon: Lock,
     href: "/privacy",
     tier: "P1",

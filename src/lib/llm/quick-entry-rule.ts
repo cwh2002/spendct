@@ -131,9 +131,18 @@ const INCOME_KEYWORDS = [
   "入账",
   "报销",
   "抢到",
-  "赚了",
+  "赚",
   "收款",
   "利息",
+  "返现",
+  "奖学金",
+  "转账",
+  "兼职",
+  "家教",
+  "稿费",
+  "零工",
+  "佣金",
+  "外快",
 ] as const;
 
 /** 商户猜测时要剔除的时间词与动词（先剔金额，再剔动词，再剔时间，剩下第一个词当商户） */
@@ -171,7 +180,7 @@ const AMOUNT_AFTER_VERB =
 const AMOUNT_BARE = /(?:^|[^\d.])([1-9]\d{0,6}(?:\.\d{1,2})?)(?:[^\d.]|$)/;
 
 /** 疑似闲聊/问句的标记，命中且无金额时判定为不可解析 */
-const CHAT_MARK = /(?:[?？]|吗|呢|在不在|你好|谢谢|帮我|怎么|什么)/;
+const CHAT_MARK = /(?:[?？]|吗|呢|在不在|你好|谢谢|帮我|怎么|什么|多少|有没有|能不能|哪里|哪个)/;
 
 function yuanToCents(raw: string): number | null {
   const cents = Math.round(Number(raw) * 100);
@@ -242,7 +251,10 @@ export function parseQuickEntryText(text: string, todayIso: string): QuickEntryR
   const amountCents = parseAmountCents(trimmed);
   if (amountCents === null) {
     if (CHAT_MARK.test(trimmed)) {
-      return { parseable: false, reason: "这不像一条记账，说一句「花了多少、花在哪」试试" };
+      return {
+        parseable: false,
+        reason: "这像是在提问——快速记账只负责「记一笔」，请直接带上金额，如「兼职赚了 200」。想查收支统计，去「报告」页看",
+      };
     }
     return { parseable: false, reason: "没识别出金额，请补一句数字" };
   }

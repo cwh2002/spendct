@@ -6,14 +6,12 @@ import {
   ArrowRight,
   BellRing,
   BookOpen,
-  Boxes,
   Check,
   Cpu,
   FileSpreadsheet,
   GitCompareArrows,
   Lock,
   PieChart,
-  Play,
   ScanLine,
   ScanSearch,
   Server,
@@ -30,7 +28,7 @@ import { ResumeBanner } from "@/components/home/resume-banner";
 import { featureFlags } from "@/lib/feature-flags";
 import { SIX_STAGES, STAGE_DISPLAY_NAMES, type StageId } from "@/lib/pipeline/stage";
 
-/* 六阶段预览的图标映射：顺序与展示名全部来自 pipeline/stage，本页不复制文案 */
+/* 六步预览的图标映射：顺序与展示名全部来自 pipeline/stage，本页不复制文案 */
 const STAGE_ICONS: Record<StageId, LucideIcon> = {
   clean: FileSpreadsheet,
   profile: PieChart,
@@ -47,15 +45,15 @@ const ORDERED_STAGES: StageId[] = [...SIX_STAGES].sort(
 /* 隐私三承诺条：一句话口径，完整对照表在 /privacy */
 const PRIVACY_PROMISES = [
   { icon: Lock, text: "明细只在你的浏览器内计算" },
-  { icon: ShieldCheck, text: "AI 只收到脱敏聚合摘要" },
+  { icon: ShieldCheck, text: "AI 只看统计结果，看不到明细" },
   { icon: ScanSearch, text: "数据一键导出、一键删除" },
 ] as const;
 
-/* 技术架构三节点：浏览器 → AI 接入层 → MCP 容器 */
+/* 「怎么做到的」三节点：你的设备 → AI 助手 → 云端转递 */
 const ARCH_NODES = [
-  { icon: Cpu, title: "浏览器 DuckDB-WASM", body: "解析、清洗、聚合全在本地完成" },
-  { icon: Server, title: "服务端 AI 接入层", body: "只转发脱敏摘要，从不见明细" },
-  { icon: Boxes, title: "MCP 容器", body: "SQL 沙箱与工具调用，可拔插" },
+  { icon: Cpu, title: "你的设备", body: "账单只在这里打开和分析，不联网也能用" },
+  { icon: Sparkles, title: "AI 助手", body: "只看统计结果，看不到任何一笔明细" },
+  { icon: Server, title: "云端服务器", body: "只负责转递，不保存任何内容" },
 ] as const;
 
 const VALUE_PROPS = ["AI 先体检", "你审阅追问", "账单不出浏览器"] as const;
@@ -74,7 +72,7 @@ export default function HomePage() {
         <section className="flex flex-col items-center pt-16 pb-12 text-center sm:pt-20 sm:pb-16 lg:pt-24">
           <p className="inline-flex items-center gap-2 rounded-full border border-(--color-border) bg-(--color-surface) px-4 py-1.5 text-sm text-(--color-ink-secondary) shadow-(--shadow-sm)">
             <ScanLine className="size-4 text-(--color-primary)" aria-hidden />
-            支持微信 / 支付宝账单 CSV{featureFlags.ocr ? " · 也支持截图 OCR" : ""}
+            支持微信 / 支付宝的账单文件{featureFlags.ocr ? " · 也可以直接上传截图" : ""}
           </p>
 
           <h1 className="mt-6 max-w-3xl text-4xl leading-tight font-bold tracking-tight text-(--color-ink) sm:text-5xl lg:text-6xl">
@@ -94,34 +92,34 @@ export default function HomePage() {
           </ul>
 
           <p className="mt-5 max-w-2xl text-base leading-relaxed text-(--color-ink-secondary) sm:text-lg">
-            六阶段流水线扫描你的每一笔消费：哪里花多了、哪些订阅在偷偷扣费、下个月会怎样。
+            自动扫描你的每一笔消费：哪里花多了、哪些订阅在偷偷扣费、下个月会怎样。
             先体检、后追问——明细永远只留在你的浏览器里。
           </p>
 
           <div className="mt-8 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-center sm:gap-4">
             <Link
-              href="/upload?sample=1"
+              href="/upload"
               className="inline-flex h-12 items-center justify-center gap-2.5 rounded-full bg-(--color-btn-primary) px-6 text-sm font-medium text-white shadow-(--shadow-md) transition hover:bg-(--color-btn-primary-hover)"
             >
-              <Sparkles className="size-4" aria-hidden />
-              加载示例账单
-              <span className="text-white/75">脱敏数据 · 一键体验</span>
+              <Upload className="size-4" aria-hidden />
+              上传账单，开始体检
             </Link>
             <Link
-              href="/upload"
+              href="/upload?sample=1"
               className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-(--color-border-strong) bg-(--color-surface) px-6 text-sm font-medium text-(--color-ink) transition hover:border-(--color-primary)"
             >
-              <Upload className="size-4 text-(--color-primary)" aria-hidden />
-              上传我的账单
-            </Link>
-            <Link
-              href="/report"
-              className="inline-flex h-12 items-center justify-center gap-2 rounded-full px-6 text-sm font-medium text-(--color-brand-600) transition hover:bg-(--color-primary-soft)"
-            >
-              <Play className="size-4" aria-hidden />
-              观看演示视频
+              <Sparkles className="size-4 text-(--color-primary)" aria-hidden />
+              加载示例账单
+              <span className="text-(--color-ink-muted)">30 秒体验</span>
             </Link>
           </div>
+
+          <p className="mt-5 text-sm text-(--color-ink-secondary)">
+            三步上手：
+            <span className="font-semibold text-(--color-ink)">
+              ① 上传账单 → ② 自动体检 → ③ 逐条看分析
+            </span>
+          </p>
 
           <div className="mt-5 flex justify-center">
             <HeroAuthArea />
@@ -160,7 +158,7 @@ export default function HomePage() {
               十项能力，覆盖从体检到复盘
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary) sm:text-base">
-              从六阶段体检、订阅雷达、预算中心，到年度海报与成就段位——带「即将上线」角标的能力将在国赛窗口开放。
+              从六步体检、订阅雷达、预算中心，到年度海报与成就段位——带「即将上线」角标的能力会陆续开放。
             </p>
           </div>
           <div className="mt-8 sm:mt-10">
@@ -169,16 +167,16 @@ export default function HomePage() {
         </Container>
       </section>
 
-      {/* 六阶段预览：静态 mini stepper，移动端横向滚动 */}
-      <section aria-label="六阶段流水线" className="pb-14 sm:pb-20">
+      {/* 六步预览：静态 mini stepper，移动端横向滚动 */}
+      <section aria-label="六步体检" className="pb-14 sm:pb-20">
         <Container>
           <div className="rounded-(--radius-card) border border-(--color-border) bg-(--color-surface) px-5 py-8 sm:px-8 sm:py-10">
             <div className="mx-auto max-w-2xl text-center">
               <h2 className="text-2xl font-bold tracking-tight text-(--color-ink)">
-                六阶段流水线，一次跑完
+                六步体检，一次跑完
               </h2>
               <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
-                清洗 → 画像 → 异常 → 订阅 → 归因 → 年报，每张洞察卡都可确认、质疑、深挖。
+                六步依次自动完成，每条分析都可以确认、质疑、深挖。
               </p>
             </div>
             {/* w-max + min-w-full：内容放不下时整体左对齐可横滚，放得下时居中，避免居中裁掉左侧 */}
@@ -219,15 +217,15 @@ export default function HomePage() {
         </Container>
       </section>
 
-      {/* 技术架构展示条 */}
-      <section aria-label="技术架构" className="pb-14 sm:pb-20">
+      {/* 「怎么做到的」展示条 */}
+      <section aria-label="怎么做到的" className="pb-14 sm:pb-20">
         <Container>
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-2xl font-bold tracking-tight text-(--color-ink)">
-              本地优先的隐私架构
+              你的数据为什么安全
             </h2>
             <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
-              三个环节各司其职，明细与摘要的边界写死在架构里。
+              三个环节各司其职：账单只在你的设备上分析，AI 只看统计结果，云端只做转递。
             </p>
           </div>
 
@@ -256,18 +254,9 @@ export default function HomePage() {
             ))}
           </ul>
 
-          <p className="mt-8 text-center text-sm text-(--color-ink-secondary)">
-            模型分工：
-            <span className="font-mono font-medium text-(--color-ink)">deepseek</span>
-            <span className="text-(--color-ink-muted)"> 叙事 · </span>
-            <span className="font-mono font-medium text-(--color-ink)">qwen</span>
-            <span className="text-(--color-ink-muted)"> 轻任务 · </span>
-            <span className="font-mono font-medium text-(--color-ink)">glm4v</span>
-            <span className="text-(--color-ink-muted)"> OCR</span>
-          </p>
-          <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-(--color-ink-muted)">
+          <p className="mt-8 flex items-center justify-center gap-1.5 text-xs text-(--color-ink-muted)">
             <Lock className="size-3.5" aria-hidden />
-            明细只在第一步流动，之后全是聚合摘要
+            账单明细不会上传到任何服务器，全程只在你的设备上处理
           </p>
         </Container>
       </section>

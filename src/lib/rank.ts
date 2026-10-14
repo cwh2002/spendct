@@ -18,7 +18,7 @@ export const RANK_TIERS: readonly RankTier[] = [
   { tier: 1, name: "消费新手", desc: "体检之路刚刚开始，先完成一次全流程扫描" },
   { tier: 2, name: "记账达人", desc: "消费记录连续积累，数据基础已经成型" },
   { tier: 3, name: "进阶规划师", desc: "开始控制固定成本层，预算意识成型" },
-  { tier: 4, name: "理性消费者", desc: "冲动消费显著收敛，结余率跑赢同龄基准" },
+  { tier: 4, name: "理性消费者", desc: "冲动消费显著收敛，结余率跑赢同龄人平均" },
   { tier: 5, name: "消费健康大师", desc: "全维度均衡，六维健康分全面达标" },
 ];
 

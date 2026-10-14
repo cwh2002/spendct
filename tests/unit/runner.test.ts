@@ -172,7 +172,7 @@ describe("createPipelineRun 事件映射", () => {
       retryable: true,
     });
     expect(harness.stages.at(-1)).toMatchObject({ id: "anomaly", status: "failed" });
-    expect(harness.events.at(-1)?.text).toContain("PARSE_FAILED");
+    expect(harness.events.at(-1)?.text).toContain("这一步没跑通");
   });
 
   it("card:complete → progress + 证据抽屉卡缩略（ok 由置信度判定）", async () => {
@@ -207,11 +207,11 @@ describe("createPipelineRun 事件映射", () => {
       reason: "证据不足",
     });
     const texts = harness.events.map((e) => e.text);
-    expect(texts.some((t) => t.includes("deepseek") && t.includes("qwen"))).toBe(true);
-    expect(texts.some((t) => t.includes("案例库命中 3 条"))).toBe(true);
-    const cacheEvent = harness.events.find((e) => e.text.includes("缓存命中"));
+    expect(texts.some((t) => t.includes("已自动切换备用服务"))).toBe(true);
+    expect(texts.some((t) => t.includes("找到 3 个相似案例"))).toBe(true);
+    const cacheEvent = harness.events.find((e) => e.text.includes("直接复用上次的检查结果"));
     expect(cacheEvent?.meta).toBe("cache");
-    expect(texts.some((t) => t.includes("发布线"))).toBe(true);
+    expect(texts.some((t) => t.includes("已自动省略"))).toBe(true);
   });
 
   it("run:complete → store 只写入 published 卡（withheld 被过滤）+ onDone 触发一次", async () => {

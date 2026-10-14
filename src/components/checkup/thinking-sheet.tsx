@@ -48,7 +48,7 @@ export function ThinkingSheet({ open, onClose, children }: ThinkingSheetProps) {
           <motion.div
             role="dialog"
             aria-modal="true"
-            aria-label="思考过程"
+            aria-label="体检动态"
             className="fixed inset-x-0 bottom-0 z-50 flex max-h-[78vh] flex-col rounded-t-(--radius-xl) bg-(--color-surface) shadow-(--shadow-lg)"
             initial={{ y: "100%" }}
             animate={{ y: 0 }}

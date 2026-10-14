@@ -7,11 +7,12 @@
  */
 
 import { DEMO_STAGES } from "@/lib/demo-data";
+import { formatMs } from "./pipeline-stepper";
 import type { StageEvidence, StageState, ThinkingEvent } from "./types";
 
 const STAGE_MS = 700;
 
-/** 各阶段聚合 SQL（白名单校验通过的展示样张，与 03 模板库同源口径） */
+/** 各阶段聚合 SQL（仅作内部数据源，不在页面展示，与 03 模板库同源口径） */
 const DEMO_SQL: Record<string, string> = {
   clean: `SELECT COUNT(*) AS total_rows,
        COUNT(DISTINCT trade_no) AS unique_rows,
@@ -72,7 +73,7 @@ const DEMO_HITS: Record<string, number> = {
 /** 产出卡缩略：标题行与 DEMO_INSIGHTS 的 headline 对齐，不足部分用确定性子任务卡补足 */
 const DEMO_CARDS: Record<string, { title: string; ok: boolean }[]> = {
   clean: [
-    { title: "账单解析摘要 · 10,000 行全部进入标准字段", ok: true },
+    { title: "账单整理摘要 · 10,000 条全部识别成功", ok: true },
     { title: "去重统计 · 移除 12 条重复记录", ok: true },
   ],
   profile: [
@@ -84,13 +85,13 @@ const DEMO_CARDS: Record<string, { title: string; ok: boolean }[]> = {
   anomaly: [
     { title: "深夜消费 23 笔集中在 0–2 点，游戏充值为主", ok: true },
     { title: "疑似重复扣费 2 笔，建议核对商户订单", ok: false },
-    { title: "退款异常扫描 · 无命中", ok: true },
+    { title: "退款异常扫描 · 未发现问题", ok: true },
   ],
   subscription: [
     { title: "发现 3 项连续订阅扣费，合计 5,888 元/年", ok: true },
     { title: "沉默订阅 1 项 · 近 90 天零使用", ok: true },
     { title: "周期扣费明细表（3 商户 × 19 笔）", ok: true },
-    { title: "取消指引 · 来自案例库 rag:subscription_trap_07", ok: true },
+    { title: "取消指引 · 来自真实案例", ok: true },
   ],
   attribution: [
     { title: "本月支出环比 +18%，主要来自购物节大促", ok: true },
@@ -137,20 +138,30 @@ const DEMO_RAG: Record<string, { caseId: string; title: string; summary: string 
 
 /** 确定性进度文本：全部来自真实计数口径，不放伪造百分比（05 §5.1） */
 const PROGRESS_TEXT: Record<string, string> = {
-  clean: "已清洗 3,214 / 10,000 行",
-  profile: "已聚合 12 类目 · 3,214 行",
-  anomaly: "已扫描 3,214 行 · 命中规则 6 条",
-  subscription: "已比对 1,247 个商户 · 周期模型 v2",
-  attribution: "已拆分 6 类目环比增量",
-  annual: "已汇总 12 个月 · 叙事草稿生成中",
+  clean: "已整理 3,214 / 10,000 条账单",
+  profile: "已按 12 个类目汇总 · 3,214 条账单",
+  anomaly: "已扫描 3,214 条账单 · 发现 6 类问题",
+  subscription: "已排查 1,247 个商户的规律性扣费",
+  attribution: "已对比 6 个类目的支出变化",
+  annual: "已汇总 12 个月账单 · 年度总结生成中",
+};
+
+/** 各步骤跑完后的结论式说明（页面不再展示 SQL 原文，只给一句人话结论） */
+const DEMO_SQL_NOTES: Record<string, string> = {
+  clean: "已整理账单并去重，共核对 10,000 条记录",
+  profile: "已按类别汇总账单，共核对 3,214 条记录",
+  anomaly: "已排查深夜消费与退款异常，查出 23 个疑点",
+  subscription: "已排查规律性连续扣费，查出 19 笔可疑扣费",
+  attribution: "已对比本月与上月支出，拆解 6 项变化",
+  annual: "已汇总全年账单走势，共 12 个月",
 };
 
 /** 流式叙事文本（demo 为整段下发，打字机逐字揭示；真实管线为逐 token 增长） */
 const NARRATIVES: Record<string, string> = {
-  clean: "解析完成：10,000 行全部进入标准字段，字段映射置信度 98%，去重移除 12 条。",
+  clean: "整理完成：10,000 条账单全部识别成功，自动去重移除 12 条重复记录。",
   profile: "你的消费画像成型：餐饮是最大支出类目，外卖占餐饮支出 58%，周末消费比工作日高 41%。",
   anomaly: "发现 23 笔深夜消费，其中游戏充值与直播打赏占 71%，建议设置夜间支付冷静期。",
-  subscription: "命中 3 项连续订阅扣费，其中 1 项近 90 天零使用，属于典型的沉默订阅。",
+  subscription: "发现 3 项连续订阅扣费，其中 1 项近 90 天完全没用过，属于典型的沉默订阅。",
   attribution: "本月支出环比 +18%，购物类贡献增量的 81%，3 笔大额订单集中在促销日。",
   annual: "年度叙事完成：外卖构成日常基本盘，订阅构成固定成本层，建议把两者纳入统一预算视图。",
 };
@@ -204,18 +215,22 @@ export function createDemoRun(cb: DemoRunCallbacks): DemoRun {
 
     at(0, () => push("progress", PROGRESS_TEXT[demo.id] ?? ""));
     // 缓存命中标记：重复体检命中 stageCacheKey 秒出（07 §10），meta="cache" 驱动 ⚡ 渲染
-    at(60, () => push("progress", "缓存命中 0.4s", "cache"));
-    at(150, () => push("sql", DEMO_SQL[demo.id] ?? "", `sql:${demo.id}_summary`));
-    // 异常检测阶段演示一次模型降级，展示 DegradeToast 能力（评审演示点）
+    at(60, () => push("progress", "上次的检查结果直接复用 · 秒开", "cache"));
+    at(150, () => push("sql", DEMO_SQL_NOTES[demo.id] ?? "", `sql:${demo.id}_summary`));
+    // 异常检测阶段演示一次服务降级，展示 DegradeToast 能力（评审演示点）
     if (demo.id === "anomaly") {
-      at(220, () => push("degrade", "已从 DeepSeek 切换至 Qwen（SiliconFlow）"));
+      at(220, () => push("degrade", "主服务有点慢，已自动切换备用服务继续，结果不受影响"));
     }
     const rags = DEMO_RAG[demo.id] ?? [];
     rags.forEach((r, idx) => {
-      at(280 + idx * 90, () => push("rag", `${r.caseId} ${r.title}`, r.summary));
+      at(280 + idx * 90, () => push("rag", `找到相似案例：${r.title}`, r.summary));
     });
     at(430, () =>
-      push("evidence", `本阶段证据已就绪 · 命中 ${DEMO_HITS[demo.id]} 行`, String(DEMO_HITS[demo.id])),
+      push(
+        "evidence",
+        `已核对 ${DEMO_HITS[demo.id]!.toLocaleString("zh-CN")} 条记录 · 用时 ${formatMs(demo.elapsedMs)}`,
+        String(DEMO_HITS[demo.id]),
+      ),
     );
     at(520, () => push("narrative", NARRATIVES[demo.id] ?? ""));
     at(STAGE_MS, () => {

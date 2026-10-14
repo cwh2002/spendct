@@ -54,7 +54,7 @@ export function Footer() {
               账单不出浏览器 · 本地计算
             </p>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-              明细只在浏览器内的 DuckDB-WASM 中计算，服务端只做转发，不落盘。
+              账单明细只在你自己的浏览器里计算，服务器只做转发，不留存。
             </p>
           </div>
         </div>

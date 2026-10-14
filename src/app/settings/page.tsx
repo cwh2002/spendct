@@ -62,6 +62,24 @@ function formatDate(timestamp: number): string {
   });
 }
 
+/** 导入时间展示：当天显示「今天 14:30」，更早的显示日期 */
+function formatImportedAt(timestamp: number): string {
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+  if (isToday) {
+    return `今天 ${date.toLocaleTimeString("zh-CN", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })}`;
+  }
+  return formatDate(timestamp);
+}
+
 /** 偏好开关持久化：值存 "1"/"0"，缺省视为开启（默认体验完整） */
 function useLocalStorageFlag(key: string, initial: boolean): [boolean, (next: boolean) => void] {
   // 页面内容仅在会话恢复后渲染（客户端），懒初始化可直接读本地存储
@@ -417,27 +435,26 @@ interface ExportConfirmModalProps {
   onClose: () => void;
 }
 
-/** 导出前隐私提示：文件在本机组装、不经服务端、明确行数 */
+/** 导出前隐私提示：文件在本机生成、不经服务端、明确条数 */
 function ExportConfirmModal({ format, rowCount, onConfirm, onClose }: ExportConfirmModalProps) {
   return (
-    <Modal title={format === "csv" ? "导出 CSV" : "导出 JSON"} onClose={onClose}>
+    <Modal title={format === "csv" ? "导出表格文件" : "导出备份文件"} onClose={onClose}>
       <ul className="mt-4 space-y-2.5">
         <li className="flex items-start gap-2 text-sm text-(--color-ink-secondary)">
           <ShieldCheck className="mt-0.5 size-4 shrink-0 text-(--color-down)" aria-hidden />
-          文件在你的浏览器内直接组装，全程不经过任何服务器
+          文件会在你的浏览器里生成，不会经过任何服务器
         </li>
         <li className="flex items-start gap-2 text-sm text-(--color-ink-secondary)">
           <ShieldCheck className="mt-0.5 size-4 shrink-0 text-(--color-down)" aria-hidden />
-          不落盘：仅通过浏览器下载到你的设备
+          文件会直接下载到你的设备，不会上传
         </li>
         <li className="flex items-start gap-2 text-sm text-(--color-ink-secondary)">
           <Info className="mt-0.5 size-4 shrink-0 text-(--color-primary)" aria-hidden />
-          本次将导出 <span className="font-semibold tabular-nums">{rowCount}</span> 行数据
-          （标准六列，金额单位：分）
+          本次将导出 <span className="font-semibold tabular-nums">{rowCount}</span> 条账单
         </li>
       </ul>
       <p className="mt-3 rounded-(--radius-md) bg-(--color-surface-2) px-3 py-2 text-xs text-(--color-ink-muted)">
-        当前为演示数据口径：导出内容为内置样本。接入真实数据集后导出真实明细。
+        目前导出的还是内置示例账单，仅供参考；导入你自己的账单后，这里会导出你的真实明细。
       </p>
       <div className="mt-5 flex justify-end gap-3">
         <button
@@ -530,7 +547,7 @@ function SettingsContent() {
       // 忽略：本次会话内仍生效
     }
     setActiveBookId(id);
-    showToast("已切换当前数据集");
+    showToast("已切换当前账本");
   }
 
   async function handleDeleteBook() {
@@ -550,10 +567,10 @@ function SettingsContent() {
       setDeleteBookTarget(null);
       setDeleteBookBusy(false);
       await queryClient.invalidateQueries({ queryKey: ["books", user.id] });
-      showToast(`已删除数据集「${target.name}」`);
+      showToast(`已删除账本「${target.name}」`);
     } catch {
       setDeleteBookBusy(false);
-      showToast("删除失败：本地存储不可用，请重试");
+      showToast("删除失败，请重试");
     }
   }
 
@@ -573,9 +590,9 @@ function SettingsContent() {
         );
       }
       setExportTarget(null);
-      showToast(`已开始下载 spendct-export-${stamp}.${format}`);
+      showToast(format === "csv" ? "已开始下载账单表格文件" : "已开始下载账单备份文件");
     } catch {
-      showToast("导出失败：文件组装异常，请重试");
+      showToast("导出失败：文件生成出错，请重试");
     }
   }
 
@@ -589,7 +606,7 @@ function SettingsContent() {
       <header>
         <h1 className="text-2xl font-bold text-(--color-ink)">数据管理</h1>
         <p className="mt-1 text-sm text-(--color-ink-secondary)">
-          数据集、导出与偏好——数据始终只在本机
+          账单、导出与偏好——数据始终只在本机
         </p>
       </header>
 
@@ -618,11 +635,11 @@ function SettingsContent() {
         </span>
       </Link>
 
-      {/* 数据集管理 */}
+      {/* 我的账单数据 */}
       <SectionCard
         icon={Database}
-        title="数据集管理"
-        sub="账单数据集保存在浏览器本地，可切换、可删除"
+        title="我的账单数据"
+        sub="导入的账单保存在你的浏览器里，可以切换或删除"
       >
         {currentBook ? (
           <div className="rounded-(--radius-lg) border border-(--color-primary-soft) bg-(--color-primary-soft)/40 p-4">
@@ -634,20 +651,18 @@ function SettingsContent() {
                 <Database className="size-5" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-xs text-(--color-ink-muted)">当前数据集</p>
-                <p className="truncate font-medium text-(--color-ink)">{currentBook.name}</p>
+                <p className="text-xs text-(--color-ink-muted)">当前账本</p>
+                <p className="truncate font-medium text-(--color-ink)" title={currentBook.id}>
+                  {currentBook.name}
+                </p>
                 <p className="mt-0.5 truncate text-xs text-(--color-ink-muted)">
-                  <span className="font-(--font-mono)">#{currentBook.id.slice(0, 8)}</span>
-                  <span className="mx-1.5">·</span>
-                  {currentBook.rowCount} 笔
-                  <span className="mx-1.5">·</span>
-                  {formatDate(currentBook.createdAt)} 导入
+                  已导入 {currentBook.rowCount} 条账单 · {formatImportedAt(currentBook.createdAt)}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setDeleteBookTarget(currentBook)}
-                aria-label={`删除数据集 ${currentBook.name}`}
+                aria-label={`删除账本 ${currentBook.name}`}
                 className="grid h-11 w-11 shrink-0 place-items-center rounded-(--radius-md) border border-(--color-border) text-(--color-ink-muted) transition-colors hover:border-(--color-critical) hover:text-(--color-critical-ink)"
               >
                 <Trash2 className="size-4" aria-hidden />
@@ -657,9 +672,9 @@ function SettingsContent() {
         ) : (
           <div className="flex flex-col items-center gap-3 rounded-(--radius-lg) border border-dashed border-(--color-border-strong) px-6 py-10 text-center">
             <FileSpreadsheet className="size-8 text-(--color-ink-muted)" aria-hidden />
-            <p className="font-medium text-(--color-ink)">还没有数据集</p>
+            <p className="font-medium text-(--color-ink)">还没有账本</p>
             <p className="max-w-sm text-xs text-(--color-ink-muted)">
-              上传账单后，数据集会出现在这里，可导出 CSV/JSON 或一键删除
+              上传账单后，账本会出现在这里，可导出表格文件或一键删除
             </p>
             <Link
               href="/upload"
@@ -679,7 +694,9 @@ function SettingsContent() {
                 <li key={book.id} className="flex min-h-[60px] items-center gap-3 py-2.5">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-medium text-(--color-ink)">{book.name}</p>
+                      <p className="truncate text-sm font-medium text-(--color-ink)" title={book.id}>
+                        {book.name}
+                      </p>
                       {isActive ? (
                         <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-(--color-primary-soft) px-2 py-0.5 text-[10px] font-semibold text-(--color-primary)">
                           <Check className="size-3" aria-hidden />
@@ -688,9 +705,7 @@ function SettingsContent() {
                       ) : null}
                     </div>
                     <p className="mt-0.5 truncate text-xs text-(--color-ink-muted)">
-                      {book.rowCount} 笔
-                      <span className="mx-1.5">·</span>
-                      {formatDate(book.createdAt)} 导入
+                      已导入 {book.rowCount} 条账单 · {formatImportedAt(book.createdAt)}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -713,7 +728,7 @@ function SettingsContent() {
                     <button
                       type="button"
                       onClick={() => setDeleteBookTarget(book)}
-                      aria-label={`删除数据集 ${book.name}`}
+                      aria-label={`删除账本 ${book.name}`}
                       className="grid h-11 w-11 place-items-center rounded-(--radius-md) border border-(--color-border) text-(--color-ink-muted) transition-colors hover:border-(--color-critical) hover:text-(--color-critical-ink)"
                     >
                       <Trash2 className="size-4" aria-hidden />
@@ -726,7 +741,7 @@ function SettingsContent() {
         ) : booksLoading ? (
           <div className="mt-4 h-14 animate-pulse rounded-(--radius-md) bg-(--color-surface-2)" />
         ) : (
-          <p className="mt-4 text-xs text-(--color-ink-muted)">还没有其他数据集</p>
+          <p className="mt-4 text-xs text-(--color-ink-muted)">还没有其他账本</p>
         )}
       </SectionCard>
 
@@ -734,7 +749,7 @@ function SettingsContent() {
       <SectionCard
         icon={Download}
         title="数据导出"
-        sub="标准六列格式，在浏览器内直接组装并触发下载"
+        sub="把当前账单明细导出成文件，方便用 Excel 打开或自行备份"
       >
         <div className="flex flex-wrap gap-3">
           <button
@@ -743,7 +758,7 @@ function SettingsContent() {
             className="inline-flex h-11 items-center gap-2 rounded-(--radius-md) border border-(--color-border) px-4 text-sm font-medium transition-colors hover:border-(--color-border-strong)"
           >
             <FileText className="size-4" aria-hidden />
-            导出 CSV
+            导出为表格文件（可用 Excel 打开）
           </button>
           <button
             type="button"
@@ -751,7 +766,7 @@ function SettingsContent() {
             className="inline-flex h-11 items-center gap-2 rounded-(--radius-md) border border-(--color-border) px-4 text-sm font-medium transition-colors hover:border-(--color-border-strong)"
           >
             <FileJson className="size-4" aria-hidden />
-            导出 JSON
+            导出备份文件
           </button>
         </div>
       </SectionCard>
@@ -760,7 +775,7 @@ function SettingsContent() {
       <SectionCard
         icon={Bell}
         title="通知"
-        sub="偏好只写 localStorage（spendct:notif:v1），不离开本机"
+        sub="通知偏好只保存在你的本机浏览器里，不会上传到服务器"
       >
         <div className="divide-y divide-(--color-border)">
           <SwitchRow
@@ -776,8 +791,8 @@ function SettingsContent() {
             onChange={(next) => updateNotif({ budgetOver: next })}
           />
           <SwitchRow
-            label="断点续跑"
-            desc="检测到未完成的体检时提醒"
+            label="继续上次体检"
+            desc="体检没做完就退出时，提醒你回来接着做"
             checked={notif.resume}
             onChange={(next) => updateNotif({ resume: next })}
           />
@@ -785,7 +800,7 @@ function SettingsContent() {
       </SectionCard>
 
       {/* 偏好 */}
-      <SectionCard icon={Sun} title="偏好" sub="主题、演示模式与显示选项">
+      <SectionCard icon={Sun} title="偏好" sub="主题、示例数据与显示选项">
         <div className="space-y-4">
           {featureFlags.dark ? (
             <div>
@@ -821,14 +836,14 @@ function SettingsContent() {
 
           <div className="divide-y divide-(--color-border)">
             <SwitchRow
-              label="演示模式"
-              desc="全局使用演示数据（评审演示用，可随时关闭）"
+              label="展示示例数据"
+              desc="全站展示内置示例账单，方便先体验功能；导入自己的账单后建议关闭"
               checked={demoMode}
               onChange={setDemoMode}
             />
             <SwitchRow
-              label="商户名明文还原"
-              desc="商户笔数 ≥5 时显示原始商户名（默认显示脱敏哈希）"
+              label="显示完整商户名"
+              desc="默认会隐藏商户名的一部分以保护隐私，打开后显示完整名称"
               checked={plainMerchant}
               onChange={setPlainMerchant}
             />
@@ -843,17 +858,16 @@ function SettingsContent() {
       </SectionCard>
 
       {/* 关于 */}
-      <SectionCard icon={Info} title="关于" sub="版本与常用链接">
+      <SectionCard icon={Info} title="关于" sub="常用入口">
         <div className="flex items-center gap-3">
           <HeartPulse className="size-8 text-(--color-health)" aria-hidden />
           <div>
-            <p className="font-bold text-(--color-ink)">消费CT · SpendCT</p>
-            <p className="text-xs text-(--color-ink-muted)">v0.1.0</p>
+            <p className="font-bold text-(--color-ink)">SpendCT · 让每一笔账都花得明白</p>
+            <p className="text-xs text-(--color-ink-muted)">
+              账单明细只在你的设备上计算，不上传任何服务器，隐私更安心
+            </p>
           </div>
         </div>
-        <p className="mt-3 text-xs leading-relaxed text-(--color-ink-secondary)">
-          Next.js 16 · React 19 · DuckDB-WASM · ECharts 6 —— 账单明细只在本机计算
-        </p>
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-sm">
           <Link
             href="/budget"
@@ -878,7 +892,7 @@ function SettingsContent() {
             <GraduationCap className="size-4" aria-hidden />
             知识课堂
             <span className="rounded-full bg-(--color-accent)/15 px-1.5 py-0.5 text-[10px] font-semibold text-(--color-accent)">
-              P2
+              新功能
             </span>
           </Link>
           <Link
@@ -902,10 +916,10 @@ function SettingsContent() {
       ) : null}
       {deleteBookTarget ? (
         <ConfirmModal
-          title="删除数据集？"
+          title="删除账本？"
           description={
             <>
-              将删除数据集「{deleteBookTarget.name}」的记录，不可撤销。请确认不再需要该数据集。
+              将删除账本「{deleteBookTarget.name}」，删除后无法恢复。请确认不再需要这份账本。
             </>
           }
           confirmLabel="确认删除"

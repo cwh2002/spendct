@@ -57,19 +57,19 @@ function StatCard({
   );
 }
 
-/** 扫描口径卡：与三张订阅卡拼齐 2×2 网格，同时交代识别方式的确定性边界 */
+/** 扫描说明卡：与订阅卡拼齐 2×2 网格，交代识别范围与复核方式 */
 function ScanCoverageCard() {
   const rows = [
-    { icon: Database, label: "规则库", value: "12 条确定性 SQL" },
-    { icon: CalendarClock, label: "扫描窗口", value: "近 12 个月" },
-    { icon: ShieldCheck, label: "商户标识", value: "脱敏 m_+8hex" },
-    { icon: CircleCheck, label: "误报", value: "0 笔（待你复核）" },
+    { icon: Database, label: "识别规则", value: "内置 12 条" },
+    { icon: CalendarClock, label: "扫描范围", value: "近 12 个月账单" },
+    { icon: ShieldCheck, label: "商户名", value: "已打码显示" },
+    { icon: CircleCheck, label: "疑似误报", value: "0 笔（等你确认）" },
   ] as const;
   return (
     <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)">
       <h2 className="flex items-center gap-2 font-semibold">
         <Radar className="size-4 text-(--color-primary)" aria-hidden />
-        扫描口径
+        扫描说明
       </h2>
       <ul className="mt-3 flex flex-col gap-2.5">
         {rows.map(({ icon: Icon, label, value }) => (
@@ -81,7 +81,7 @@ function ScanCoverageCard() {
         ))}
       </ul>
       <p className="mt-3 border-t border-(--color-border) pt-3 text-xs leading-relaxed text-(--color-ink-muted)">
-        命中即附规则编号与扣费流水证据，每一条都可以点开核对。
+        每一条识别结果都附上扣费时间记录，可以点开逐笔核对。
       </p>
     </div>
   );
@@ -279,8 +279,16 @@ async function mapPatternRows(rows: Record<string, unknown>[]): Promise<DemoSubs
   return subs;
 }
 
-const NOTIF_KEY = "spendct:notif:v1";
-const LABEL_KEY = "spendct:sub-labels";
+/** 订阅卡商户占位名：原始商户名已打码、永不进入页面，按卡片顺序用「商户 A」式称呼区分 */
+const MERCHANT_NAME_MARKS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function merchantLabelFor(index: number): string {
+  const mark =
+    index < MERCHANT_NAME_MARKS.length
+      ? `商户 ${MERCHANT_NAME_MARKS[index]}`
+      : `商户 ${index + 1}`;
+  return `${mark}（已打码）`;
+}
 
 export default function SubscriptionsPage() {
   const lastRun = usePipeline((s) => s.lastRun);
@@ -362,34 +370,34 @@ export default function SubscriptionsPage() {
     () => [
       {
         icon: Radar,
-        label: "命中订阅",
+        label: "识别出的订阅",
         value: subs.length,
         format: (v: number) => `${Math.round(v)} 项`,
-        hint: "全部经确定性 SQL 命中",
+        hint: "自动识别出的连续扣费项目数",
       },
       {
         icon: CalendarClock,
         label: "近一年合计",
         value: yearTotalCents,
         format: (v: number) => `¥${fmtYuan(v)}`,
-        hint: isDemoMode ? "滚动 365 天扣费流水" : "命中商户笔数 × 单笔均值",
+        hint: "近一年这些订阅一共扣了多少钱",
       },
       {
         icon: ShieldCheck,
-        label: "占支出",
+        label: "占全年支出",
         value: sharePct,
         format: (v: number) => `${v.toFixed(1)}%`,
-        hint: "订阅年化 / 年度总支出",
+        hint: "订阅扣费占全年支出的比例",
       },
       {
         icon: Database,
         label: "年度订阅合计",
         value: yearTotalCents,
         format: (v: number) => `¥${fmtYuan(v)}`,
-        hint: "年化折算 · 12 个月",
+        hint: "照这个扣费节奏，一年大概要花这么多",
       },
     ],
-    [subs.length, yearTotalCents, sharePct, isDemoMode],
+    [subs.length, yearTotalCents, sharePct],
   );
 
   return (
@@ -402,7 +410,7 @@ export default function SubscriptionsPage() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold">订阅雷达</h1>
           <p className="text-sm text-(--color-ink-secondary)">
-            确定性 SQL 规则扫描连续扣费，不依赖大模型判断，每一条命中都可复核
+            自动扫描账单里的连续扣费，找出你可能忘了的订阅，每一笔都能点开核对
           </p>
         </div>
         <div className="ml-auto hidden items-center gap-2 sm:flex">
@@ -423,16 +431,16 @@ export default function SubscriptionsPage() {
       </section>
 
       {/* 订阅卡墙 */}
-      <section aria-label="命中的订阅" className="mt-4 grid gap-4 md:grid-cols-2">
+      <section aria-label="识别出的订阅" className="mt-4 grid gap-4 md:grid-cols-2">
         {loading ? (
           // 真实数据查询中：占位不伪造内容，统计区此时显示 0
           <div className="flex flex-col items-center gap-3 rounded-(--radius-lg) border border-dashed border-(--color-border-strong) bg-(--color-surface) px-6 py-16 text-center md:col-span-2">
             <span className="grid size-14 place-items-center rounded-full bg-(--color-surface-2) text-(--color-ink-muted)">
               <Database className="size-7" aria-hidden />
             </span>
-            <h2 className="font-semibold">正在读取订阅命中</h2>
+            <h2 className="font-semibold">正在扫描你的账单…</h2>
             <p className="max-w-sm text-sm text-(--color-ink-secondary)">
-              从本地数据仓的 subscription_patterns 预计算表加载本次体检的订阅命中
+              正在从你本次体检的结果里找出连续扣费的项目，通常几秒钟就好
             </p>
           </div>
         ) : subs.length === 0 ? (
@@ -442,70 +450,55 @@ export default function SubscriptionsPage() {
             </span>
             <h2 className="font-semibold">未发现订阅类扣费</h2>
             <p className="max-w-sm text-sm text-(--color-ink-secondary)">
-              规则扫描窗口内没有稳定的周期性扣费，说明这份账单很干净。上传更多账单可以扩大扫描范围。
+              这段时间的账单里没有稳定的周期性扣费，说明这份账单很干净。导入更多账单可以查得更全。
             </p>
           </div>
         ) : (
           <>
-            {subs.map((sub) => (
-              <SubscriptionCard key={sub.id} sub={sub} onToast={onToast} />
+            {subs.map((sub, index) => (
+              <SubscriptionCard
+                key={sub.id}
+                sub={sub}
+                merchantLabel={merchantLabelFor(index)}
+                onToast={onToast}
+              />
             ))}
             <ScanCoverageCard />
           </>
         )}
       </section>
 
-      {/* 口径说明：确定性 SQL + 打标回流评测集 */}
-      <section aria-label="识别与评测口径" className="mt-4 grid gap-4 md:grid-cols-2">
+      {/* 识别说明 + 反馈说明 */}
+      <section aria-label="识别与反馈说明" className="mt-4 grid gap-4 md:grid-cols-2">
         <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)">
           <h2 className="flex items-center gap-2 font-semibold">
             <Database className="size-4 text-(--color-primary)" aria-hidden />
-            识别规则：确定性 SQL
+            我们是怎么认出订阅的
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
-            订阅识别不经过大模型：DuckDB 内按脱敏商户分箱 + 金额分箱聚合，
-            用窗口函数计算相邻扣费间隔的稳定性，命中后由规则编号直接给出证据链，不存在幻觉空间。
+            把同一家商户、金额一致的扣费按时间排开：连续扣费 3 次以上、间隔规律、金额一致，就提醒你核对。每笔扣费时间都留在卡片的时间线里，你可以点开逐笔核对。
           </p>
-          <pre className="mt-3 overflow-x-auto rounded-(--radius-md) bg-(--color-surface-page) p-3 font-(--font-mono) text-[11px] leading-relaxed text-(--color-ink-secondary)">
-            <code>{`-- sql:subscription_patterns（简化口径）
-SELECT merchant_bucket, amount_cents, COUNT(*) AS hits
-FROM (
-  SELECT *,
-    date_diff('day', LAG(charge_date) OVER w, charge_date) AS gap_days
-  FROM txn WHERE is_charge = 1
-  WINDOW w AS (PARTITION BY merchant_bucket, amount_cents
-               ORDER BY charge_date)
-)
-WHERE gap_days IS NOT NULL
-GROUP BY 1, 2
-HAVING COUNT(*) >= 4 AND MAX(ABS(gap_days - 30)) <= 2;`}</code>
-          </pre>
         </div>
         <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)">
           <h2 className="flex items-center gap-2 font-semibold">
             <CircleCheck className="size-4 text-(--color-primary)" aria-hidden />
-            打标回流：评测集口径
+            你的反馈会帮我们改进
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
-            点下「是订阅 / 误报」即完成一次打标：
-            <span className="font-(--font-mono) text-xs">
-              {`{merchantRef, ruleId, label}`}
-            </span>{" "}
-            三元组进入离线评测集。命中且确认记 TP，命中但误报记 FP，
-            规则按精确率迭代，下一版只在误报收敛后上线。
+            你的每次标记都在帮我们改进识别：点「是订阅」，下次同类扣费会更快被认出；点「误报」，我们会减少对这类扣费的打扰。放心，所有标记只存在你自己的浏览器里，不会上传。
           </p>
           <ul className="mt-3 flex flex-col gap-2 text-sm text-(--color-ink-secondary)">
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-(--color-good)" aria-hidden />
-              演示模式下标记仅保存在浏览器本地（{LABEL_KEY}）
+              标记只保存在你的浏览器里，不会上传
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-(--color-primary)" aria-hidden />
-              扣费提醒同样只写本机（{NOTIF_KEY}），不上传任何数据
+              扣费提醒同样只保存在你的浏览器里，不上传任何数据
             </li>
             <li className="flex gap-2">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-(--color-warning)" aria-hidden />
-              正式版经匿名通道回流评测集，商户标识保持脱敏
+              大家的反馈会以匿名方式汇总，用来改进识别，商户名称始终打码
             </li>
           </ul>
         </div>

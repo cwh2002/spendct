@@ -5,8 +5,6 @@ import { useState } from "react";
 
 export interface CancelGuideProps {
   subId: string;
-  merchantRef: string;
-  ruleId: string;
   amountCents: number;
   /** 周期文案：每月 / 每周，由订阅卡换算后传入 */
   cycleLabel: string;
@@ -53,13 +51,11 @@ function saveProgress(all: Record<string, number[]>): void {
 /**
  * 取消攻略清单：四步 checkbox + 勾选进度条 + 一键复制操作要点。
  * 勾选进度按订阅持久化（spendct:cancel-progress:v1），刷新后保留，
- * 复制的操作要点把商户标识、规则编号、金额、下次扣费日一并带上，
+ * 复制的操作要点把金额、周期、下次扣费日一并带上，
  * 方便用户在客服/支付渠道对账时直接粘贴。
  */
 export function CancelGuide({
   subId,
-  merchantRef,
-  ruleId,
   amountCents,
   cycleLabel,
   nextChargeDate,
@@ -79,8 +75,7 @@ export function CancelGuide({
     const amount = (amountCents / 100).toFixed(2);
     const text = [
       "【SpendCT 订阅取消操作要点】",
-      `商户标识：${merchantRef}（${ruleId}）`,
-      `单次扣费：¥${amount} / ${cycleLabel}，预计下次扣费 ${nextChargeDate}`,
+      `这是一笔${cycleLabel} ¥${amount} 的自动扣费，预计下次扣费 ${nextChargeDate}，以下是取消步骤：`,
       ...CANCEL_STEPS.map((step, i) => `${STEP_MARKS[i] ?? ""} ${step}`),
     ].join("\n");
     try {

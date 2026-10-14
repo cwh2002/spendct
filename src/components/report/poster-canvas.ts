@@ -107,7 +107,7 @@ export function drawAnnualPoster(ctx: CanvasRenderingContext2D): void {
   ctx.fillStyle = "rgba(255,255,255,0.82)";
   ctx.font = `400 28px ${FONT_STACK}`;
   ctx.fillText(
-    `六阶段账单体检 · 覆盖 ${DEMO_ACCOUNT_META.monthsCovered} 个月 · ${DEMO_ACCOUNT_META.totalTransactions.toLocaleString("zh-CN")} 笔消费`,
+    `全流程账单体检 · 覆盖 ${DEMO_ACCOUNT_META.monthsCovered} 个月 · ${DEMO_ACCOUNT_META.totalTransactions.toLocaleString("zh-CN")} 笔消费`,
     cx,
     326,
   );
@@ -165,7 +165,7 @@ export function drawAnnualPoster(ctx: CanvasRenderingContext2D): void {
     ctx.fillText(m.value, x + 28, y + 96);
     ctx.fillStyle = "rgba(255,255,255,0.6)";
     ctx.font = `400 22px ${FONT_STACK}`;
-    ctx.fillText(`同龄基准 ${m.benchmark}`, x + 28, y + 130);
+    ctx.fillText(`同龄人平均 ${m.benchmark}`, x + 28, y + 130);
   });
 
   // 段位条
@@ -186,7 +186,7 @@ export function drawAnnualPoster(ctx: CanvasRenderingContext2D): void {
   ctx.textAlign = "center";
   ctx.fillStyle = "rgba(255,255,255,0.72)";
   ctx.font = `400 24px ${FONT_STACK}`;
-  ctx.fillText("数据由 DuckDB-WASM 在浏览器本地计算", cx, rankY + 112 + 72);
+  ctx.fillText("全部数据在你的浏览器本地计算，不上传", cx, rankY + 112 + 72);
 
   // 底部：Logo + 二维码占位
   const footerY = H - 360;
