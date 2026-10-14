@@ -11,7 +11,10 @@
  *    两种无数据文案（数据集为空 / 有数据但维度为空）与 unhandled 组合；
  * 4. buildAggregateContext：固定夹具下的内容与长度断言（≤2000 字、每条以「·」开头、
  *    空数据返回空串、单组查不到即省略）；
- * 5. EXAMPLE_QUESTIONS：6 个示例问题非空且全部可被本地意图识别。
+ * 5. buildDetailContext / DETAIL_SNAPSHOT_SQL（07 修订案 A8）：假行驱动的内容与
+ *    截断断言、异常与空数据返回空串，以及固定 SQL 的静态口径断言（LIMIT 150、
+ *    零动态拼接、不进聚合白名单的直连语句）；
+ * 6. EXAMPLE_QUESTIONS：6 个示例问题非空且全部可被本地意图识别。
  */
 import { describe, expect, it } from "vitest";
 
@@ -20,7 +23,9 @@ import {
   answerLocalQuestion,
   buildAggregateContext,
   buildContextQueries,
+  buildDetailContext,
   buildIntentQueries,
+  DETAIL_SNAPSHOT_SQL,
   EXAMPLE_QUESTIONS,
   type QaIntent,
   type SqlRunner,
@@ -617,6 +622,25 @@ describe("answerLocalQuestion 答案文案（数字全部来自夹具行）", ()
     );
     expect(answer).toEqual({ kind: "no-data", text: "本月没有「餐饮」支出记录。" });
   });
+
+  it("主查询抛错返回 unhandled：引擎故障转在线兜底，不假称「还没有账单数据」", async () => {
+    const answer = await answerLocalQuestion(
+      async () => Promise.reject(new Error("duckdb dead")),
+      { kind: "month_total", window: "this_month" },
+      null,
+    );
+    expect(answer).toEqual({ kind: "unhandled" });
+  });
+
+  it("主查询成功但数据集探针抛错时向上抛出：探针故障不吞成空数据集", async () => {
+    const runner: SqlRunner = async (sql: string) => {
+      if (/SELECT account_id, COUNT/.test(sql)) throw new Error("probe boom");
+      return [];
+    };
+    await expect(
+      answerLocalQuestion(runner, { kind: "month_total", window: "this_month" }, null),
+    ).rejects.toThrow("probe boom");
+  });
 });
 
 // ─────────────────────────── 在线兜底汇总上下文 ───────────────────────────
@@ -695,5 +719,68 @@ describe("buildAggregateContext 汇总上下文", () => {
   it("没有任何数据时返回空串", async () => {
     const context = await buildAggregateContext(makeRunner([], []));
     expect(context).toBe("");
+  });
+});
+
+// ─────────────────────────── 明细快照（07 修订案 A8） ───────────────────────────
+
+describe("buildDetailContext / DETAIL_SNAPSHOT_SQL", () => {
+  /** 假快照行：列序与 DETAIL_SNAPSHOT_SQL 的 SELECT 顺序一致 */
+  function detailRow(over: Partial<Record<string, unknown>>): Record<string, unknown> {
+    return {
+      0: "2026-10-10",
+      1: "餐饮",
+      2: "美团",
+      3: 2560n,
+      4: "expense",
+      ...over,
+    };
+  }
+
+  const runDetail = (rows: Record<string, unknown>[]) => async () => rows;
+
+  it("按「日期 类目 商户 方向金额」拼行，行间以「；」连接，支出 / 收入标签正确", async () => {
+    const text = await buildDetailContext(
+      runDetail([
+        detailRow({}),
+        detailRow({ 0: "2026-10-09", 1: "通讯", 2: "中国移动", 3: 5000n, 4: "income" }),
+      ]),
+    );
+    expect(text).toBe(
+      "2026-10-10 餐饮 美团 支出¥25.60 元；2026-10-09 通讯 中国移动 收入¥50.00 元",
+    );
+  });
+
+  it("商户为空归并「未注明商户」，金额为负写 -¥ 前缀", async () => {
+    const text = await buildDetailContext(runDetail([detailRow({ 2: null, 3: -1234n })]));
+    expect(text).toBe("2026-10-10 餐饮 未注明商户 支出-¥12.34 元");
+  });
+
+  it("超 maxChars 时整行丢弃（不截断半个行），短预算下只保留放得下的行", async () => {
+    const rows = [
+      detailRow({ 0: "2026-10-10", 2: "美团", 3: 2560n }),
+      detailRow({ 0: "2026-10-09", 2: "肯德基", 3: 4500n }),
+    ];
+    // 第 1 行恰好放得下（预算 = 第 1 行长度），第 2 行加分隔符后必然超预算
+    const onlyFirst = await buildDetailContext(runDetail(rows), "2026-10-10 餐饮 美团 支出¥25.60 元".length);
+    expect(onlyFirst).toBe("2026-10-10 餐饮 美团 支出¥25.60 元");
+    expect(onlyFirst).not.toContain("肯德基");
+  });
+
+  it("空快照返回空串，执行器抛异常也返回空串（由面板决定是否仍转在线）", async () => {
+    expect(await buildDetailContext(runDetail([]))).toBe("");
+    expect(await buildDetailContext(async () => Promise.reject(new Error("boom")))).toBe("");
+  });
+
+  it("DETAIL_SNAPSHOT_SQL 固定口径：LIMIT 150、倒序、只收支行、零动态拼接", () => {
+    expect(DETAIL_SNAPSHOT_SQL).toContain("FROM transactions");
+    expect(DETAIL_SNAPSHOT_SQL).toContain("ORDER BY date_iso DESC");
+    expect(DETAIL_SNAPSHOT_SQL).toContain("LIMIT 150");
+    expect(DETAIL_SNAPSHOT_SQL).toContain("direction <> 'neutral'");
+    expect(DETAIL_SNAPSHOT_SQL).toContain("status <> 'refunded'");
+    // 零动态拼接：固定语句里不允许出现模板插值痕迹
+    expect(DETAIL_SNAPSHOT_SQL).not.toContain("${");
+    // 直连语句不经聚合白名单，本测试不调用 precheckAggregateSql（该语句会被
+    // 白名单的「明细列禁投影」拒绝，正说明它不在聚合通道内）
   });
 });

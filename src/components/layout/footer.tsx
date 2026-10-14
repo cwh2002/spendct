@@ -27,7 +27,7 @@ export function Footer() {
               消费CT
             </p>
             <p className="mt-2 max-w-xs text-sm text-slate-600 dark:text-slate-400">
-              给你的账单做一次 AI 体检：先体检、你审阅、账单不出浏览器。
+              给你的账单做一次 AI 体检：先体检、你审阅、账单本地处理。
             </p>
           </div>
 
@@ -51,10 +51,10 @@ export function Footer() {
             <h3 className="text-sm font-semibold">数据说明</h3>
             <p className="mt-3 flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-400">
               <Lock className="size-4 text-(--color-health)" aria-hidden />
-              账单不出浏览器 · 本地计算
+              账单本地计算 · 服务端零存储
             </p>
             <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-              账单明细只在你自己的浏览器里计算，服务器只做转发，不留存。
+              账单解析与体检默认都在浏览器里完成；本地答不了的追问会把统计与最近明细快照发给 AI，服务器只转发，不留存。
             </p>
           </div>
         </div>

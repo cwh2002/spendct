@@ -73,10 +73,10 @@ export function classifySmallTalk(text: string): SmallTalkKind | null {
   return null;
 }
 
-/** 两类闲聊的定稿回答文案（identity 口径：两种模式都围绕账单数据说话，不编造数字） */
+/** 两类闲聊的定稿回答文案（identity 口径：如实说明本地 / 在线两条回答路径） */
 export const SMALL_TALK_ANSWER: Record<SmallTalkKind, string> = {
   greeting:
     "你好！我是账单助手，可以围绕你的账单数据回答问题。点洞察卡上的「深挖」就能继续追问，也可以直接输入问题，比如「外卖为什么涨了？」",
   identity:
-    "我没有固定的模型身份：未连接在线服务时，账单问题由内置规则直接读取你的账单数据回答；连接在线服务后，本地答不了的问题会交给外部大模型，且只发送汇总统计、不发送逐笔明细。",
+    "我是账单助手：本地能算的问题直接按你的账单数据回答；本地答不了的问题，会把最近 150 笔明细与汇总统计一起发给在线大模型分析。",
 };

@@ -78,7 +78,18 @@ async function loadJsonExtension(conn: AsyncDuckDBConnection): Promise<void> {
   await conn.query("LOAD json");
 }
 
-/** 获取单例连接。初始化失败时 dbPromise 复位，允许下次调用重试（网络抖动场景） */
+/**
+ * 单次获取的超时上限：只防「永久悬挂」（worker 卡死等），不催「慢加载」——
+ * 首访需拉取 38MB wasm 与扩展，慢网络或并行负载下十几秒起步很正常，
+ * 阈值要给足余量（e2e 23 用例并行时曾实测超 15s），120s 内成功都算成功。
+ */
+const DUCKDB_INIT_TIMEOUT_MS = 120_000;
+
+/**
+ * 获取单例连接。初始化失败时 dbPromise 复位，允许下次调用重试（网络抖动场景）；
+ * 每次获取都套 120s 超时保险——初始化悬挂时本次调用拒绝（调用方走自己的兜底），
+ * 底层 initDuckDB 仍被缓存，后续调用重新竞速，初始化一旦成功即恢复正常。
+ */
 export function getDuckDB(): Promise<AsyncDuckDBConnection> {
   if (!dbPromise) {
     dbPromise = initDuckDB().catch((err) => {
@@ -86,7 +97,14 @@ export function getDuckDB(): Promise<AsyncDuckDBConnection> {
       throw err;
     });
   }
-  return dbPromise;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(
+      () => reject(new Error("DuckDB 初始化超时（120s），请刷新页面重试")),
+      DUCKDB_INIT_TIMEOUT_MS,
+    );
+  });
+  return Promise.race([dbPromise, timeout]).finally(() => clearTimeout(timeoutId));
 }
 
 /** 销毁单例（worker 一并 terminate）。销毁后旧连接全部失效，须重新 getDuckDB() */

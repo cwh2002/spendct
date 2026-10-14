@@ -336,7 +336,7 @@ export function TopNav() {
               className="flex items-center gap-1 rounded-full border border-(--color-border) px-2.5 py-1 text-xs text-slate-600 transition-colors hover:border-(--color-border-strong) dark:text-slate-300"
             >
               <Lock className="size-3.5" aria-hidden />
-              <span className="hidden md:inline">数据不出浏览器</span>
+              <span className="hidden md:inline">本地计算 · 零存储</span>
             </Link>
             <ThemeToggle />
             <NotificationBell />

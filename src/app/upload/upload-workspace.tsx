@@ -103,12 +103,19 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** 导入失败文案：引擎加载类错误（首次访问需联网加载）与一般失败分开提示；原始报错只留开发者日志 */
+/**
+ * 导入失败文案：引擎加载类错误（首次访问需联网加载）与一般失败分开提示；
+ * 初始化超时（getDuckDB 的 120s 悬挂保险）单独给「刷新重试」指引，
+ * 不能落到「文件格式不识别」误导用户；原始报错只留开发者日志。
+ */
 function describeImportError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   console.warn("[upload] 导入失败，原始错误：", message || err);
   if (/worker|wasm|webassembly|instantiate/i.test(message)) {
     return "账单识别引擎还没加载成功：首次使用需要联网加载，请检查网络后点「重试」";
+  }
+  if (/初始化超时|timeout/i.test(message)) {
+    return "账单识别引擎加载超时，请刷新页面后重试";
   }
   return "文件格式不识别，请确认是银行或支付平台导出的账单文件";
 }

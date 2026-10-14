@@ -16,6 +16,8 @@ import {
   analyzeQuestion,
   answerLocalQuestion,
   buildAggregateContext,
+  buildDetailContext,
+  createDuckDbDetailSnapshot,
   createDuckDbRunner,
   DATASET_EMPTY_TEXT,
   EXAMPLE_QUESTIONS,
@@ -31,9 +33,10 @@ import { usePipeline } from "@/lib/pipeline/store";
  * 1. 闲聊分流（classifySmallTalk）——「你好」「你是谁」等非账单问题直接回定稿文案；
  * 2. 本地规则（qa-engine）——意图解析 + 白名单聚合 SQL 直接读取账单数据回答，
  *    数字全部来自查询结果，答案气泡挂「已按你的账单数据计算」脚注；
- * 3. 在线兜底——本地答不了的问题，拼汇总统计上下文（只含统计、不含逐笔明细）
- *    与最近对话交给在线服务流式回答，气泡挂「在线生成 · 仅发送汇总统计」脚注；
- *    没有账单数据时不进这一环，直接回「先导入账单」。
+ * 3. 在线兜底——本地答不了的问题，拼「汇总统计 + 最近明细快照」上下文
+ *    与最近对话交给在线服务流式回答（明细口径见 07 修订案 A8），气泡挂
+ *    「在线生成 · 已发送明细与统计」脚注；没有账单数据时不进这一环，
+ *    直接回「先导入账单」。
  *
  * 与页面的协作方式保持既有契约：锚点来自洞察卡「深挖」或账本图表数据点点击，
  * 页面通过 ref 触发「/」快捷键聚焦输入框；折叠窄轨、锚点确认条、快捷键均不变。
@@ -64,8 +67,8 @@ interface FollowUpTurn {
 /** 思考态：data＝读取本地账单数据；live＝等待在线服务返回 */
 type ThinkingState = "data" | "live";
 
-/** 在线兜底时夹在对话开头的汇总说明，提醒内容只含统计、不含逐笔明细 */
-const ONLINE_CONTEXT_PREFIX = "以下是我的账单汇总数据（只含统计、不含逐笔明细）：\n";
+/** 在线兜底时夹在对话开头的账单数据说明（汇总统计 + 最近明细快照，07 修订案 A8） */
+const ONLINE_CONTEXT_PREFIX = "以下是我的账单数据（汇总统计与最近明细）：\n";
 
 /** 在线接口的消息总长上限（与 /api/ai/chat 的参数校验同口径） */
 const MESSAGE_BUDGET = 8000;
@@ -226,18 +229,28 @@ export function FollowUpPanel({
       } catch {
         context = "";
       }
+      // 明细快照：最近 150 笔收支明细（07 修订案 A8），读不到则省略该段；
+      // 明细预算 = 接口单条消息上限 4000 减去前缀与汇总段，兜底不小于 0
+      let details = "";
+      try {
+        const detailBudget = Math.max(0, 3900 - context.length);
+        details = await buildDetailContext(createDuckDbDetailSnapshot(), detailBudget);
+      } catch {
+        details = "";
+      }
       if (bailIfStopped()) return;
-      // 没有任何可发送的统计（未导入账单或引擎读不到数据）：不空手转在线，
+      const combined = [context, details].filter(Boolean).join("\n");
+      // 统计与明细都拿不到（未导入账单或引擎读不到数据）：不空手转在线，
       // 直接本地回答「先导入账单」，避免模型因拿不到数据而答非所问
-      if (!context) {
+      if (!combined) {
         setThinking(null);
         appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
         return;
       }
 
       const messages: { role: "user" | "assistant"; content: string }[] = [];
-      if (context) {
-        messages.push({ role: "user", content: `${ONLINE_CONTEXT_PREFIX}${context}` });
+      if (combined) {
+        messages.push({ role: "user", content: `${ONLINE_CONTEXT_PREFIX}${combined}` });
       }
       const budget = MESSAGE_BUDGET - messages.reduce((sum, m) => sum + m.content.length, 0);
       messages.push(...buildHistoryMessages(question, budget));
@@ -272,14 +285,25 @@ export function FollowUpPanel({
         updateTurnText(turnId, accumulated);
       }
       accumulated += decoder.decode(); // 冲刷解码器内部残留字节
+      if (accumulated.trim() === "") {
+        // 流干净收尾但零内容：上游错误（限流 / 内容过滤 / 启动失败）被 SDK 转成
+        // 错误 part 后以空流结束，必须撤掉占位气泡兜底成提示，不能把空气泡挂上
+        // 「在线生成」脚注
+        setTurns((prev) => prev.filter((turn) => turn.id !== turnId));
+        appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+        return;
+      }
       updateTurnText(turnId, accumulated);
       markTurnLive(turnId);
     } catch {
       // 组件卸载触发的中止 → 静默返回（不触碰已卸载组件的状态）；
       // 超时中止 → 补一条本地提示气泡（提示只补一次）；
-      // 其余网络异常 / 流中断 → 同样补本地提示
+      // 其余网络异常 / 流中断 → 同样补本地提示；占位气泡若还没收到内容就撤掉
       if (!aliveRef.current) return;
       if (controller.signal.aborted && !timedOut) return;
+      setTurns((prev) =>
+        prev.filter((turn) => !(turn.role === "assistant" && turn.text === "" && !turn.note)),
+      );
       appendTurn({ role: "assistant", text: onlineFallbackTipText() });
     } finally {
       clearTimeout(timeoutId);
@@ -518,7 +542,7 @@ export function FollowUpPanel({
                 {turn.note === "live" ? (
                   <span className="mt-2 flex w-fit items-center gap-1.5 rounded-(--radius-sm) bg-(--color-primary-soft) px-2 py-1 text-[11px] leading-relaxed text-(--color-brand-600)">
                     <Sparkles className="size-3 shrink-0" aria-hidden />
-                    在线生成 · 仅发送汇总统计
+                    在线生成 · 已发送明细与统计
                   </span>
                 ) : null}
               </div>

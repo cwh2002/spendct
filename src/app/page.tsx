@@ -43,19 +43,19 @@ const ORDERED_STAGES: StageId[] = [...SIX_STAGES].sort(
 
 /* 隐私三承诺条：一句话口径，完整对照表在 /privacy */
 const PRIVACY_PROMISES = [
-  { icon: Lock, text: "明细只在你的浏览器内计算" },
-  { icon: ShieldCheck, text: "AI 只看统计结果，看不到明细" },
+  { icon: Lock, text: "账单解析与体检在浏览器内完成" },
+  { icon: ShieldCheck, text: "追问时才向 AI 发送统计与最近明细" },
   { icon: ScanSearch, text: "数据一键导出、一键删除" },
 ] as const;
 
 /* 「怎么做到的」三节点：你的设备 → AI 助手 → 云端转递 */
 const ARCH_NODES = [
   { icon: Cpu, title: "你的设备", body: "账单只在这里打开和分析，不联网也能用" },
-  { icon: Sparkles, title: "AI 助手", body: "只看统计结果，看不到任何一笔明细" },
+  { icon: Sparkles, title: "AI 助手", body: "本地答不了时，收到统计与最近 150 笔明细快照" },
   { icon: Server, title: "云端服务器", body: "只负责转递，不保存任何内容" },
 ] as const;
 
-const VALUE_PROPS = ["AI 先体检", "你审阅追问", "账单不出浏览器"] as const;
+const VALUE_PROPS = ["AI 先体检", "你审阅追问", "账单本地处理"] as const;
 
 export default function HomePage() {
   return (

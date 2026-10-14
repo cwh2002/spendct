@@ -13,7 +13,8 @@
  *    查不到数据时区分「数据集为空」与「有数据但该维度为空」两种措辞。
  *
  * 本地答不了的组合（如按天口径不存在的深夜 / 预算统计）返回 unhandled，
- * 由追问面板转在线兜底（buildAggregateContext 负责拼兜底用的汇总上下文）。
+ * 由追问面板转在线兜底：buildAggregateContext 拼汇总统计，buildDetailContext
+ * 拼最近明细快照，两段一并发送给在线服务（口径见 07 修订案 A8）。
  *
  * 浏览器安全约束：本模块禁止引用 React 与 server-only；
  * analyzeQuestion / buildIntentQueries / buildContextQueries 均为纯函数，
@@ -554,13 +555,10 @@ const DATASET_PROBE_SQL =
   "SELECT account_id, COUNT(*) FROM transactions GROUP BY account_id LIMIT 1";
 
 async function datasetIsEmpty(runSql: SqlRunner): Promise<boolean> {
-  try {
-    const rows = await runSql(DATASET_PROBE_SQL);
-    return rows.length === 0;
-  } catch {
-    // transactions 表尚未建出（本会话从未导入账单）同样视为空数据集
-    return true;
-  }
+  // 探针抛错时不再吞成「空数据集」：主查询刚成功过，探针失败是引擎故障，
+  // 让它向上抛，由面板的本地查询 catch 转在线兜底（见 answerLocalQuestion）
+  const rows = await runSql(DATASET_PROBE_SQL);
+  return rows.length === 0;
 }
 
 /**
@@ -860,9 +858,10 @@ export async function answerLocalQuestion(
   try {
     primary = asRowList(await runSql(queries[0]!));
   } catch {
-    // 主查询抛错最常见的场景是 schema 缺失（本会话还没导入账单，视图/表未建出），
-    // 此时统一按空数据集提示，避免误转在线兜底编造答案
-    return { kind: "no-data", text: DATASET_EMPTY_TEXT };
+    // 主查询抛错是引擎接线故障（白名单拒绝 / DuckDB 报错 / 超时），本地给不出
+    // 可信答案；按 unhandled 转在线兜底，不能假称「还没有账单数据」盖本地计算章。
+    // 「本会话没导入账单」的场景由面板在调用前用 datasetTxHash 闸门拦住，不会到这里
+    return { kind: "unhandled" };
   }
   if (primary.length === 0) {
     if (await datasetIsEmpty(runSql)) {
@@ -1012,6 +1011,64 @@ export async function buildAggregateContext(runSql: SqlRunner): Promise<string> 
     output = lines.join("\n");
   }
   return output;
+}
+
+// ─────────────────────────── 明细快照（在线兜底口径，07 修订案 A8） ───────────────────────────
+
+/**
+ * 明细快照 SQL：在线兜底时随汇总统计一并发送给大模型的最近明细（≤150 笔）。
+ *
+ * 口径（与聚合白名单「明细列禁投影」互为边界，唯一明细出口，见 07 修订案 A8）：
+ * - 固定语句、零动态拼接：无时间窗参数、无用户输入，不可能注入；
+ * - 只 SELECT 收支方向的行（neutral 理财行 / refunded 退款行不进快照）；
+ * - LIMIT 150 按日期倒序 = 最近 150 笔，体积不随数据集规模增长；
+ * - 只经浏览器内 DuckDB 直连执行，服务端接触不到本条语句。
+ */
+export const DETAIL_SNAPSHOT_SQL = [
+  "SELECT date_iso, category, merchant, amount_cents, direction",
+  "FROM transactions",
+  "WHERE direction <> 'neutral' AND status <> 'refunded'",
+  "ORDER BY date_iso DESC",
+  "LIMIT 150",
+].join("\n");
+
+/** 明细快照执行器工厂：固定 SQL 直连单例连接执行（不经聚合白名单） */
+export function createDuckDbDetailSnapshot(): () => Promise<Record<string, unknown>[]> {
+  return async () => {
+    const conn = await getDuckDB();
+    const result = await conn.query(DETAIL_SNAPSHOT_SQL);
+    return result.toArray() as unknown as Record<string, unknown>[];
+  };
+}
+
+/**
+ * 明细快照文本：把快照行拼成「日期 类目 商户 方向金额」文本块，总长 ≤maxChars
+ * （超长按行截断，整行丢弃保证单条语义完整）。runDetail 入参注入便于单测用假行驱动。
+ */
+export async function buildDetailContext(
+  runDetail: () => Promise<Record<string, unknown>[]>,
+  maxChars = 3000,
+): Promise<string> {
+  let rows: Record<string, unknown>[] = [];
+  try {
+    rows = await runDetail();
+  } catch {
+    rows = []; // 快照读不到时省略该段，由面板决定是否仍转在线
+  }
+
+  const lines: string[] = [];
+  let used = 0;
+  for (const row of rows) {
+    const date = String(valAt(row, 0) ?? "");
+    const category = String(valAt(row, 1) ?? "");
+    const merchant = merchantName(valAt(row, 2));
+    const direction = String(valAt(row, 4) ?? "") === "income" ? "收入" : "支出";
+    const line = `${date} ${category} ${merchant} ${direction}${yuanText(numAt(row, 3))}`;
+    if (used + line.length > maxChars) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  return lines.join("；");
 }
 
 // ─────────────────────────── DuckDB 执行器接线 ───────────────────────────

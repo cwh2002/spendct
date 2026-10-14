@@ -27,7 +27,7 @@ import {
 export const metadata: Metadata = {
   title: "隐私说明",
   description:
-    "SpendCT 数据可见性对照表：账单明细不出你的浏览器，AI 只看统计结果，服务器只转发、不留存。",
+    "SpendCT 数据可见性对照表：账单解析与体检默认在浏览器内完成，追问时 AI 可见统计与最近明细快照，服务器只转发、不留存。",
 };
 
 /* ---------------- 对照表展示层（单一数据源：@/lib/privacy-visibility） ---------------- */
@@ -40,6 +40,7 @@ const VALUE_META: Record<CellValue, { label: string; color: string }> = {
   computed: { label: "在浏览器里算出", color: "text-(--color-ink-secondary)" },
   aggregated: { label: "只看到统计结果", color: "text-(--color-warning-ink)" },
   hashed: { label: "只看到打码代号", color: "text-(--color-warning-ink)" },
+  detail: { label: "看到统计与最近明细", color: "text-(--color-warning-ink)" },
   relay: { label: "只转发 · 不留存", color: "text-(--color-ink-secondary)" },
   never: { label: "永不看到", color: "text-(--color-good-ink)" },
   "-": { label: "—", color: "text-(--color-ink-muted)" },
@@ -70,7 +71,7 @@ function toneMeta(tone: VisibilityTone): ToneMeta {
         dot: "bg-(--color-warn)",
         swatch: "bg-(--color-warn)",
         label: "部分出浏览器",
-        desc: "只会以统计或打码后的形态离开浏览器",
+        desc: "只会以统计、打码代号或追问明细快照的形态离开浏览器",
       };
     default:
       return {
@@ -94,8 +95,8 @@ const PROMISE_CARDS = [
   },
   {
     icon: Bot,
-    title: "AI 助手：只看统计与打码结果",
-    body: "AI 只能看到按档位归类的金额和打码后的商户名，看不到完整明细。只有三条例外，我们都如实列出：格式兜底片段、商户分类文本、账单截图。",
+    title: "AI 助手：默认只看统计，追问时可见明细",
+    body: "AI 默认只能看到按档位归类的金额和打码后的商户名；本地答不了的追问会收到汇总统计与最近 150 笔明细快照（见第 24 行）。另有三条例外，我们都如实列出：格式兜底片段、商户分类文本、账单截图。",
   },
   {
     icon: Server,
@@ -115,8 +116,8 @@ export default function PrivacyPage() {
         </p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">隐私说明</h1>
         <p className="mt-4 text-lg leading-relaxed text-(--color-ink-secondary)">
-          一句话承诺：<strong className="font-semibold text-(--color-ink)">账单明细不出你的浏览器</strong>。
-          AI 只看统计结果，服务器只做转发、零存储——我们说到做到，宁可少承诺。
+          一句话承诺：<strong className="font-semibold text-(--color-ink)">账单解析与体检默认都在你的浏览器里完成</strong>。
+          本地答不了的追问会把统计与最近 150 笔明细快照交给 AI 分析；服务器只做转发、零存储——我们说到做到，宁可少承诺。
         </p>
       </header>
 
@@ -144,7 +145,7 @@ export default function PrivacyPage() {
           </ul>
         </div>
 
-        {/* 表格容器：内部滚动承载 23 行，sticky 表头依赖此滚动上下文；
+        {/* 表格容器：内部滚动承载 24 行，sticky 表头依赖此滚动上下文；
             移动端同一容器提供横向滚动 */}
         <div className="mt-4 max-h-[min(62vh,600px)] overflow-auto rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) shadow-(--shadow-sm)">
           <table className="w-full min-w-[820px] border-collapse text-sm">
@@ -208,8 +209,9 @@ export default function PrivacyPage() {
         </div>
 
         <p className="mt-3 text-xs leading-relaxed text-(--color-ink-muted)">
-          账单明细只在你的浏览器里计算；AI 只看统计结果（含预算与预测汇总，见第 22 行）；服务器只做转发、不留存。
-          表中第 13、19、20 行是三条例外，我们都如实列出。
+          账单解析与体检默认都在你的浏览器里计算；追问在线兜底时 AI 会收到统计与最近 150 笔明细快照（第 24 行）；
+          其余路径 AI 只看统计结果（含预算与预测汇总，见第 22 行）；服务器只做转发、不留存。
+          表中第 13、19、20、24 行是四处例外，我们都如实列出。
         </p>
       </section>
 

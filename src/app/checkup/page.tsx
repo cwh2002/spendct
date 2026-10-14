@@ -279,7 +279,7 @@ export default function CheckupPage() {
     mode === "sample"
       ? "内置账单 · 793 条交易"
       : mode === "upload"
-        ? "本地账单 · 数据不出浏览器"
+        ? "本地账单 · 浏览器内计算"
         : "内置账单 · 793 条交易";
 
   const totalCards = stages.reduce((sum, s) => sum + (s.status === "succeeded" ? s.cards : 0), 0);
@@ -312,7 +312,7 @@ export default function CheckupPage() {
           </span>
           <span className="inline-flex items-center gap-1 rounded-full border border-(--color-border) px-2.5 py-1 text-xs text-(--color-ink-secondary)">
             <ShieldCheck className="size-3.5" aria-hidden />
-            数据不出浏览器
+            浏览器内计算
           </span>
         </div>
       </header>

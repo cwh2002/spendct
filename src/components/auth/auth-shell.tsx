@@ -6,8 +6,8 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 
 const TRUST_POINTS = [
-  { icon: Lock, text: "明细不出浏览器" },
-  { icon: ShieldCheck, text: "AI 只见聚合摘要" },
+  { icon: Lock, text: "明细默认不出浏览器" },
+  { icon: ShieldCheck, text: "追问时可见统计与明细" },
   { icon: ScanSearch, text: "每条结论你审阅" },
 ] as const;
 

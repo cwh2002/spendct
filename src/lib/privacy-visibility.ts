@@ -17,9 +17,10 @@ export interface VisibilityRow {
   /**
    * LLM（DeepSeek-V3 / Qwen / GLM-4V-Flash）看到什么：
    * aggregated = 仅聚合摘要；hashed = 仅哈希占位（@{m:hash}）；never = 永不；
+   * detail = 追问在线兜底时可见汇总统计 + 最近 150 笔明细快照（07 修订案 A8）；
    * "-" = 不适用（如发出方自身产物，见 note）
    */
-  llm: "aggregated" | "hashed" | "never" | "-";
+  llm: "aggregated" | "hashed" | "never" | "detail" | "-";
   /**
    * 服务器（Next.js API 接入层）看到什么：
    * relay = 仅内存转发、不落盘；never = 永不上传；"-" = 不适用
@@ -40,7 +41,14 @@ export type VisibilityTone = "local" | "llm" | "never";
  */
 export function visibilityTone(row: VisibilityRow): VisibilityTone {
   if (row.llm === "never" && row.server === "never") return "never";
-  if (row.llm === "aggregated" || row.llm === "hashed" || row.server === "relay") return "llm";
+  if (
+    row.llm === "aggregated" ||
+    row.llm === "hashed" ||
+    row.llm === "detail" ||
+    row.server === "relay"
+  ) {
+    return "llm";
+  }
   return "local";
 }
 
@@ -57,7 +65,7 @@ export const VISIBILITY_ROWS: VisibilityRow[] = [
     browser: "local-only",
     llm: "never",
     server: "never",
-    note: "只存在你的浏览器里，永不上传任何服务器",
+    note: "只存在你的浏览器里，永不上传任何服务器；本地答不了的追问会发送最近 150 笔明细快照（见第 24 行）",
   },
   {
     item: "交易单号 / 商户单号",
@@ -78,7 +86,7 @@ export const VISIBILITY_ROWS: VisibilityRow[] = [
     browser: "local-only",
     llm: "never",
     server: "never",
-    note: "AI 只能看到按档位归类的金额和汇总值",
+    note: "AI 默认只能看到按档位归类的金额和汇总值；追问快照里的真实金额见第 24 行",
   },
   {
     item: "月度汇总",
@@ -99,14 +107,14 @@ export const VISIBILITY_ROWS: VisibilityRow[] = [
     browser: "computed",
     llm: "hashed",
     server: "never",
-    note: "AI 只看到打码后的商户代号，订阅识别同理；交易满 5 笔且你开启显示时，页面才会还原商户名称",
+    note: "AI 只看到打码后的商户代号，订阅识别同理；交易满 5 笔且你开启显示时，页面才会还原商户名称；追问快照会带真实商户名（见第 24 行）",
   },
   {
     item: "商户代号与真实名称的对照表",
     browser: "computed",
     llm: "hashed",
     server: "never",
-    note: "这份对照表只存在你的浏览器里，绝不上传",
+    note: "这份对照表只存在你的浏览器里，绝不上传；追问快照会带真实商户名（见第 24 行）",
   },
   {
     item: "发送给 AI 的查询内容",
@@ -205,5 +213,12 @@ export const VISIBILITY_ROWS: VisibilityRow[] = [
     llm: "never",
     server: "never",
     note: "只存在你的浏览器里；导出文件直接在本地生成并下载，不经服务器",
+  },
+  {
+    item: "追问明细快照",
+    browser: "computed",
+    llm: "detail",
+    server: "relay",
+    note: "只有本地答不了、转在线分析时才会发送：汇总统计 + 最近 150 笔明细（日期/类目/商户/金额/方向），回答气泡会标注「已发送明细与统计」；服务器只转发，不留存",
   },
 ];
