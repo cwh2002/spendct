@@ -409,7 +409,7 @@
     <tr><td>账单导入</td><td>原始 CSV（含交易明细）</td><td>仅浏览器内存，不落盘、不上传</td></tr>
     <tr><td>六阶段聚合</td><td>SQL 分组聚合结果（9 预计算表 / 13 视图）</td><td>浏览器内</td></tr>
     <tr><td>LLM 叙事 / 建议</td><td>聚合统计值（金额分箱脱敏 + 数据集哈希）；追问在线兜底时附最近 150 笔明细快照，气泡标注「已发送明细与统计」</td><td>服务端转发，不存任何请求日志</td></tr>
-    <tr><td>字段映射 AI 兜底</td><td>表头 + 至多 1 条样本行（≤6KB 截断）</td><td>仅在探测链全失败且用户确认后发送</td></tr>
+    <tr><td>字段映射 AI 兜底</td><td>表头 + 至多 1 条样本行（≤6KB 截断）</td><td>设计预留（未上线）：探测链全失败且用户确认后发送</td></tr>
     <tr><td>账户凭据</td><td>PBKDF2-SHA256 加盐哈希（15 万次迭代）</td><td>IndexedDB 本地</td></tr>
     <tr><td>断点 / 缓存键</td><td>阶段进度 + 数据集哈希</td><td>localStorage 仅存键（红线：不落任何行数据与聚合明细）</td></tr>
   </table>
@@ -479,7 +479,7 @@
     <tr><th style="width:30%">任务</th><th style="width:24%">主模型</th><th>降级链</th></tr>
     <tr><td>六阶段叙事 / 洞察卡叙事</td><td>deepseek</td><td>qwen → 确定性模板叙事 + llm:degraded 横幅</td></tr>
     <tr><td>锚点追问 plan / summarize</td><td>deepseek</td><td>qwen → 内置 DRILL_TEMPLATES 模板</td></tr>
-    <tr><td>字段映射 / 表头猜测</td><td>qwen</td><td>规则映射 → AI 兜底（用户确认后）</td></tr>
+    <tr><td>字段映射 / 表头猜测</td><td>qwen</td><td>规则映射（编码探测链 UTF-8→GB18030→GBK）；AI 兜底为设计预留（未上线）</td></tr>
     <tr><td>截图 OCR（后续）</td><td>glm4v</td><td>GLM-4V-Flash 网关，失败提示重试</td></tr>
   </table>
   <ul class="tight">

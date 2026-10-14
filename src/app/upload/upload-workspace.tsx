@@ -47,6 +47,7 @@ import { featureFlags } from "@/lib/feature-flags";
 import { registerImportedBook } from "@/lib/import/active-book";
 import { cleanBillRows, hashCleanRows } from "@/lib/import/clean-input";
 import { buildCleanCsv, parseBillCsv, stripDuplicates } from "@/lib/import/parse-csv";
+import { decodeBillFile } from "@/lib/import/decode-csv";
 import { generateSampleCsv, SAMPLE_BILL_FILE_NAME, SAMPLE_ROW_COUNT } from "@/lib/import/sample-bill";
 import type { ParseResult } from "@/lib/import/types";
 import { usePipeline } from "@/lib/pipeline/store";
@@ -551,14 +552,18 @@ export function UploadWorkspace() {
       const reader = new FileReader();
       reader.onerror = () => setEntryError("读取文件失败，请重试");
       reader.onload = () => {
-        if (typeof reader.result === "string") {
-          void startParse(reader.result, file.name);
-        } else {
+        if (!(reader.result instanceof ArrayBuffer)) {
           setEntryError("读取文件失败，请重试");
+          return;
+        }
+        try {
+          // 编码探测链（07 契约 §9）：UTF-8 → GB18030 → GBK，详见 decode-csv
+          void startParse(decodeBillFile(reader.result), file.name);
+        } catch {
+          setEntryError("无法识别文件的文字编码，请确认导出的是微信/支付宝账单 CSV");
         }
       };
-      // UTF-8 直接解码；GBK 文件的乱码痕迹由嗅探器识别并在预览页提示
-      reader.readAsText(file);
+      reader.readAsArrayBuffer(file);
     },
     [startParse],
   );

@@ -296,6 +296,35 @@ function matchHeaders(cells: string[]): {
   return { map, mapping, normalized, matchedCount: Object.keys(mapping).length };
 }
 
+/** 表头行最多向前扫描的行数：真实导出的微信账单头部说明区约 16 行、支付宝约 5 行 */
+const HEADER_SCAN_LIMIT = 40;
+
+/** 微信/支付宝导出文件的标题行特征：认出说明区但没数据时（如空账单导出），给更具体的提示 */
+const EXPORT_WRAPPER_PATTERN = /微信支付账单明细|支付宝交易流水明细/;
+
+/**
+ * 定位表头行：真实导出的账单文件在表头前有一段说明区（微信昵称/起始时间/注…），
+ * 表头不一定在第 1 行。返回前 HEADER_SCAN_LIMIT 行内第一个命中 ≥2 个表头别名的
+ * 行号；找不到返回 -1（交给「首行即数据」兜底或拒收逻辑）。
+ */
+function findHeaderLine(lines: string[][]): number {
+  const limit = Math.min(lines.length, HEADER_SCAN_LIMIT);
+  for (let i = 0; i < limit; i++) {
+    if (matchHeaders(lines[i] ?? []).matchedCount >= 2) return i;
+  }
+  return -1;
+}
+
+/** 导出文件头尾的摘要行（微信「收入：…」、支付宝尾部「共xx笔记录 / 已支出：…」、分隔线）：不是账单数据 */
+function isSummaryLine(cells: string[]): boolean {
+  const first = (cells[0] ?? "").trim();
+  if (first === "") return false;
+  if (/^-{4,}$/.test(first)) return true;
+  if (/^共\s*\d+\s*笔记录/.test(first)) return true;
+  if (/^(收入|支出|中性交易|已收入|已支出)\s*：/.test(first)) return true;
+  return false;
+}
+
 interface ChannelInfo {
   channel: BillRow["channel"] | null;
   /** marker=表头渠道标识列命中；file=靠文件名猜；none=无法确定 */
@@ -374,7 +403,6 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
   }
 
   const firstLine = lines[0] ?? [];
-  const headerMatch = matchHeaders(firstLine);
 
   let map: ColumnMap;
   let mapping: Record<string, string>;
@@ -382,10 +410,20 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
   let positional = false;
   let dataStart = 1;
 
-  if (headerMatch.matchedCount >= 2) {
+  // 真实导出的账单文件表头前有一段说明区（微信约 16 行、支付宝约 5 行）：
+  // 先扫描定位表头行，找不到再退回「首行即数据」的位置规则
+  const headerLineIndex = findHeaderLine(lines);
+  if (headerLineIndex >= 0) {
+    const headerMatch = matchHeaders(lines[headerLineIndex] ?? []);
     map = headerMatch.map;
     mapping = headerMatch.mapping;
     channelInfo = detectChannel(headerMatch.normalized, fileName);
+    dataStart = headerLineIndex + 1;
+    if (headerLineIndex > 0) {
+      warnings.push(
+        `已跳过文件开头的 ${headerLineIndex} 行说明信息（导出账单的表头前通常有一段摘要），表头在第 ${headerLineIndex + 1} 行`,
+      );
+    }
   } else if (rowHasDateAndAmount(firstLine)) {
     // 首行直接是数据（表头被裁掉/手工拼接的文件）：按列数走位置规则，置信度降档
     const fallback = pickPositional(firstLine.length);
@@ -398,11 +436,18 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
       `这个文件第一行直接就是账单数据（没有栏目行），已按${fallback.layout === "wechat" ? "微信" : "支付宝"}账单的常见格式识别，请在右侧确认识别结果`,
     );
   } else {
+    // 认出导出文件的说明区但里面没有表头/数据（如空账单导出）：提示指向性更强
+    const looksLikeExport = EXPORT_WRAPPER_PATTERN.test(firstLine.join(","));
     return {
       format: "unknown",
       confidence: "low",
       rows: [],
-      warnings: [...warnings, "无法识别为微信或支付宝账单，请确认你选择的是正确的账单文件"],
+      warnings: [
+        ...warnings,
+        looksLikeExport
+          ? "认出了微信/支付宝的导出文件头部，但没有找到账单表头和数据：请确认导出时选的是『用于个人对账』的账单明细，且所选时间范围内确实有交易"
+          : "无法识别为微信或支付宝账单，请确认你选择的是正确的账单文件",
+      ],
       mapping: {},
     };
   }
@@ -424,7 +469,11 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
   const skipCounts = { badDate: 0, badAmount: 0, zeroAmount: 0 };
   const rows: BillRow[] = [];
   for (let lineIndex = dataStart; lineIndex < lines.length; lineIndex++) {
-    const outcome = buildBillRow(lines[lineIndex] ?? [], map, channel);
+    const cells = lines[lineIndex] ?? [];
+    // 尾部摘要行（支付宝「共xx笔记录 / 已支出：…」等）不是账单数据，静默跳过，
+    // 不计入「没认出来」的告警
+    if (isSummaryLine(cells)) continue;
+    const outcome = buildBillRow(cells, map, channel);
     if (outcome.kind === "row") rows.push(outcome.row);
     else skipCounts[outcome.reason] += 1;
   }

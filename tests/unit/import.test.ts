@@ -8,6 +8,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildCleanCsv, parseBillCsv, stripDuplicates } from "@/lib/import/parse-csv";
+import { decodeBillFile } from "@/lib/import/decode-csv";
 import type { BillRow } from "@/lib/import/types";
 
 const WECHAT_HEADER =
@@ -257,6 +258,86 @@ describe("无法识别的格式", () => {
     expect(result.format).toBe("wechat");
     expect(result.confidence).toBe("medium");
     expect(result.rows[0]).toMatchObject({ dateIso: "2026-01-05", amountCents: 1234 });
+  });
+});
+
+describe("真实导出格式：表头前的说明区（微信/支付宝导出文件头部带摘要段）", () => {
+  const WECHAT_PREAMBLE = [
+    "微信支付账单明细,,,,,,,,,,,",
+    "微信昵称：[小鲸],,,,,,,,,,,",
+    "起始时间：[2026-01-01 00:00:00] 终止时间：[2026-01-31 23:59:59],,,,,,,,,,,",
+    "导出类型：[全部],,,,,,,,,,,",
+    "导出时间：[2026-01-31 23:59:59],,,,,,,,,,,",
+    "共2笔记录,,,,,,,,,,,",
+    "收入：1笔 100.00元,,,,,,,,,,,",
+    "支出：1笔 36.50元,,,,,,,,,,,",
+    "中性交易：0笔 0.00元,,,,,,,,,,,",
+    "注：,,,,,,,,,,,",
+    "1. 充值/提现/理财通购买/零钱通存取/信用卡还款等交易，将计入中性交易,,,,,,,,,,,",
+    "----------------------微信支付账单明细列表--------------------,,,,,,,,,,,",
+  ];
+
+  it("微信带说明区的导出文件：跳过说明区定位表头并解析，附跳过提示", () => {
+    const csv = [
+      ...WECHAT_PREAMBLE,
+      WECHAT_HEADER,
+      '2026-01-05 12:34:56,商户消费,美团外卖,外卖订单,支出,¥36.50,零钱,支付成功,42000012345678901234567890123456,SP202601051234,"/"',
+      "2026-01-06 08:01:02,微信红包,张三,,收入,¥100.00,零钱,已存入零钱,42000012345678901234567890123457,,生日红包",
+    ].join("\n");
+    const result = parseBillCsv(csv, "微信支付账单(20260101-20260131).csv");
+    expect(result.format).toBe("wechat");
+    expect(result.confidence).toBe("high");
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows[0]).toMatchObject({ amountCents: 3650, merchant: "美团外卖" });
+    expect(result.rows[1]).toMatchObject({ direction: "income", amountCents: 10000 });
+    expect(result.warnings.some((warning) => warning.includes("已跳过文件开头的"))).toBe(true);
+  });
+
+  it("支付宝带说明区与尾部摘要：跳过头部说明与尾部摘要行，且不产生「没认出来」告警", () => {
+    const csv = [
+      "支付宝交易流水明细查询,,,,,,,,,,,,,,,",
+      "账号:[user@example.com],,,,,,,,,,,,,,,",
+      "起始日期:[2026-10-01 00:00:00]    终止日期:[2026-10-31 23:59:59],,,,,,,,,,,,,,,",
+      "---------------------------------交易记录明细列表------------------------------------,,,,,,,,,,,,,,,",
+      ALIPAY_HEADER,
+      '2026100522001412345678901234,20261005220123456789000001,2026-10-05 12:34:56,2026-10-05 12:35:10,2026-10-05 12:35:10,北京市,即时到账交易,肯德基,汉堡套餐,¥45.00,支出,交易成功,¥0.00,¥0.00,"/",已支出',
+      "------------------------------------------------------------------------------------,,,,,,,,,,,,,,,",
+      "共1笔记录,,,,,,,,,,,,,,,",
+      "已支出：1笔 45.00元,,,,,,,,,,,,,,,",
+      "已收入：0笔 0.00元,,,,,,,,,,,,,,,",
+    ].join("\n");
+    const result = parseBillCsv(csv, "alipay_record_20261005.csv");
+    expect(result.format).toBe("alipay");
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0]).toMatchObject({ amountCents: 4500, merchant: "肯德基" });
+    expect(result.warnings.some((warning) => warning.includes("没认出来"))).toBe(false);
+  });
+
+  it("只有说明区没有表头/数据（空账单导出）时给出针对性提示", () => {
+    const csv = ["微信支付账单明细,,,,,,,,,,,", "共0笔记录,,,,,,,,,,,"].join("\n");
+    const result = parseBillCsv(csv, "微信支付账单(20260101-20260131).csv");
+    expect(result.format).toBe("unknown");
+    expect(result.rows).toEqual([]);
+    expect(result.warnings.some((warning) => warning.includes("用于个人对账"))).toBe(true);
+  });
+});
+
+describe("decodeBillFile：编码探测链（07 契约 §9）", () => {
+  it("UTF-8 带 BOM 的文件：严格解码并剥掉 BOM", () => {
+    const bytes = new TextEncoder().encode("﻿交易时间,金额(元),收/支");
+    expect(decodeBillFile(bytes.buffer as ArrayBuffer)).toBe("交易时间,金额(元),收/支");
+  });
+
+  it("GBK 字节流（utf-8 严格解码失败）：经 GB18030 正确还原中文", () => {
+    // 「交易号」的 GBK 字节：BD BB D2 D7 BA C5；0xBD 不是合法的 UTF-8 前导字节，第一跳必失败
+    const bytes = new Uint8Array([0xbd, 0xbb, 0xd2, 0xd7, 0xba, 0xc5]);
+    expect(decodeBillFile(bytes.buffer as ArrayBuffer)).toBe("交易号");
+  });
+
+  it("三种编码全部解码失败时抛错（调用方转 PARSE_FAILED）", () => {
+    // 0x81 后跟空格：三种编码下都是非法序列（注：孤立 0xFF 会被 WHATWG gbk 兜底成私用区字符，不能当反例）
+    const bytes = new Uint8Array([0x81, 0x20]);
+    expect(() => decodeBillFile(bytes.buffer as ArrayBuffer)).toThrow();
   });
 });
 
