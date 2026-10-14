@@ -20,6 +20,11 @@ import { AuthGuard } from "@/components/auth/route-guard";
 import { chartInk, cssVar, EChart } from "@/components/charts/e-chart";
 import type { ECOption } from "@/components/charts/e-chart";
 import { Container } from "@/components/layout/container";
+import {
+  mergeManualExpenses,
+  sanitizeManualEntries,
+  type ManualEntry,
+} from "@/lib/budget/manual-merge";
 import { DEMO_BUDGET, DEMO_FORECAST } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { mockBudgetAdvice, type MockBudgetAdvice } from "@/lib/llm/mock-narratives";
@@ -55,17 +60,23 @@ const KEY_BUDGET = "spendct:budget:v1";
 /** 快速记账示例：点一下自动带入并解析，零学习成本 */
 const QUICK_EXAMPLES = ["中午食堂花了 15", "昨天打车 23.5", "兼职赚了 200", "月初房租 1500"];
 
-interface ManualEntry {
-  id: string;
-  ts: string; // YYYY-MM-DD
-  direction: "expense" | "income";
-  category: string;
-  amountCents: number;
-  note: string;
-}
+/** 未来月演示外推系数：下月 ×0.9、再下月 ×0.81，模拟季节回落；过去月按 1（真实金额，不外推） */
+const FUTURE_MONTH_FACTORS: Readonly<Record<number, number>> = { 0: 1, 1: 0.9, 2: 0.81 };
 
-/** 未来月演示外推系数：下月 ×0.9、再下月 ×0.81，模拟季节回落（demo 模式口径） */
-const MONTH_FACTORS = [1, 0.9, 0.81] as const;
+/** 月份页签：上月可回看跨月的手动记账（如月初记「昨天」落在上月末） */
+const MONTH_TABS = [
+  { offset: -1, name: "上月" },
+  { offset: 0, name: "本月" },
+  { offset: 1, name: "下月" },
+  { offset: 2, name: "再下月" },
+] as const;
+
+/** 相对今天偏移 offset 个月的月份数标签，如「10月」（月份展示统一走这里） */
+function monthNumberLabel(offset: number): string {
+  const now = new Date();
+  const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  return `${d.getMonth() + 1}月`;
+}
 
 type Severity = "ok" | "warn" | "over";
 
@@ -581,10 +592,9 @@ function BudgetContent() {
   const [draft, setDraft] = useState<QuickDraft | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [lastSaved, setLastSaved] = useState<ManualEntry | null>(null);
-  const [entries, setEntries] = useState<ManualEntry[]>(() => {
-    const list = loadJson<unknown>(KEY_MANUAL, []);
-    return Array.isArray(list) ? (list as ManualEntry[]) : [];
-  });
+  const [entries, setEntries] = useState<ManualEntry[]>(() =>
+    sanitizeManualEntries(loadJson<unknown>(KEY_MANUAL, [])),
+  );
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const showToast = useCallback((text: string, kind: "ok" | "error" = "ok") => {
@@ -671,10 +681,31 @@ function BudgetContent() {
     };
   }, [lastRun]);
 
+  // 当前展示月份的手动记账汇总：支出按类目并入图表「实际」列（见 month memo 的
+  // mergeManualExpenses），收入不进预算口径，由总览下方汇总行单独展示
+  const shownMonthManual = useMemo(() => {
+    const base = new Date();
+    const d = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    const monthEntries = entries.filter((e) => e.ts.startsWith(key));
+    const incomeCents = monthEntries
+      .filter((e) => e.direction === "income")
+      .reduce((sum, e) => sum + e.amountCents, 0);
+    const expenseByCategory: Record<string, number> = {};
+    for (const e of monthEntries) {
+      if (e.direction === "expense") {
+        expenseByCategory[e.category] = (expenseByCategory[e.category] ?? 0) + e.amountCents;
+      }
+    }
+    const expenseCents = Object.values(expenseByCategory).reduce((sum, v) => sum + v, 0);
+    return { count: monthEntries.length, incomeCents, expenseCents, expenseByCategory };
+  }, [entries, monthOffset]);
+
   // 选中月份的分类数据：真实动线用近 90 天月均支出（预算 = 覆盖 ?? 演示默认 ?? 月均基线），
-  // demo 动线用 DEMO_BUDGET；未来月实际值按系数外推（两条动线同规则），预算叠加本地覆盖值
+  // demo 动线用 DEMO_BUDGET；未来月实际值按系数外推（两条动线同规则），预算叠加本地覆盖值。
+  // 手动账支出在外推之后并入「实际」列：手动账是真实金额、不随外推系数缩放
   const month = useMemo<MonthBudgetView>(() => {
-    const factor = MONTH_FACTORS[monthOffset] ?? 1;
+    const factor = FUTURE_MONTH_FACTORS[monthOffset] ?? 1;
     const source = liveRealData.category90d
       ? buildRealCategories(liveRealData.category90d, liveRealData.categoryWindowMonths, overrides)
       : DEMO_BUDGET.categories.map((c) => ({
@@ -682,24 +713,30 @@ function BudgetContent() {
           budgetCents: overrides[c.category] ?? c.budgetCents,
           actualCents: c.actualCents,
         }));
-    const categories = source.map((c) => ({
-      category: c.category,
-      budgetCents: c.budgetCents,
-      actualCents: Math.round(c.actualCents * factor),
-    }));
+    const categories = mergeManualExpenses(
+      source.map((c) => ({
+        category: c.category,
+        budgetCents: c.budgetCents,
+        actualCents: Math.round(c.actualCents * factor),
+      })),
+      shownMonthManual.expenseByCategory,
+    );
     const totalBudgetCents = categories.reduce((sum, c) => sum + c.budgetCents, 0);
     const totalActualCents = categories.reduce((sum, c) => sum + c.actualCents, 0);
-    // 超支类目置顶，其余按使用率降序
+    // 排序三档：真超支（有预算且用超）置顶，其次未设预算的手动账类目，其余按使用率降序
     const sorted = [...categories].sort((a, b) => {
+      const overA = a.budgetCents > 0 && a.actualCents > a.budgetCents;
+      const overB = b.budgetCents > 0 && b.actualCents > b.budgetCents;
+      if (overA !== overB) return overA ? -1 : 1;
+      const noBudgetA = a.budgetCents === 0 && a.actualCents > 0;
+      const noBudgetB = b.budgetCents === 0 && b.actualCents > 0;
+      if (noBudgetA !== noBudgetB) return noBudgetA ? -1 : 1;
       const ratioA = a.budgetCents > 0 ? a.actualCents / a.budgetCents : 0;
       const ratioB = b.budgetCents > 0 ? b.actualCents / b.budgetCents : 0;
-      const overA = a.actualCents > a.budgetCents;
-      const overB = b.actualCents > b.budgetCents;
-      if (overA !== overB) return overA ? -1 : 1;
       return ratioB - ratioA;
     });
     return { categories: sorted, totalBudgetCents, totalActualCents };
-  }, [monthOffset, overrides, liveRealData]);
+  }, [monthOffset, overrides, liveRealData, shownMonthManual.expenseByCategory]);
 
   // 下月预测：真实动线用近 6 月真实支出线性趋势外推，demo 动线用 DEMO_FORECAST 固定外推
   const forecastView = useMemo<ForecastView>(() => {
@@ -719,13 +756,6 @@ function BudgetContent() {
   const ratio = month.totalBudgetCents > 0 ? month.totalActualCents / month.totalBudgetCents : 0;
   const severity = severityOf(ratio);
   const remainingCents = month.totalBudgetCents - month.totalActualCents;
-  const monthLabels = useMemo(() => {
-    const now = new Date();
-    return MONTH_FACTORS.map((_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() + i, 1);
-      return `${d.getMonth() + 1}月`;
-    });
-  }, []);
 
   // 本月手动记账笔数（本地账本口径）
   const monthEntryCount = useMemo(() => {
@@ -741,21 +771,6 @@ function BudgetContent() {
         .slice(0, 5),
     [entries],
   );
-
-  // 当前展示月份的手动记账汇总：与体检账单分开统计，避免两个口径混淆
-  const shownMonthManual = useMemo(() => {
-    const base = new Date();
-    const d = new Date(base.getFullYear(), base.getMonth() + monthOffset, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    const monthEntries = entries.filter((e) => e.ts.startsWith(key));
-    const incomeCents = monthEntries
-      .filter((e) => e.direction === "income")
-      .reduce((sum, e) => sum + e.amountCents, 0);
-    const expenseCents = monthEntries
-      .filter((e) => e.direction === "expense")
-      .reduce((sum, e) => sum + e.amountCents, 0);
-    return { count: monthEntries.length, incomeCents, expenseCents };
-  }, [entries, monthOffset]);
 
   function handleParse(text: string = entryText) {
     setParseError(null);
@@ -1378,20 +1393,20 @@ function BudgetContent() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="font-semibold text-(--color-ink)">本月总览</h2>
                 <div className="flex rounded-full bg-(--color-surface-2) p-1" role="group" aria-label="月份切换">
-                  {(["本月", "下月", "再下月"] as const).map((label, i) => (
+                  {MONTH_TABS.map((tab) => (
                     <button
-                      key={label}
+                      key={tab.name}
                       type="button"
-                      aria-pressed={monthOffset === i}
-                      onClick={() => setMonthOffset(i)}
+                      aria-pressed={monthOffset === tab.offset}
+                      onClick={() => setMonthOffset(tab.offset)}
                       className={`h-8 rounded-full px-3 text-xs font-medium transition-colors ${
-                        monthOffset === i
+                        monthOffset === tab.offset
                           ? "bg-(--color-surface) text-(--color-ink) shadow-(--shadow-sm)"
                           : "text-(--color-ink-muted) hover:text-(--color-ink-secondary)"
                       }`}
                     >
-                      {label}
-                      <span className="ml-1 opacity-70">{monthLabels[i]}</span>
+                      {tab.name}
+                      <span className="ml-1 opacity-70">{monthNumberLabel(tab.offset)}</span>
                     </button>
                   ))}
                 </div>
@@ -1402,6 +1417,11 @@ function BudgetContent() {
                   {lastRun
                     ? "下月数字根据最近 90 天的月均支出估算，每月按 9 折递减"
                     : "未来月份是示例估算，每月按 9 折递减"}
+                  {shownMonthManual.count > 0 ? "；手动记账按实际金额计入" : ""}
+                </p>
+              ) : monthOffset < 0 ? (
+                <p className="mt-2 text-xs text-(--color-ink-muted)">
+                  过去月份按近 90 天的月均支出估算，方便回看当月手动记账
                 </p>
               ) : null}
 
@@ -1411,7 +1431,7 @@ function BudgetContent() {
                     option={ringOption}
                     height={192}
                     className="size-full"
-                    ariaLabel={`${monthLabels[monthOffset]}预算已用 ${(ratio * 100).toFixed(1)}%`}
+                    ariaLabel={`${monthNumberLabel(monthOffset)}预算已用 ${(ratio * 100).toFixed(1)}%`}
                   />
                   <div className="pointer-events-none absolute inset-0 grid place-items-center">
                     <div className="text-center">
@@ -1441,28 +1461,34 @@ function BudgetContent() {
                   <p className="text-xs text-(--color-ink-muted)">
                     {shownMonthManual.count > 0 ? (
                       <>
-                        本月手动记账{" "}
+                        {monthNumberLabel(monthOffset)}手动记账{" "}
                         <span className="font-semibold tabular-nums text-(--color-ink-secondary)">
                           {shownMonthManual.count}
                         </span>{" "}
-                        笔（单独统计，不计入上方预算数字）：收入{" "}
-                        <span className="tabular-nums text-(--color-good-ink)">
-                          ¥{fmtYuan(shownMonthManual.incomeCents, 0)}
-                        </span>{" "}
-                        · 支出{" "}
+                        笔：支出{" "}
                         <span className="tabular-nums text-(--color-ink-secondary)">
                           ¥{fmtYuan(shownMonthManual.expenseCents, 0)}
                         </span>{" "}
+                        （已计入上方数字）· 收入{" "}
+                        <span className="tabular-nums text-(--color-good-ink)">
+                          ¥{fmtYuan(shownMonthManual.incomeCents, 0)}
+                        </span>{" "}
+                        （仅作记录，不计入预算）{" "}
                         <a href="#quick" className="text-(--color-primary) hover:underline">
                           查看明细
                         </a>
                       </>
                     ) : (
                       <>
-                        本月还没有手动记账，{" "}
-                        <a href="#quick" className="text-(--color-primary) hover:underline">
-                          去快速记账记一笔
-                        </a>
+                        {monthNumberLabel(monthOffset)}还没有手动记账
+                        {monthOffset === 0 ? (
+                          <>
+                            ，{" "}
+                            <a href="#quick" className="text-(--color-primary) hover:underline">
+                              去快速记账记一笔
+                            </a>
+                          </>
+                        ) : null}
                       </>
                     )}
                   </p>
@@ -1526,7 +1552,8 @@ function BudgetContent() {
             </div>
             <div className="divide-y divide-(--color-border) px-2 pb-2 sm:px-3">
               {month.categories.map((c) => {
-                const isOver = c.actualCents > c.budgetCents;
+                const isOver = c.budgetCents > 0 && c.actualCents > c.budgetCents;
+                const hasNoBudget = c.budgetCents === 0;
                 const overCents = c.actualCents - c.budgetCents;
                 const ratioC = c.budgetCents > 0 ? c.actualCents / c.budgetCents : 0;
                 return (
@@ -1535,7 +1562,11 @@ function BudgetContent() {
                     type="button"
                     onClick={() => setEditTarget(c.category)}
                     className="group w-full rounded-(--radius-md) px-3 py-3.5 text-left transition-colors hover:bg-(--color-surface-page) sm:px-4"
-                    aria-label={`调整${c.category}预算，已用 ${fmtPct(c.actualCents, c.budgetCents)}%`}
+                    aria-label={
+                      hasNoBudget
+                        ? `调整${c.category}预算，已用 ¥${fmtYuan(c.actualCents, 0)}（尚未设置预算）`
+                        : `调整${c.category}预算，已用 ${fmtPct(c.actualCents, c.budgetCents)}%`
+                    }
                   >
                     <div className="flex items-center justify-between gap-3">
                       <span className="flex min-w-0 items-center gap-2">
@@ -1544,12 +1575,20 @@ function BudgetContent() {
                           <span className="shrink-0 rounded-full bg-(--color-critical)/10 px-2 py-0.5 text-[11px] font-semibold text-(--color-critical-ink)">
                             超支 ¥{fmtYuan(overCents, 0)}
                           </span>
+                        ) : hasNoBudget ? (
+                          <span className="shrink-0 rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] text-(--color-ink-muted)">
+                            未设预算
+                          </span>
                         ) : null}
                       </span>
                       <span className="flex shrink-0 items-center gap-2 text-sm tabular-nums">
                         <span className="text-(--color-ink-muted)">已用 ¥{fmtYuan(c.actualCents, 0)}</span>
                         <span className={isOver ? "font-semibold text-(--color-critical-ink)" : "font-semibold text-(--color-ink)"}>
-                          {isOver ? `超支 ¥${fmtYuan(overCents, 0)}` : `剩余 ¥${fmtYuan(c.budgetCents - c.actualCents, 0)}`}
+                          {isOver
+                            ? `超支 ¥${fmtYuan(overCents, 0)}`
+                            : hasNoBudget
+                              ? "未设预算"
+                              : `剩余 ¥${fmtYuan(c.budgetCents - c.actualCents, 0)}`}
                         </span>
                         <PencilLine
                           className="size-3.5 text-(--color-ink-muted) opacity-0 transition-opacity group-hover:opacity-100"
@@ -1561,7 +1600,7 @@ function BudgetContent() {
                       <div
                         className="h-full rounded-full transition-[width] duration-500"
                         style={{
-                          width: `${Math.min(ratioC, 1) * 100}%`,
+                          width: hasNoBudget ? "0%" : `${Math.min(ratioC, 1) * 100}%`,
                           background: isOver
                             ? "linear-gradient(90deg, var(--color-critical), var(--color-serious))"
                             : gradientOf(c.category),
@@ -1569,8 +1608,8 @@ function BudgetContent() {
                       />
                     </div>
                     <div className="mt-1.5 flex justify-between text-xs tabular-nums text-(--color-ink-muted)">
-                      <span>预算 ¥{fmtYuan(c.budgetCents, 0)}</span>
-                      <span>使用率 {fmtPct(c.actualCents, c.budgetCents)}%</span>
+                      <span>{hasNoBudget ? "预算 未设置" : `预算 ¥${fmtYuan(c.budgetCents, 0)}`}</span>
+                      <span>{hasNoBudget ? "使用率 —" : `使用率 ${fmtPct(c.actualCents, c.budgetCents)}%`}</span>
                     </div>
                   </button>
                 );
