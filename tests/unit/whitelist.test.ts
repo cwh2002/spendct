@@ -165,6 +165,20 @@ describe("合法聚合通过（06 §2.0 白名单示例形态）", () => {
     expect(v).toEqual({ ok: true });
   });
 
+  it("商户统计两条 SQL（08 修订案 A13 页面常量，仅已支付）在白名单文法内", () => {
+    expect(
+      precheckAggregateSql(
+        "SELECT merchant, SUM(amount_cents), COUNT(*) FROM transactions " +
+          "WHERE direction = 'expense' AND status = 'paid' GROUP BY merchant ORDER BY SUM(amount_cents) DESC LIMIT 50",
+      ),
+    ).toEqual({ ok: true });
+    expect(
+      precheckAggregateSql(
+        "SELECT direction, SUM(amount_cents) FROM transactions WHERE status = 'paid' GROUP BY direction",
+      ),
+    ).toEqual({ ok: true });
+  });
+
   it("预计算表与预算三表在白名单内（A2）", () => {
     expect(
       precheckAggregateSql("SELECT ym, SUM(amount_cents) FROM budget_vs_actual GROUP BY ym"),

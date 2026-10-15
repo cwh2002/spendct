@@ -1,9 +1,8 @@
 "use client";
 
-import { RotateCcw, Search, Table2 } from "lucide-react";
+import { RotateCcw, Search } from "lucide-react";
 import type { ECElementEvent } from "echarts/core";
 import { useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import { EChart } from "@/components/charts/e-chart";
 import {
   buildBarOption,
@@ -11,8 +10,10 @@ import {
   buildLineOption,
   formatYuan,
 } from "@/components/charts/option-builders";
+import { ChartCard } from "@/components/insights/chart-card";
 import { DEMO_ACCOUNT_META, DEMO_INSIGHTS } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
+import { generateLedgerDemoRows, type LedgerDemoRow } from "@/lib/insights/ledger-demo";
 import { usePipeline } from "@/lib/pipeline/store";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 import type { FollowUpAnchor } from "./follow-up-panel";
@@ -34,13 +35,8 @@ const RANGES: { key: LedgerRange; label: string }[] = [
 
 const CATEGORY_ORDER = ["餐饮", "购物", "交通", "娱乐", "居住", "其他"] as const;
 
-interface LedgerRow {
-  id: number;
-  date: Date;
-  merchant: string;
-  category: string;
-  amountCents: number;
-}
+/** 账本明细行：与商户统计视图共用同一演示行形态（见 ledger-demo.ts） */
+type LedgerRow = LedgerDemoRow;
 
 // ─────────────────── 真实数据动线（07 §6 白名单文法） ───────────────────
 
@@ -115,78 +111,6 @@ function parseIsoDate(value: unknown): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** 确定性伪随机：同一种子每次生成同一批演示行，重渲染时明细表不会「洗牌」 */
-function mulberry32(seed: number) {
-  return function next() {
-    let t = (seed += 0x6d2b79f5);
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-/** 类别权重（大学生消费口径）：餐饮约占 42%，与下方金额区间换算出的月均约 1,733 元吻合 */
-const CATEGORY_WEIGHTS: [string, number][] = [
-  ["餐饮", 42],
-  ["购物", 20],
-  ["交通", 8],
-  ["娱乐", 10],
-  ["居住", 12],
-  ["其他", 8],
-];
-
-const MERCHANT_POOL: Record<string, string[]> = {
-  餐饮: ["美团外卖", "饿了么", "瑞幸咖啡", "麦当劳", "沙县小吃"],
-  购物: ["京东商城", "淘宝", "拼多多", "优衣库", "名创优品"],
-  交通: ["滴滴出行", "公交地铁", "中石化", "高德打车"],
-  娱乐: ["Steam", "优酷视频", "网易云音乐", "万达影城"],
-  居住: ["自如", "国家电网", "自来水公司", "中国移动"],
-  其他: ["微信读书", "顺丰速运", "大参林药房", "家乐福"],
-};
-
-/** 金额区间（分，大学生口径）：按类别设定，让 90 天合计贴近「月均 1,733 元」 */
-const AMOUNT_RANGE: Record<string, [number, number]> = {
-  餐饮: [800, 8000],
-  购物: [1000, 15000],
-  交通: [200, 6000],
-  娱乐: [500, 9000],
-  居住: [1000, 15000],
-  其他: [200, 2500],
-};
-
-function pickCategory(rand: () => number): string {
-  const roll = rand() * 100;
-  let acc = 0;
-  for (const [category, weight] of CATEGORY_WEIGHTS) {
-    acc += weight;
-    if (roll < acc) return category;
-  }
-  return CATEGORY_WEIGHTS[CATEGORY_WEIGHTS.length - 1]![0];
-}
-
-/**
- * 生成 100 行演示明细（时间倒序）：仅作兜底动线——
- * 无体检结果（lastRun 为空）或 DuckDB 明细查询失败时使用；
- * 真实数据已接入（SQL_RECENT_DETAIL 经白名单查询，见组件内装载 effect）。
- */
-function generateDemoRows(): LedgerRow[] {
-  const rand = mulberry32(20261013);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const rows: LedgerRow[] = [];
-  for (let i = 0; i < 100; i++) {
-    const category = pickCategory(rand);
-    const pool = MERCHANT_POOL[category] ?? ["未知商户"];
-    const merchant = pool[Math.floor(rand() * pool.length)] ?? "未知商户";
-    const [min, max] = AMOUNT_RANGE[category] ?? [100, 5000];
-    const amountCents = Math.round(min + rand() * (max - min));
-    const date = new Date(today);
-    date.setDate(date.getDate() - Math.floor(rand() * 90));
-    rows.push({ id: i + 1, date, merchant, category, amountCents });
-  }
-  return rows.sort((a, b) => b.date.getTime() - a.date.getTime());
-}
-
 function formatDate(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
@@ -199,45 +123,6 @@ function inRange(row: LedgerRow, range: LedgerRange, now: Date): boolean {
   if (range === "30d") return daysAgo <= 30;
   if (range === "90d") return daysAgo <= 90;
   return row.date.getFullYear() === now.getFullYear() && row.date.getMonth() === now.getMonth();
-}
-
-/** 图表卡：标题 + 数据表切换（05 §3.6 规则 6 的无障碍救济），图表与表格等价表达 */
-function ChartCard({
-  title,
-  caption,
-  chart,
-  table,
-}: {
-  title: string;
-  caption?: string;
-  chart: ReactNode;
-  table: ReactNode;
-}) {
-  const [tableMode, setTableMode] = useState(false);
-  return (
-    <section className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-sm)">
-      <header className="mb-3 flex items-center justify-between gap-2">
-        <div className="min-w-0">
-          <h3 className="text-sm font-semibold">{title}</h3>
-          {caption ? <p className="mt-0.5 text-xs text-(--color-ink-muted)">{caption}</p> : null}
-        </div>
-        <button
-          type="button"
-          onClick={() => setTableMode((v) => !v)}
-          aria-pressed={tableMode}
-          className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-medium transition-colors ${
-            tableMode
-              ? "border-(--color-primary)/40 bg-(--color-primary-soft) text-(--color-brand-600)"
-              : "border-(--color-border) text-(--color-ink-muted) hover:border-(--color-border-strong) hover:text-(--color-ink-secondary)"
-          }`}
-        >
-          <Table2 className="size-3.5" aria-hidden />
-          {tableMode ? "图表" : "数据表"}
-        </button>
-      </header>
-      {tableMode ? table : chart}
-    </section>
-  );
 }
 
 /** 简易两列表格：图表数据表的通用载体 */
@@ -272,7 +157,7 @@ function MiniTable({ headers, rows }: { headers: [string, string]; rows: [string
  * 账本汇总视图（05 §1.6，原 /ledger 并入 /insights）：
  * 筛选行 + 支出走势 / 类别 donut / 商户排行三图（内置数据表切换与选中点击）+ 明细表。
  * 数据动线：体检运行过（lastRun 存在）且 DuckDB 查询成功时展示真实账单聚合，
- * 任一模块查询失败或无体检结果则回退内置数据演示动线（generateDemoRows）。
+ * 任一模块查询失败或无体检结果则回退内置数据演示动线（generateLedgerDemoRows）。
  */
 export function LedgerView({ onAnchor }: LedgerViewProps) {
   const [range, setRange] = useState<LedgerRange>("90d");
@@ -357,7 +242,7 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
             .filter((row) => row.date.getTime() > 0);
           if (rows.length > 0) loaded.rows = rows;
         } catch {
-          // 明细查询失败 → rows 保持 null，回退 generateDemoRows
+          // 明细查询失败 → rows 保持 null，回退 generateLedgerDemoRows
         }
       } catch {
         // getDuckDB 初始化失败：整页维持演示动线
@@ -371,7 +256,7 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
 
   // 明细数据源：真实装载成功用最近 50 笔，否则回退确定性演示行（查询失败/无数据集）
   const allRows = useMemo(
-    () => liveRealData.rows ?? generateDemoRows(),
+    () => liveRealData.rows ?? generateLedgerDemoRows(),
     [liveRealData.rows],
   );
 

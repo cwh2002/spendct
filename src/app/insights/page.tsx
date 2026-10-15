@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   MessageSquare,
   PiggyBank,
+  ReceiptText,
   Rows3,
   Star,
   Upload,
@@ -37,6 +38,7 @@ import {
 } from "@/components/insights/follow-up-panel";
 import { InsightCard, type InsightCardHandle } from "@/components/insights/insight-card";
 import { LedgerView } from "@/components/insights/ledger-view";
+import { MerchantView } from "@/components/insights/merchant-view";
 import { CASES, type CaseRecord } from "@/lib/cases";
 import { DEMO_BUDGET, DEMO_INSIGHTS, DEMO_STAGES, type DemoInsight } from "@/lib/demo-data";
 import tfidfManifest from "@/data/tfidf-manifest.json";
@@ -50,7 +52,7 @@ import type { InsightCard as RunInsightCard } from "@/lib/schema/insight-card";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 import { useMounted } from "@/lib/use-mounted";
 
-type ViewMode = "cards" | "gallery" | "ledger";
+type ViewMode = "cards" | "gallery" | "ledger" | "merchants";
 
 /** 挂载前的空收藏快照：稳定引用，避免 activeFavorites 每次渲染生成新数组 */
 const EMPTY_FAVORITES: string[] = [];
@@ -59,6 +61,7 @@ const VIEW_OPTIONS: { key: ViewMode; label: string; icon: typeof Rows3 }[] = [
   { key: "cards", label: "卡片流", icon: Rows3 },
   { key: "gallery", label: "图表廊", icon: LayoutGrid },
   { key: "ledger", label: "账本汇总", icon: ChartColumn },
+  { key: "merchants", label: "商户统计", icon: ReceiptText },
 ];
 
 function Kbd({ children }: { children: React.ReactNode }) {
@@ -468,7 +471,8 @@ function InsightsView() {
 
   // ?view=ledger 为主入口（顶部导航「账本」链接）；?tab=ledger 为旧参数兼容
   const rawView = searchParams.get("view") ?? searchParams.get("tab") ?? "cards";
-  const view: ViewMode = rawView === "gallery" || rawView === "ledger" ? rawView : "cards";
+  const view: ViewMode =
+    rawView === "gallery" || rawView === "ledger" || rawView === "merchants" ? rawView : "cards";
 
   const [filters, setFilters] = useState<InsightFilters>(DEFAULT_INSIGHT_FILTERS);
   // 收藏与演示开关在初始 state 里同步读取：本子树经 Suspense 客户端渲染，无 SSR HTML 需要对齐；
@@ -678,7 +682,7 @@ function InsightsView() {
         requestAnimationFrame(() => panelRef.current?.focusInput());
         return;
       }
-      if (inField || hasModifier || view === "ledger" || visible.length === 0) return;
+      if (inField || hasModifier || view === "ledger" || view === "merchants" || visible.length === 0) return;
 
       if (e.key === "j" || e.key === "k") {
         e.preventDefault();
@@ -831,13 +835,13 @@ function InsightsView() {
         </div>
       </div>
 
-      {view !== "ledger" ? (
+      {view === "cards" || view === "gallery" ? (
         <div className="mt-3">
           <FilterBar value={filters} onChange={setFilters} stages={DEMO_STAGES} resultCount={visible.length} />
         </div>
       ) : null}
 
-      {view !== "ledger" ? (
+      {view === "cards" || view === "gallery" ? (
         <p className="mt-2 hidden flex-wrap items-center gap-x-3 gap-y-1 text-xs text-(--color-ink-muted) md:flex">
           <span>快捷键</span>
           <span>
@@ -862,6 +866,8 @@ function InsightsView() {
         <div className="min-w-0 flex-1">
           {view === "ledger" ? (
             <LedgerView onAnchor={openPanelForAnchor} />
+          ) : view === "merchants" ? (
+            <MerchantView onAnchor={openPanelForAnchor} />
           ) : demoOff ? (
             <EmptyState />
           ) : visible.length === 0 ? (
@@ -892,7 +898,7 @@ function InsightsView() {
 
           {/* 年度阶段省钱贴士：仅卡片/图表廊视图 + 全部或年度阶段筛选下出现；
               无匹配案例（含真实数据加载中）时整个区块隐藏 */}
-          {view !== "ledger" &&
+          {(view === "cards" || view === "gallery") &&
           !demoOff &&
           (filters.stage === "all" || filters.stage === "annual") &&
           tips.length > 0 ? (
