@@ -28,6 +28,9 @@ import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { Container } from "@/components/layout/container";
 import { CASES, CATEGORY_LABELS } from "@/lib/cases";
+import tfidfManifest from "@/data/tfidf-manifest.json";
+import { tfidfSearch, type TfidfManifest } from "@/lib/rag/tfidf";
+import { TFIDF_FALLBACK_K } from "@/lib/rag/types";
 import type { CaseRecord } from "@/lib/cases";
 
 /** 8 类各自的身份图标：徽标与手册卡共用，颜色中性、靠图标区分类别 */
@@ -185,12 +188,15 @@ export default function LearnPage() {
 
   const q = query.trim().toLowerCase();
 
+  // 关键词过滤（类别 chips + 标题/摘要包含）基础上，有搜索词时按 TF-IDF 语义分数
+  // 降序重排：命中的在前（词表外查询保持语料序垫后），空搜索词维持原顺序（04 §5.6）
   const filtered = useMemo(() => {
-    return CASES.filter(
-      (c) =>
-        (!activeCategory || c.category === activeCategory) &&
-        (!q || `${c.title}\n${c.summary}`.toLowerCase().includes(q)),
-    );
+    const byCategory = activeCategory ? CASES.filter((c) => c.category === activeCategory) : CASES;
+    if (!q) return byCategory;
+    const keywordMatched = byCategory.filter((c) => `${c.title}\n${c.summary}`.toLowerCase().includes(q));
+    const ranked = tfidfSearch(q, keywordMatched, tfidfManifest as TfidfManifest, TFIDF_FALLBACK_K);
+    const rankedIds = new Set(ranked.map((hit) => hit.case.id));
+    return [...ranked.map((hit) => hit.case), ...keywordMatched.filter((c) => !rankedIds.has(c.id))];
   }, [q, activeCategory]);
 
   // 每类案例数（chips 角标），与 CASES 单一来源同步计算

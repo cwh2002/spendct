@@ -1,0 +1,130 @@
+{
+  "version": "1",
+  "corpus": "data/cases/cases.json（60 条，8 类）",
+  "embeddingVersion": "bge-m3@v1",
+  "note": "主集 20 题按 07 §16 冻结分布：订阅8（G01-G08）/维权4（G09-G12）/消费建议4（G13-G16）/个人化2（G17-G18，检索层夹具评测，见 personal-history-fixture.json）/学生2（G19-G20）。expectedCaseIds 全部取自现有 60 条库；与 04 §5.1 设计态 ID（C001-C022）的对应关系以本文件为准（语料从计划 150 条收口为 60 条核验案例后的重映射）。",
+  "queries": [
+    {
+      "gid": "G01",
+      "query": "视频会员首月1元，次月自动续费15元，怎么关闭？",
+      "expectedCaseIds": ["st-001"],
+      "categories": ["subscription_trap"]
+    },
+    {
+      "gid": "G02",
+      "query": "网盘免费试用7天到期自动扣钱了，能退吗？",
+      "expectedCaseIds": ["st-002", "rg-001"],
+      "categories": ["subscription_trap"]
+    },
+    {
+      "gid": "G03",
+      "query": "音乐App取消自动续费的入口藏在哪里？",
+      "expectedCaseIds": ["st-003"],
+      "categories": ["subscription_trap"]
+    },
+    {
+      "gid": "G04",
+      "query": "误点连续包年一次扣了258元，能退款吗？",
+      "expectedCaseIds": ["st-004"],
+      "categories": ["subscription_trap"]
+    },
+    {
+      "gid": "G05",
+      "query": "已经点了取消订阅，下个月怎么还在扣费？",
+      "expectedCaseIds": ["st-005"],
+      "categories": ["subscription_trap"]
+    },
+    {
+      "gid": "G06",
+      "query": "免费试用还没结束就被提前扣费了怎么办？",
+      "expectedCaseIds": ["st-006"],
+      "categories": ["subscription_trap"]
+    },
+    {
+      "gid": "G07",
+      "query": "学生价会员到期自动恢复原价，差价能要回来吗？",
+      "expectedCaseIds": ["st-007"],
+      "categories": ["subscription_trap"]
+    },
+    {
+      "gid": "G08",
+      "query": "联合会员想只退其中一项，可以吗？",
+      "expectedCaseIds": ["st-008"],
+      "categories": ["subscription_trap"]
+    },
+    {
+      "gid": "G09",
+      "query": "网购七天无理由退货有什么例外情况？",
+      "expectedCaseIds": ["cr-001"],
+      "categories": ["consumer_rights"]
+    },
+    {
+      "gid": "G10",
+      "query": "12315投诉的完整流程是什么？",
+      "expectedCaseIds": ["cr-002"],
+      "categories": ["consumer_rights"]
+    },
+    {
+      "gid": "G11",
+      "query": "外卖里吃到异物，怎么索赔？",
+      "expectedCaseIds": ["cr-006"],
+      "categories": ["consumer_rights"]
+    },
+    {
+      "gid": "G12",
+      "query": "大数据杀熟，老用户看到的价格更高，怎么维权？",
+      "expectedCaseIds": ["cr-007", "rg-003"],
+      "categories": ["consumer_rights"]
+    },
+    {
+      "gid": "G13",
+      "query": "每天一杯15元的奶茶，一年要花多少钱？",
+      "expectedCaseIds": ["sa-001"],
+      "categories": ["spending_advice"]
+    },
+    {
+      "gid": "G14",
+      "query": "工资怎么分配才合理，有什么比例法则？",
+      "expectedCaseIds": ["sa-002"],
+      "categories": ["spending_advice"]
+    },
+    {
+      "gid": "G15",
+      "query": "大促的时候怎么控制自己别冲动下单？",
+      "expectedCaseIds": ["sa-003"],
+      "categories": ["spending_advice"]
+    },
+    {
+      "gid": "G16",
+      "query": "信封预算法怎么用？",
+      "expectedCaseIds": ["sa-004"],
+      "categories": ["spending_advice"]
+    },
+    {
+      "gid": "G17",
+      "query": "我上个月游戏充值花了不少，怎么给自己设个上限？",
+      "expectedCaseIds": ["ms-005"],
+      "categories": ["minor_spending"],
+      "note": "个人化检索：query 语义依赖 personal-history-fixture.json 的模拟历史事件（游戏充值异常），检索仍面向 60 条案例库作答"
+    },
+    {
+      "gid": "G18",
+      "query": "我最近外卖点得特别多，有什么省钱办法？",
+      "expectedCaseIds": ["sa-008"],
+      "categories": ["spending_advice"],
+      "note": "个人化检索：模拟历史为高频外卖消费，检索仍面向 60 条案例库作答"
+    },
+    {
+      "gid": "G19",
+      "query": "学生怎么认证拿外卖会员优惠？",
+      "expectedCaseIds": ["sb-001"],
+      "categories": ["student_benefits"]
+    },
+    {
+      "gid": "G20",
+      "query": "Apple教育优惠Mac怎么申请？",
+      "expectedCaseIds": ["sb-002"],
+      "categories": ["student_benefits"]
+    }
+  ]
+}

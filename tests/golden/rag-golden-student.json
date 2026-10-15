@@ -1,0 +1,56 @@
+{
+  "version": "1",
+  "corpus": "data/cases/cases.json（60 条，8 类）",
+  "embeddingVersion": "bge-m3@v1",
+  "note": "学生权益补充集 8 题（08 修订案 A4：独立评测独立报告，hit@3 ≥7/8，与主集互不掺和）。expectedCaseIds 全部为 student_benefits 类已核验案例。",
+  "queries": [
+    {
+      "gid": "S01",
+      "query": "学生认证外卖会员怎么开？",
+      "expectedCaseIds": ["sb-001"],
+      "categories": ["student_benefits"]
+    },
+    {
+      "gid": "S02",
+      "query": "Apple教育优惠Mac折扣是多少？",
+      "expectedCaseIds": ["sb-002"],
+      "categories": ["student_benefits"]
+    },
+    {
+      "gid": "S03",
+      "query": "图书馆电子资源能替代哪些付费订阅？",
+      "expectedCaseIds": ["sb-003"],
+      "categories": ["student_benefits"]
+    },
+    {
+      "gid": "S04",
+      "query": "学生火车票怎么买才打折？",
+      "expectedCaseIds": ["sb-004"],
+      "categories": ["student_benefits"]
+    },
+    {
+      "gid": "S05",
+      "query": "学生证去景区门票能便宜多少？",
+      "expectedCaseIds": ["sb-005"],
+      "categories": ["student_benefits"]
+    },
+    {
+      "gid": "S06",
+      "query": "Office 365学生版怎么免费领取？",
+      "expectedCaseIds": ["sb-008"],
+      "categories": ["student_benefits"]
+    },
+    {
+      "gid": "S07",
+      "query": "学生公交卡和地铁有优惠吗？",
+      "expectedCaseIds": ["sb-007"],
+      "categories": ["student_benefits"]
+    },
+    {
+      "gid": "S08",
+      "query": "MOOC证书学生有折扣吗？",
+      "expectedCaseIds": ["sb-012"],
+      "categories": ["student_benefits"]
+    }
+  ]
+}

@@ -39,6 +39,9 @@ import { InsightCard, type InsightCardHandle } from "@/components/insights/insig
 import { LedgerView } from "@/components/insights/ledger-view";
 import { CASES, type CaseRecord } from "@/lib/cases";
 import { DEMO_BUDGET, DEMO_INSIGHTS, DEMO_STAGES, type DemoInsight } from "@/lib/demo-data";
+import tfidfManifest from "@/data/tfidf-manifest.json";
+import { tfidfSearch, type TfidfManifest } from "@/lib/rag/tfidf";
+import { TFIDF_FALLBACK_K } from "@/lib/rag/types";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { readFavorites, toggleFavoriteLocal } from "@/lib/insights/favorites";
 import { STAGE_DISPLAY_NAMES } from "@/lib/pipeline/stage";
@@ -344,9 +347,8 @@ const BENEFIT_TAG_LABELS: Record<string, string> = {
 };
 
 /**
- * 支出类目 → 案例标题/摘要关键词。匹配口径：只在 student_benefits 案例里
- * 做简单包含匹配，类目按用户支出排名依次扫描，先命中的类目优先且案例不重复。
- * 学习页没有导出可复用的检索函数，这里实现页面所需的轻量版。
+ * 支出类目 → 案例标题/摘要关键词。类目按用户支出排名依次扫描，先命中的类目优先。
+ * 关键词表同时用于构造 TF-IDF 查询文本与兜底的包含匹配（见 matchStudentTips）。
  */
 const CATEGORY_TIP_KEYWORDS: Record<string, string[]> = {
   餐饮: ["外卖", "食堂", "餐饮"],
@@ -358,7 +360,7 @@ const CATEGORY_TIP_KEYWORDS: Record<string, string[]> = {
   订阅: ["订阅", "会员", "付费"],
 };
 
-/** 案例检索文本：标题 + 摘要 + 权益标签中文名（关键词匹配在这段文本上进行） */
+/** 案例检索文本：标题 + 摘要 + 权益标签中文名（包含匹配在这段文本上进行） */
 function tipSearchText(item: CaseRecord): string {
   const tags = item.benefitTags
     .map((tag) => BENEFIT_TAG_LABELS[tag] ?? "")
@@ -369,21 +371,39 @@ function tipSearchText(item: CaseRecord): string {
 
 /**
  * 按用户支出 top 类目匹配学生权益案例：
- * 依次扫描每个类目的关键词，命中的案例按类目优先级排列且不重复，超出 limit 截断。
+ * 每个类目先经 TF-IDF 语义检索（类目名 + 关键词构造查询）按分数降序取案例，
+ * 词表外查询检索不到时回退到关键词包含匹配补位；类目优先级与不重复口径不变，
+ * 超出 limit 截断（04 §5.6 省钱贴士接入口径）。
  */
 function matchStudentTips(topCategories: string[], limit = 4): CaseRecord[] {
+  const pool = CASES.filter((item) => item.category === "student_benefits");
   const seen = new Set<string>();
   const picked: CaseRecord[] = [];
   for (const category of topCategories) {
     const keywords = CATEGORY_TIP_KEYWORDS[category];
     if (!keywords || keywords.length === 0) continue;
-    for (const item of CASES) {
+    const ranked = tfidfSearch(
+      `${category} ${keywords.join(" ")}`,
+      pool,
+      tfidfManifest as TfidfManifest,
+      TFIDF_FALLBACK_K,
+    );
+    for (const hit of ranked) {
       if (picked.length >= limit) return picked;
-      if (item.category !== "student_benefits" || seen.has(item.id)) continue;
-      const text = tipSearchText(item);
-      if (keywords.some((keyword) => text.includes(keyword))) {
-        seen.add(item.id);
-        picked.push(item);
+      if (seen.has(hit.case.id)) continue;
+      seen.add(hit.case.id);
+      picked.push(hit.case);
+    }
+    // TF-IDF 兜底：查询全部落在词表外时按关键词包含匹配补位（维持既有行为）
+    if (ranked.length === 0) {
+      for (const item of pool) {
+        if (picked.length >= limit) return picked;
+        if (seen.has(item.id)) continue;
+        const text = tipSearchText(item);
+        if (keywords.some((keyword) => text.includes(keyword))) {
+          seen.add(item.id);
+          picked.push(item);
+        }
       }
     }
   }

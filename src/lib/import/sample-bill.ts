@@ -170,8 +170,8 @@ const CATEGORY_SPECS: readonly CategorySpec[] = [
     amountMin: 5,
     amountMean: 40,
     types: ["商户消费", "扫二维码付款"],
-    merchants: ["万达影城", "哔哩哔哩", "Steam", "网易游戏", "剧本杀工作室", "唱吧麦颂"],
-    products: ["电影票", "大会员续费", "游戏充值", "游戏充值", "剧本杀门票", "欢唱包间"],
+    merchants: ["万达影城", "猫眼电影", "Steam", "网易游戏", "剧本杀工作室", "唱吧麦颂"],
+    products: ["电影票", "电影票", "游戏充值", "游戏充值", "剧本杀门票", "欢唱包间"],
   },
   {
     name: "居住",
@@ -230,8 +230,12 @@ const CATEGORY_SPECS: readonly CategorySpec[] = [
   {
     name: "订阅",
     weight: 3.2,
+    // 金额与扣款时刻不走随机分布：订阅行由 SUBSCRIPTION_PLANS 固定月费与
+    // 固定扣款日生成（真实订阅即每月固定日扣固定价），供订阅陷阱阶段按
+    // 「相邻间隔 25-40 天、金额恒定 ±1%」规则稳定命中。以下金额参数仅作
+    // 类目池占位文档，订阅分支不会走到指数金额。
     amountMin: 15,
-    amountMean: 8,
+    amountMean: 15,
     types: ["商户消费"],
     merchants: ["腾讯视频VIP", "网易云音乐", "哔哩哔哩", "QQ音乐", "WPS会员", "百度网盘"],
     products: ["会员自动续费", "黑胶VIP续费", "大会员续费", "豪华绿钻续费", "会员自动续费", "超级会员续费"],
@@ -248,6 +252,50 @@ const CATEGORY_SPECS: readonly CategorySpec[] = [
 ];
 
 const CATEGORY_TOTAL_WEIGHT = CATEGORY_SPECS.reduce((sum, spec) => sum + spec.weight, 0);
+
+/**
+ * 订阅商户固定扣款口径：公开真实月费（元）与每月固定扣款日。
+ * 扣款日序取 2-12：避开月初边界且 ≤12，2026-10（数据截至 10-13）的
+ * 行映射后仍落在区间内；相邻月份同一日序的间隔在 28-31 天，
+ * 全部落入订阅规则要求的 25-40 天窗口。
+ */
+const SUBSCRIPTION_PLANS: ReadonlyArray<{ merchant: string; priceYuan: number; chargeDay: number }> = [
+  { merchant: "腾讯视频VIP", priceYuan: 25, chargeDay: 2 },
+  { merchant: "网易云音乐", priceYuan: 15, chargeDay: 4 },
+  { merchant: "哔哩哔哩", priceYuan: 15, chargeDay: 6 },
+  { merchant: "QQ音乐", priceYuan: 15, chargeDay: 8 },
+  { merchant: "WPS会员", priceYuan: 15, chargeDay: 10 },
+  { merchant: "百度网盘", priceYuan: 25, chargeDay: 12 },
+];
+
+/**
+ * 把随机交易时刻对齐到该商户的每月固定扣款日（北京时间 10:00，即 UTC 02:00）。
+ * ms 的日界即北京零点（见 RANGE_START_MS 的 -8h 约定），取 UTC 年月拼固定日序即可。
+ * 同商户同月抽到多笔时顺延到下月，保证每笔规则行独占一个自然月（相邻间隔 28-31 天）；
+ * 顺延越过数据区间的罕见情形退回原随机时刻，退化为一次不规则补扣，不影响合格对判定。
+ */
+function settleSubscriptionMs(
+  ms: number,
+  chargeDay: number,
+  merchant: string,
+  usedSlots: Set<string>,
+): number {
+  const date = new Date(ms);
+  let year = date.getUTCFullYear();
+  let month = date.getUTCMonth();
+  let slot = `${merchant}|${year}-${month}`;
+  while (usedSlots.has(slot)) {
+    month += 1;
+    if (month > 11) {
+      year += 1;
+      month = 0;
+    }
+    slot = `${merchant}|${year}-${month}`;
+  }
+  usedSlots.add(slot);
+  const settled = Date.UTC(year, month, chargeDay, 2, 0, 0);
+  return settled > RANGE_END_MS ? ms : settled;
+}
 
 /** 收入行固定三元组：每月生活费由家庭转账打入（类型/对方/商品固定配对） */
 const INCOME_ENTRY = { type: "转账", merchant: "家庭转账", product: "生活费" } as const;
@@ -278,14 +326,27 @@ function pickTimeMs(rng: () => number): number {
   return dayStart + hour * 3_600_000 + minute * 60_000 + second * 1_000;
 }
 
-function buildExpenseLine(rng: () => number, ms: number): string {
+function buildExpenseLine(
+  rng: () => number,
+  ms: number,
+  subscriptionSlots: Set<string>,
+): GeneratedRow {
   const spec = pickCategory(rng);
   const type = pick(spec.types, rng);
   const merchantIndex = pickIndex(spec.merchants, rng);
   const merchant = spec.merchants[merchantIndex]!;
   const product =
     rng() < PRODUCT_EMPTY_RATE ? "/" : spec.products[merchantIndex % spec.products.length]!;
-  const amount = exponentialAmount(rng, spec.amountMin, spec.amountMean);
+  // 订阅行：固定真实月费 + 每月固定扣款日（周期扣款形态），其余类目维持随机分布
+  const subscriptionPlan = spec.name === "订阅"
+    ? SUBSCRIPTION_PLANS.find((plan) => plan.merchant === merchant)
+    : undefined;
+  const amount = subscriptionPlan
+    ? subscriptionPlan.priceYuan
+    : exponentialAmount(rng, spec.amountMin, spec.amountMean);
+  const settledMs = subscriptionPlan
+    ? settleSubscriptionMs(ms, subscriptionPlan.chargeDay, merchant, subscriptionSlots)
+    : ms;
   const isRefund = rng() < REFUND_RATE;
   // 转账/红包类支出的状态与商户消费不同，贴近真实导出
   const status = isRefund
@@ -295,50 +356,57 @@ function buildExpenseLine(rng: () => number, ms: number): string {
       : "支付成功";
   const payMethod = pick(PAY_METHODS, rng);
   const note = rng() < NOTE_RATE ? pick(NOTE_POOL, rng) : "/";
-  const orderNo = `4200${yyyymmdd(ms)}${digits(rng, 14)}${digits(rng, 4)}`;
+  const orderNo = `4200${yyyymmdd(settledMs)}${digits(rng, 14)}${digits(rng, 4)}`;
   const merchantNo = digits(rng, 18);
-  return [
-    formatDateTime(ms),
-    type,
-    merchant,
-    product,
-    "支出",
-    amount.toFixed(2),
-    payMethod,
-    status,
-    orderNo,
-    merchantNo,
-    note,
-  ]
-    .map(escapeCsvCell)
-    .join(",");
-}
-
-function buildIncomeLine(rng: () => number, ms: number): string {
-  const payMethod = pick(PAY_METHODS, rng);
-  const note = rng() < NOTE_RATE ? pick(NOTE_POOL, rng) : "/";
-  const orderNo = `4200${yyyymmdd(ms)}${digits(rng, 14)}${digits(rng, 4)}`;
-  const merchantNo = digits(rng, 18);
-  return [
-    formatDateTime(ms),
-    INCOME_ENTRY.type,
-    INCOME_ENTRY.merchant,
-    INCOME_ENTRY.product,
-    "收入",
-    INCOME_AMOUNT_YUAN.toFixed(2),
-    payMethod,
-    "已存入零钱",
-    orderNo,
-    merchantNo,
-    note,
-  ]
-    .map(escapeCsvCell)
-    .join(",");
+  // 返回 settledMs 作为排序键：CSV 交易时间、单号日期段与最终升序排序保持一致
+  return {
+    ms: settledMs,
+    line: [
+      formatDateTime(settledMs),
+      type,
+      merchant,
+      product,
+      "支出",
+      amount.toFixed(2),
+      payMethod,
+      status,
+      orderNo,
+      merchantNo,
+      note,
+    ]
+      .map(escapeCsvCell)
+      .join(","),
+  };
 }
 
 interface GeneratedRow {
   ms: number;
   line: string;
+}
+
+function buildIncomeLine(rng: () => number, ms: number): GeneratedRow {
+  const payMethod = pick(PAY_METHODS, rng);
+  const note = rng() < NOTE_RATE ? pick(NOTE_POOL, rng) : "/";
+  const orderNo = `4200${yyyymmdd(ms)}${digits(rng, 14)}${digits(rng, 4)}`;
+  const merchantNo = digits(rng, 18);
+  return {
+    ms,
+    line: [
+      formatDateTime(ms),
+      INCOME_ENTRY.type,
+      INCOME_ENTRY.merchant,
+      INCOME_ENTRY.product,
+      "收入",
+      INCOME_AMOUNT_YUAN.toFixed(2),
+      payMethod,
+      "已存入零钱",
+      orderNo,
+      merchantNo,
+      note,
+    ]
+      .map(escapeCsvCell)
+      .join(","),
+  };
 }
 
 /**
@@ -361,10 +429,16 @@ export function generateSampleCsv(): string {
   const incomePositions = new Set(shuffled.slice(0, INCOME_ROW_COUNT));
 
   const rows: GeneratedRow[] = [];
+  // 订阅规则行已占用的「商户+年月」槽位：同商户同月抽到多笔时顺延到下月
+  const subscriptionSlots = new Set<string>();
   for (let i = 0; i < uniqueCount; i++) {
     const ms = pickTimeMs(rng);
-    const line = incomePositions.has(i) ? buildIncomeLine(rng, ms) : buildExpenseLine(rng, ms);
-    rows.push({ ms, line });
+    // buildExpenseLine 可能把订阅行对齐到固定扣款日，返回的 row.ms 才是最终排序键
+    rows.push(
+      incomePositions.has(i)
+        ? buildIncomeLine(rng, ms)
+        : buildExpenseLine(rng, ms, subscriptionSlots),
+    );
   }
   // 追加精确重复行（行首/行中/行尾各取一条，保证去重演示覆盖不同位置）
   rows.push({ ...rows[1]! }, { ...rows[250]! }, { ...rows[500]! });

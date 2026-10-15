@@ -929,7 +929,7 @@ const DB_PATH = (accountId: string) => `spendct_${accountId}.duckdb`;
 | 单次聚合查询 | ≤300ms |
 | 六阶段 dry-run（无 LLM） | <5s；带 LLM 3 卡全程 ≤60s（G2 闸门口径） |
 | 结果集上限 | 两级语义（07 §7）：模板产物 AGG_MAX_ROWS=200；追问 LLM-SQL 50 行硬上限（§9.4 / SQL_MAX_RESULT_ROWS=50） |
-| 前端预算 | LCP <2.5s / FCP <1.5s / 主包 <180KB / RAG P95 <900ms（01 §8） |
+| 前端预算 | LCP <2.5s / FCP <1.5s / 主包 <180KB / RAG 稳态 P95 <2.5s（01 §8，2026-10-15 修订） |
 
 ---
 

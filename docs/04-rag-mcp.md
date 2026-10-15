@@ -4,7 +4,18 @@
 >
 > v1.1 变更（08 功能扩展方案 §⑤ 与修订案 A4 落地）：案例库总目标 100+ → 150+；新增第 8 类 `student_benefits` 与 `benefitTags`/`audience` 字段；新增金标补充集 `student-golden-8`（hit@3 ≥7/8 独立断言）；金标主集 20 题三档阈值（18/16/12）不变。
 >
-> **实现收口（2026-10-14）**：实际交付为「案例库 60 条 + 本地关键词匹配（省钱贴士按 top 类目）+ 订阅卡确定性引用」；独立嵌入检索、金标评测与独立 MCP 服务未上线（工具集成以浏览器内 SQL + 4 个结构化 LLM 短任务体现，07 §13 收口说明）。本文其余内容为设计态，国赛窗口恢复。
+> **实现收口（2026-10-15）**：RAG 检索已按本文档设计态上线，实际交付口径如下（与设计态的偏差均已在此列明，未列明的均按原文实现）：
+>
+> - 语料：60 条案例投影（id/title/summary/category/source/sourceUrl/legalBasis/benefitTags）入库 `data/cases/cases.json`，zod 加载即校验，单一来源；
+> - 嵌入文本模板：`title + summary + benefitTags 中文名`（设计态全字段模板的收窄版，权益标签仅学生类填写，60 条语料的诚实口径）；
+> - 嵌入模型：`Xenova/bge-m3` q8（BAAI 原仓只有 fp32 ONNX 2.3GB 外部数据、无量化文件；Xenova 为 transformers.js 官方转换的同一权重，含 `model_quantized.onnx`），重排模型 `Xenova/bge-reranker-base` q8；查询侧指令前缀与池化按 §3.5/§4.4 原文实现；
+> - Stage 0 过滤参数：无 LLM，用确定性类别解析（产品内按类目 chips 预筛），第三方 key 零依赖；金额过滤为惰性 no-op（当前语料无 amountPattern 字段，全字段版预留）；
+> - TF-IDF 兜底：词表 697 词（df≥2 平滑 idf），manifest 放 `src/data/tfidf-manifest.json` 静态 import（浏览器内检索零网络零请求，替代 public/data 副本——避免运行时拉取、构建期即可做一致性校验）；
+> - 金标评测：主集 20 题 + 学生补充集 8 题按 §5 口径落库；实测 hit@3——full 主集 20/20（hit@1=20/20，MRR=1.000）、学生集 8/8；dense-only 主集 20/20、学生集 8/8；tfidf 主集 19/20、学生集 8/8；三档全部达标，逐题明细与延迟分档见 docs/eval-rag.md（唯一数字源）；检索延迟预算随实测修订：稳态 P95<2.5s、冷启动首查<6s（§4.1 预算表原 900ms 的修订说明见 eval-rag.md §3）；
+> - 服务形态：`POST /api/rag` 默认进程内直跑（onnxruntime-node），`RAG_SERVER_URL` 代理容器模式为预留位（07 §16 拓扑），MCP 容器复用同一 `src/server/rag/retrieve.ts` 纯 node 模块；
+> - UI 接入：订阅卡 2 挂浏览器内 TF-IDF 检索的同族案例引用（score ≥ 0.08 才引用，宁缺毋滥）、省钱贴士按 top 类目语义匹配、知识课堂搜索 TF-IDF 排序、追问面板在线兜底前置 `/api/rag` 检索并挂「案例参考」脚注（数据来自检索响应，非模型文本）。
+>
+> **MCP 四工具独立服务仍未上线（国赛窗口）**：工具集成当前以浏览器内 SQL + 4 个结构化 LLM 短任务体现（07 §13 收口说明）。本文档 §8–§11 的 MCP 部分仍为设计态。
 
 ---
 
@@ -507,6 +518,8 @@ fs.writeFileSync(MANIFEST_PATH, JSON.stringify({
 
 ### 3.5 查询侧嵌入（运行时零嵌入 API 调用的关键）
 
+> 收口偏差：模型仓库用 `Xenova/bge-m3`（BAAI 原仓无 q8 量化 ONNX），同一权重、官方转换仓；模型 ID 单一来源在 `src/server/rag/model-env.ts`（支持 `HF_ENDPOINT` 镜像与 `EMBEDDING_MODEL`/`RERANK_MODEL` 覆盖）。
+
 ```ts
 // src/server/rag/embedder.ts —— AI 接入层进程内本地推理
 import * as ort from "onnxruntime-node";
@@ -567,7 +580,7 @@ Stage 4  引用产出：rerank logits ≥ -2.0 且最多 3 条 → Citation[]；
 | `RELAX_IF_LESS` | 5 | Stage1 过滤后不足则放宽 |
 | `TFIDF_FALLBACK_K` | 20 | TF-IDF 兜底召回数 |
 | `AMOUNT_RANGE_COEF` | [0.2, 5] | 金额区间扩展系数（查询金额 a → [0.2a, 5a]） |
-| 检索延迟预算（P95） | <900ms | Stage0 ≈300ms（小模型）+ Stage2 ≈2ms + Stage3 ≈150-400ms（30 对，CPU） |
+| 检索延迟预算（P95） | 稳态 <2.5s / 冷启动首查 <6s / TF-IDF <100ms（2026-10-15 实测修订，原 <900ms 预估的 Stage3 150-400ms 低估约 8-13×，明细见 docs/eval-rag.md §3） | 实测稳态：dense-only 116ms + rerank 30 对 ≈1.9s（q8 交叉编码，本地 CPU onnxruntime-node） |
 
 ### 4.2 Stage 0：过滤参数抽取（prompt 模板）
 
@@ -765,14 +778,14 @@ export async function retrieveCases(
 
 ### 5.4 写入技术文档的表格模板
 
-| 指标 | 定义 | 目标 | 实测（W4D4） | 评测方法 |
+| 指标 | 定义 | 目标 | 实测（2026-10-15 首测；W4D4 终测口径不变） | 评测方法 |
 |---|---|---|---|---|
-| RAG hit@3 | 检索 top-3 命中金标案例比例 | ≥90% | ____ | 20 条金标 + 离线脚本 |
-| 引用忠实度 | 引用支撑结论的逐条人工核验通过率 | ≥95% | ____ | 双人盲评 + 仲裁 |
-| 引用覆盖 | 期望引用被实际引用比例 | ≥70% | ____ | 同上 |
-| 检索延迟 P95 | 服务端级联端到端 | <900ms | ____ | 金标 20 条 × 5 次计时 |
-| TF-IDF 兜底 hit@3 | dense 不可用时 | ≥60%（12/20） | ____ | eval --mode tfidf |
-| 学生权益补充集 hit@3（student-golden-8） | 补充集 top-3 命中金标案例比例 | ≥87.5%（≥7/8） | ____ | 8 条补充金标 + 离线脚本（修订案 A4，独立报告） |
+| RAG hit@3 | 检索 top-3 命中金标案例比例 | ≥90% | **20/20（hit@1=20/20，MRR=1.000）** | 20 条金标 + 离线脚本 |
+| 引用忠实度 | 引用支撑结论的逐条人工核验通过率 | ≥95% | ____（W4 双人盲评） | 双人盲评 + 仲裁 |
+| 引用覆盖 | 期望引用被实际引用比例 | ≥70% | ____（W4 双人盲评） | 同上 |
+| 检索延迟 P95 | 服务端级联端到端 | 稳态 <2.5s（实测修订，原 <900ms） | **2070ms**（dense-only 116ms；冷启动首查 5.7s 一次性，eval-rag.md §3） | 金标 20 条逐题计时 |
+| TF-IDF 兜底 hit@3 | dense 不可用时 | ≥60%（12/20） | **19/20（MRR=0.950）** | eval --mode tfidf |
+| 学生权益补充集 hit@3（student-golden-8） | 补充集 top-3 命中金标案例比例 | ≥87.5%（≥7/8） | **8/8（hit@1=8/8，MRR=1.000）** | 8 条补充金标 + 离线脚本（修订案 A4，独立报告） |
 | 降级可用性 | 断网/模型缺失时检索仍可用 | 100% | ____ | §11.3 用例全过 |
 
 ### 5.5 CI 集成

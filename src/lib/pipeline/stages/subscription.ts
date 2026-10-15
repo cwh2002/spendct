@@ -13,12 +13,18 @@ import {
   makeCardId,
   noFindingsInput,
   numAt,
+  ragCitation,
   ruleCitation,
   sqlCitation,
   valAt,
+  type CitationInput,
   type StageExecutor,
   type TemplateCardInput,
 } from "./spec";
+import tfidfManifest from "@/data/tfidf-manifest.json";
+import { CASES } from "@/lib/cases";
+import { tfidfSearch, type TfidfManifest } from "@/lib/rag/tfidf";
+import { TFIDF_CITE_MIN } from "@/lib/rag/types";
 
 export const SUBSCRIPTION_EXECUTOR: StageExecutor = {
   stage: "subscription",
@@ -99,6 +105,20 @@ export const SUBSCRIPTION_EXECUTOR: StageExecutor = {
     const topAvg = numAt(top, 2);
     const topInterval = numAt(top, 3);
     const topMonths = numAt(top, 4);
+
+    // 附带的 RAG 案例引用：浏览器内 TF-IDF 在同族案例里检索（零网络，04 §1 模式 A），
+    // 分数过 TFIDF_CITE_MIN 门槛才引用（宁缺毋滥，04 §4.6），不达标则不挂引用
+    const ragRefs: CitationInput[] = [];
+    const subscriptionPool = CASES.filter((c) => c.category === "subscription_trap");
+    const ragHit = tfidfSearch(
+      `${topMerchant} 自动续费 连续包月`,
+      subscriptionPool,
+      tfidfManifest as TfidfManifest,
+      1,
+    )[0];
+    if (ragHit && ragHit.score >= TFIDF_CITE_MIN) {
+      ragRefs.push(ragCitation(ragHit.case.id));
+    }
     inputs.push({
       cardId: makeCardId("subscription", 2),
       headline: `最大订阅：${topMerchant} · 月均 ¥${fmtYuan(topAvg)}`,
@@ -122,7 +142,11 @@ export const SUBSCRIPTION_EXECUTOR: StageExecutor = {
           { label: "平均间隔", value: `${topInterval.toFixed(0)} 天` },
         ],
       },
-      sources: [sqlCitation("table", "subscription_patterns"), ruleCitation("subscription-cycle-v1")],
+      sources: [
+        sqlCitation("table", "subscription_patterns"),
+        ruleCitation("subscription-cycle-v1"),
+        ...ragRefs,
+      ],
     });
 
     return inputs;

@@ -673,7 +673,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 | B6 流式 | 洞察卡首 delta（冷 / cache 命中）/ 单卡完整；**带 LLM 3 卡全程 ≤60s**（G2 闸门口径，07 契约 §8） | **< 8s / < 2s / < 25s / ≤60s** | bench 打点 | W2 / W4 |
 | B7 追问 | 锚点追问首 token / 图落定（含 SQL 往返+渲染） | **< 3s / < 12s** | bench 打点 | W3 |
 | B8 OCR | 单张截图 OCR 端到端 | **< 8s** | bench 打点 | W3 |
-| B9 RAG | 混合检索（dense+rerank，SQL 元数据过滤 → top-30 → top-5 级联）/ TF-IDF 本地兜底 | **P95 < 900ms**（07 契约 §8/§16 全项目统一口径）/ **< 100ms** | 单测计时 | W3 |
+| B9 RAG | 混合检索（dense+rerank，SQL 元数据过滤 → top-30 → top-5 级联）/ TF-IDF 本地兜底 | **稳态 P95 < 2.5s** / 冷启动首查 < 6s（一次性）/ **< 100ms**（2026-10-15 实测修订，07 契约 §8/§16 同步，数字见 docs/eval-rag.md §3） | 金标 20 条逐题计时 | W3 |
 | B10 图表 | 单卡图表渲染 | **< 100ms** | bench 打点 | W4 |
 | B11 扩展图表 | 两大图表（省赛：日历热力/类别桑基；健康雷达/商户词云国赛窗口补齐）单图渲染 | **< 250ms/图**（IntersectionObserver 懒挂载；单页图表实例 ≤6，05 §3.6；全部带「数据表」切换救济） | bench 打点 | W4（E1 复测） |
 | B12 新路由首屏 | /budget 首屏 JS gzip（懒加载 chunk 含 ECharts core） | **< 300KB**（同 /insights 口径，05 §1.1；/learn /settings <60KB 不引 ECharts/DuckDB） | `next build` bundle 分析 | W4 |

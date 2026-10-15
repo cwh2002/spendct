@@ -1177,7 +1177,7 @@ export function flushNow(flush: (batch: PipelineEvent[]) => void) { flush(buffer
 | 洞察卡图表实例 | 同时存活 ≤ 6 | IntersectionObserver 懒 init / 离屏 dispose |
 | 明细表 | 虚拟滚动（10k 行） | 只渲染可视区 ± 200 行 |
 
-**首屏与代码分割预算**（以下为路由级 chunk 口径；全项目唯一性能基准表 = 01 §8 B1-B10（主包 <180KB、内存 <400MB、RAG P95<900ms 等），冲突时以 01 §8 为准）：首页 JS < 60KB gzip（无 ECharts/DuckDB）；ECharts 按需引入 < 250KB gzip；新路由 chunk 口径见 §1.1 表（/budget 含 ECharts core < 300KB，/learn /settings 各 < 60KB）；四大图组件与 ECharts 同 chunk 合计 < 60KB gzip（08 §④.2）；DuckDB-WASM 仅 `/upload` `/checkup` 注入并显示加载进度；10k 行清洗分片执行（每片 2k 行让出主线程），进度条显示真实行数；重复体检命中 stageCacheKey/llmCacheKey 缓存直接秒出（07 §10，ThinkingBubble 显示「⚡ 命中缓存」）。新增基准（01 §8 增补）：两大图单图渲染 < 250ms（雷达/词云国赛落地后同基准）、年度海报 canvas 合成 < 2s（1080×1920）、10k 行 CSV 导出 < 3s。交互主线程预算：任何用户交互的 JS 任务 ≤ 8ms（保持 60fps），超预算的任务（清洗、排序）拆片。
+**首屏与代码分割预算**（以下为路由级 chunk 口径；全项目唯一性能基准表 = 01 §8 B1-B10（主包 <180KB、内存 <400MB、RAG 稳态 P95<2.5s 等），冲突时以 01 §8 为准）：首页 JS < 60KB gzip（无 ECharts/DuckDB）；ECharts 按需引入 < 250KB gzip；新路由 chunk 口径见 §1.1 表（/budget 含 ECharts core < 300KB，/learn /settings 各 < 60KB）；四大图组件与 ECharts 同 chunk 合计 < 60KB gzip（08 §④.2）；DuckDB-WASM 仅 `/upload` `/checkup` 注入并显示加载进度；10k 行清洗分片执行（每片 2k 行让出主线程），进度条显示真实行数；重复体检命中 stageCacheKey/llmCacheKey 缓存直接秒出（07 §10，ThinkingBubble 显示「⚡ 命中缓存」）。新增基准（01 §8 增补）：两大图单图渲染 < 250ms（雷达/词云国赛落地后同基准）、年度海报 canvas 合成 < 2s（1080×1920）、10k 行 CSV 导出 < 3s。交互主线程预算：任何用户交互的 JS 任务 ≤ 8ms（保持 60fps），超预算的任务（清洗、排序）拆片。
 
 ### 4.4 加载 / 骨架屏 / 降级提示
 

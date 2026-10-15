@@ -158,6 +158,11 @@ export function ruleCitation(ruleId: string): CitationInput {
   return { kind: "rule", ref: `rule:${ruleId}` };
 }
 
+/** RAG 案例引用（07 §4 CitationSchema：rag:${caseId}；展示层统一说成「参考常见消费案例」） */
+export function ragCitation(caseId: string): CitationInput {
+  return { kind: "rag", ref: `rag:${caseId}` };
+}
+
 /**
  * 「未发现」模板卡输入：样本不足时产出全零统计卡，由引擎 reflect 闸门
  * 以「统计值全零 / 置信度不足」拦下（07 §20 宁缺毋滥，不自动发布）。

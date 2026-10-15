@@ -30,3 +30,13 @@ docs/pdf-build/spendct-guide.embedded.html
 
 # 图表人工核对截图（scripts/screenshot-insights.mjs 产物，不入库）
 .screenshots/
+
+# 用户真实数据私有基准（真实账单导出 + 票据截图，绝不入库）
+private-benchmark/
+
+# RAG 本地模型权重与嵌入增量缓存（下载产物，不入库）
+models/
+.embedding-cache.json
+
+# RAG 评测输出（数字以 docs/eval-rag.md 报告为准）
+tests/golden/results*.json

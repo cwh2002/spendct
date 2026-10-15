@@ -20,7 +20,13 @@
     "test:e2e": "playwright test",
     "sync:duckdb": "node scripts/sync-duckdb-wasm.mjs",
     "postinstall": "node scripts/sync-duckdb-wasm.mjs",
-    "check-secrets": "bash scripts/check-secrets.sh"
+    "check-secrets": "bash scripts/check-secrets.sh",
+    "rag:download-models": "node scripts/rag/download-models.mjs",
+    "rag:build": "node scripts/rag/build-embeddings.mjs",
+    "rag:build-vocab": "node scripts/rag/build-vocab.mjs",
+    "rag:build-golden": "node scripts/rag/build-golden-embeddings.mjs",
+    "rag:verify": "node scripts/rag/verify-embeddings.mjs",
+    "rag:eval": "node scripts/rag/eval-hit3.mjs"
   },
   "dependencies": {
     "@ai-sdk/deepseek": "3.0.63",

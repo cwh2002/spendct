@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookOpen,
   ChevronLeft,
   CircleCheck,
   MessageSquare,
@@ -33,10 +34,11 @@ import { usePipeline } from "@/lib/pipeline/store";
  * 1. 闲聊分流（classifySmallTalk）——「你好」「你是谁」等非账单问题直接回定稿文案；
  * 2. 本地规则（qa-engine）——意图解析 + 白名单聚合 SQL 直接读取账单数据回答，
  *    数字全部来自查询结果，答案气泡挂「已按你的账单数据计算」脚注；
- * 3. 在线兜底——本地答不了的问题，拼「汇总统计 + 最近明细快照」上下文
- *    与最近对话交给在线服务流式回答（明细口径见 07 修订案 A8），气泡挂
- *    「在线生成 · 已发送明细与统计」脚注；没有账单数据时不进这一环，
- *    直接回「先导入账单」。
+ * 3. 在线兜底——本地答不了的问题，拼「汇总统计 + 最近明细快照 + 案例参考」
+ *    上下文与最近对话交给在线服务流式回答（明细口径见 07 修订案 A8），气泡挂
+ *    「在线生成 · 已发送明细与统计」脚注；案例参考由 POST /api/rag 检索得到，
+ *    检索到的案例单独挂「案例参考」脚注（数据来自检索响应，非模型文本）；
+ *    没有账单数据时不进这一环，直接回「先导入账单」。
  *
  * 与页面的协作方式保持既有契约：锚点来自洞察卡「深挖」或账本图表数据点点击，
  * 页面通过 ref 触发「/」快捷键聚焦输入框；折叠窄轨、锚点确认条、快捷键均不变。
@@ -62,6 +64,8 @@ interface FollowUpTurn {
   note?: "local" | "live";
   /** 闲聊定稿回答（打招呼/询问身份）：不挂任何来源脚注 */
   smallTalk?: boolean;
+  /** 在线回答挂的案例参考（来自 /api/rag 检索响应，非模型生成文本） */
+  ragRefs?: { caseId: string; title: string; snippet: string }[];
 }
 
 /** 思考态：data＝读取本地账单数据；live＝等待在线服务返回 */
@@ -248,9 +252,42 @@ export function FollowUpPanel({
         return;
       }
 
+      // RAG 检索：从本地案例库取与问题相关的案例参考（04 §4.6 引用元数据由
+      // 检索层产出，不依赖模型生成，从根上防幻觉引用）；失败/超时静默跳过，
+      // 不阻断在线兜底主链路。mock/公网轻量模式下接口内部自动降 TF-IDF
+      let ragCases: { caseId: string; title: string; snippet: string }[] = [];
+      try {
+        const ragResponse = await fetch("/api/rag", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query: question, topK: 3 }),
+          signal: controller.signal,
+        });
+        if (ragResponse.ok) {
+          const envelope = (await ragResponse.json()) as {
+            ok: boolean;
+            data?: { cases?: { caseId: string; title: string; snippet: string }[] };
+          };
+          if (envelope.ok) {
+            ragCases = (envelope.data?.cases ?? []).map((c) => ({
+              caseId: c.caseId,
+              title: c.title,
+              snippet: c.snippet,
+            }));
+          }
+        }
+      } catch {
+        ragCases = [];
+      }
+      if (bailIfStopped()) return;
+
       const messages: { role: "user" | "assistant"; content: string }[] = [];
       if (combined) {
         messages.push({ role: "user", content: `${ONLINE_CONTEXT_PREFIX}${combined}` });
+      }
+      if (ragCases.length > 0) {
+        const refs = ragCases.map((c) => `案例参考（${c.title}：${c.snippet}）`).join("\n");
+        messages.push({ role: "user", content: refs });
       }
       const budget = MESSAGE_BUDGET - messages.reduce((sum, m) => sum + m.content.length, 0);
       messages.push(...buildHistoryMessages(question, budget));
@@ -295,6 +332,10 @@ export function FollowUpPanel({
       }
       updateTurnText(turnId, accumulated);
       markTurnLive(turnId);
+      // 案例参考脚注挂在回答气泡下：数据来自 /api/rag 检索响应，不是模型文本
+      if (ragCases.length > 0) {
+        setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)));
+      }
     } catch {
       // 组件卸载触发的中止 → 静默返回（不触碰已卸载组件的状态）；
       // 超时中止 → 补一条本地提示气泡（提示只补一次）；
@@ -544,6 +585,22 @@ export function FollowUpPanel({
                     <Sparkles className="size-3 shrink-0" aria-hidden />
                     在线生成 · 已发送明细与统计
                   </span>
+                ) : null}
+                {turn.ragRefs && turn.ragRefs.length > 0 ? (
+                  <div className="mt-2 space-y-1.5">
+                    {turn.ragRefs.map((c) => (
+                      <p
+                        key={c.caseId}
+                        className="flex items-start gap-1.5 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-2 py-1 text-[11px] leading-relaxed text-(--color-ink-muted)"
+                      >
+                        <BookOpen className="mt-0.5 size-3 shrink-0 text-(--color-ink-muted)" aria-hidden />
+                        <span>
+                          案例参考 · <span className="font-medium text-(--color-ink-secondary)">{c.title}</span>
+                          <span className="text-(--color-ink-muted)">：{c.snippet}</span>
+                        </span>
+                      </p>
+                    ))}
+                  </div>
                 ) : null}
               </div>
             </div>

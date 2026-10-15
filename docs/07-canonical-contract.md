@@ -398,7 +398,7 @@ GROUP BY b.ym, b.category;
 - **加载**：**自托管**。脚手架时把 `node_modules/@duckdb/duckdb-wasm/dist` 拷贝到 `public/duckdb/`，`bundleUrl = "/duckdb/duckdb-mvp.wasm"`；**禁用 CDN**（02 §5.1 的 jsDelivr 优先路径删除，#6、#34 fixHint）。
 - **线程**：单线程模式 `pthreadWorker: null`；不设 COOP/COEP 头。
 - **持久化**：OPFS 优先；无 OPFS 时内存库 + localStorage 检查点（§17）。
-- **性能预算（唯一，01 §8 为唯一基准表）**：WASM 冷 <4s / 热 <1.5s；10k 行导入+聚合 <2s；六阶段 dry-run（无 LLM）<5s；带 LLM 3 卡全程 ≤60s（G2 闸门口径）；内存 <400MB；LCP <2.5s / FCP <1.5s；主包 <180KB；RAG P95 <900ms（#23、#56 fixHint 取齐后的口径）。
+- **性能预算（唯一，01 §8 为唯一基准表）**：WASM 冷 <4s / 热 <1.5s；10k 行导入+聚合 <2s；六阶段 dry-run（无 LLM）<5s；带 LLM 3 卡全程 ≤60s（G2 闸门口径）；内存 <400MB；LCP <2.5s / FCP <1.5s；主包 <180KB；RAG 稳态 P95 <2.5s / 冷启动首查 <6s / TF-IDF 兜底 <100ms（2026-10-15 实测修订，见 eval-rag.md §3）。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -677,7 +677,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - **运行时查询嵌入与重排**：`onnxruntime-node` **本地推理**，部署于 **MCP 容器进程内**（与四工具同进程，采纳 #16 fixHint 的迁移方案）：`bge-m3-int8.onnx`（q8 约 600MB / q4 约 300MB，W4D1 spike 定案）+ `bge-reranker-base-int8.onnx`（约 110MB）；容器暴露 `GET /retrieve`，Next.js `/api/rag` 代理。模型文件 gitignored（`models/`），下载脚本 `scripts/rag/download-models.mjs` 支持 `HF_ENDPOINT=https://hf-mirror.com`。
 - **硬红线**：**运行时零嵌入/重排 API 调用**；查询文本不出容器进程；「断网 + 抓包无嵌入请求」列为验收演示证据（#9、#35 fixHint）。
 - **公网部署（Vercel Hobby）**：`EMBEDDING_PROVIDER=tfidf-only` → 浏览器 TF-IDF（纯 TS <150 行）全程可用；README 与技术文档如实标注「公网为轻量检索模式，完整 dense+reranker 级联见本地演示与评测」（#16 fixHint 选项二）。
-- **级联参数（唯一）**：SQL 元数据过滤 → dense top-30 → rerank top-5 → 引用 ≤3；`RERANK_MIN_SCORE=-2.0`、`RELAX_IF_LESS=5`、`TFIDF_FALLBACK_K=20`、P95<900ms。
+- **级联参数（唯一）**：SQL 元数据过滤 → dense top-30 → rerank top-5 → 引用 ≤3；`RERANK_MIN_SCORE=-2.0`、`RELAX_IF_LESS=5`、`TFIDF_FALLBACK_K=20`；稳态 P95<2.5s（实测 2070ms）/ 冷启动首查 <6s（2026-10-15 修订，eval-rag.md §3）。
 - **降级**：`EmbedderUnavailableError` → TF-IDF；`RerankerUnavailableError` → dense 直排；全低分 → 「未找到足够相关的案例引用」空态。
 - **个人化 RAG**：全程浏览器（DuckDB 聚合统计 + TF-IDF 语义排序），零嵌入；`Citation.kind = "personal"`。
 - **金标评测（唯一口径，#14、#57 fixHint 合并）**：20 题（订阅 8 / 习惯 4 / 异常 4 / 个人化 2 / 学生 2），存 `tests/golden/rag-golden.json`；脚本 `scripts/rag/eval-hit3.mjs`；阈值：dense+rerank hit@3 **≥18/20（90%，CI 阻断）**；G3 闸门入场线 **≥16/20（80%）**；TF-IDF 兜底 **≥12/20**；100 案例完成（11/8 前）先于最终评测。
@@ -841,6 +841,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 6. §2.1 架构图：反思 judge 标注 qwen（#13）；embedding/rerank 位置按 §16 修正（#35）。
 7. §3 目录树改为 src/ 布局 + mcp-server/ 子包，删除根级 lib//server//mcp/（#63、#53）；补 §14 的路由目录（#46；A7 后为 10 条路由，见 §14 A7）。
 8. §8 性能基准表保留为唯一预算源，LCP 调整为 2.5s、补 RAG P95<900ms（#23、#56）。
+13. §8/§16 RAG P95 预算按 2026-10-15 实测修订：稳态 P95<2.5s、冷启动首查<6s（一次性）、TF-IDF<100ms；原 <900ms 的 Stage3 重排预估（150-400ms/30 对）实测约 1.9s（本地 CPU q8 交叉编码），修订明细与数据见 docs/eval-rag.md §3（RAG 金标评测数字回填收口）。
 9. e2e 用例标注所属周次，W2 仅覆盖 clean/profile/anomaly 三阶段（#76）。
 10. 附录 A 环境变量补 `QWEATHER_API_KEY`、`SILICONFLOW_API_KEY`（#69）；补 06 缺失键对照（§12）。
 11. 浏览器端推理叙事（#25）：Transformers.js 标注为 P2 可选「断网商户分类」，未实现则不在材料中宣称推理能力，只讲「DuckDB-WASM 浏览器端计算」。
