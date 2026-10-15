@@ -9,7 +9,7 @@
 | 生效日期 | 2026-10-13，随 W1 建仓落地（v1.1 同日随 08 功能扩展方案生效） |
 | 版本核实 | 所有 npm 包版本于 2026-10-13 从 registry.npmjs.org 实时核实（见附录 A） |
 
-> **实现收口（2026-10-15）**：本文为设计总纲。其中嵌入检索（EMBEDDING_PROVIDER）、案例库 150+ 等条目为**设计态**；实际交付口径以 07 §13 A10 收口说明与 README 为准（案例库 60 条 + 本地关键词匹配、6 条 API 路由、MCP 工具链已上线（07 §19 A9，接入层自建 SDK Client）、截图 OCR 已上线（07 §11 A10：智谱 glm-4.6v-flash 主 + SiliconFlow GLM-4.1V-9B 降级，低置信字段条带裁剪二次复核））。
+> **实现收口（2026-10-15）**：本文为设计总纲。其中嵌入检索（EMBEDDING_PROVIDER）、案例库 150+ 等条目为**设计态**；实际交付口径以 07 §13 A10 收口说明与 README 为准（案例库 60 条 + 本地关键词匹配、6 条 API 路由、MCP 工具链已上线（07 §19 A9，接入层自建 SDK Client）、截图 OCR 已上线（07 §11 A11：DeepSeek deepseek-flash 主 + 智谱 glm-4.6v-flash / SiliconFlow GLM-4.1V-9B 降级，低置信字段条带裁剪二次复核））。
 
 ## 0. 本文档负责的范围与接口
 
@@ -104,7 +104,7 @@
 5. `streamObject` 的 `partialObjectStream` 用于洞察卡渐进渲染（§6.2）；
 6. 单测用 `ai/test` 的 `MockLanguageModelV2`；若 v7 导出路径变化，自研实现 `LanguageModelV2` 接口的 mock provider（10 行壳），不影响业务代码。
 
-**三模型路由（§2.2）依赖的本表锁定（07 契约 §12 为任务级路由表的唯一裁决）**：`ModelId` 全项目唯一枚举 = `"deepseek" | "qwen" | "glm4v" | "local-tfjs"`；展示名映射：deepseek→DeepSeek-V3、qwen→SiliconFlow Qwen、glm4v→GLM-4V-Flash、local-tfjs→Transformers.js 本地。任务级路由（六阶段叙事/洞察卡/锚点追问 plan/summarize = deepseek 主 + qwen 降级；字段映射、商户分类、CSV AI 兜底、标题润色、反思自检 L2 judge = qwen 主；OCR = glm4v；断网商户分类 = local-tfjs（P2 可选））以 07 契约 §12 路由表与降级链为准，实现于 `src/server/ai/router.ts`（全仓唯一）。**08 扩展新增 5 任务（修订案 A5，§12 路由表 +5 行）**：quick-entry 快速记账解析、budget-advice 预算建议、tip-personalize 贴士个性化 = qwen 主；forecast-narrative 预测叙事、annual-story 年度故事 = deepseek 主（annual-story 并入 annual 阶段任务行、qwen 降级）；全部带模板兜底（quick-entry 无备用模型 → 手动表单兜底），env 键零新增（§4.2），沿用「叙事 deepseek、轻任务 qwen」费用纪律。SiliconFlow 免费 Qwen 轻任务模型的具体模型名建仓日按免费额度清单选型（候选 `Qwen/Qwen3-8B` 或 `Qwen/Qwen2.5-7B-Instruct`）。三者全经 `@ai-sdk/openai-compatible`/官方 provider 统一，**密钥只存服务端**（§4）。
+**三模型路由（§2.2）依赖的本表锁定（07 契约 §12 为任务级路由表的唯一裁决）**：`ModelId` 全项目唯一枚举 = `"deepseek" | "qwen" | "glm4v" | "local-tfjs"`；展示名映射：deepseek→DeepSeek-V3、qwen→SiliconFlow Qwen、glm4v→GLM-4V-Flash、local-tfjs→Transformers.js 本地。任务级路由（六阶段叙事/洞察卡/锚点追问 plan/summarize = deepseek 主 + qwen 降级；字段映射、商户分类、CSV AI 兜底、标题润色、反思自检 L2 judge = qwen 主；OCR = deepseek（deepseek-flash 视觉，07 §11 A11）主 + glm4v 降级；断网商户分类 = local-tfjs（P2 可选））以 07 契约 §12 路由表与降级链为准，实现于 `src/server/ai/router.ts`（全仓唯一）。**08 扩展新增 5 任务（修订案 A5，§12 路由表 +5 行）**：quick-entry 快速记账解析、budget-advice 预算建议、tip-personalize 贴士个性化 = qwen 主；forecast-narrative 预测叙事、annual-story 年度故事 = deepseek 主（annual-story 并入 annual 阶段任务行、qwen 降级）；全部带模板兜底（quick-entry 无备用模型 → 手动表单兜底），env 键零新增（§4.2），沿用「叙事 deepseek、轻任务 qwen」费用纪律。SiliconFlow 免费 Qwen 轻任务模型的具体模型名建仓日按免费额度清单选型（候选 `Qwen/Qwen3-8B` 或 `Qwen/Qwen2.5-7B-Instruct`）。三者全经 `@ai-sdk/openai-compatible`/官方 provider 统一，**密钥只存服务端**（§4）。
 
 **LangChain.js 不采用说明（赛事推荐栈中的有意取舍，文档需写明理由）**：LangChain 的链/代理抽象与「模板优先 + 三层 zod 校验 + 事件协议」自研闭环重叠，且包体积与抽象层厚度对 5 周工期是净成本；Vercel AI SDK 已覆盖「流式 + Tool Calling」（赛事推荐对 AI SDK 的定位词正是这两项）。RAG 检索链自研（04 文档），不引入 LangChain 任何子包。
 
@@ -194,7 +194,7 @@ export async function mountPersistence(db: duckdb.AsyncDuckDB): Promise<"opfs" |
 ┌──────────────────────────── 浏览器（数据主权层：账单明细唯一所在地）──────────────────────────┐
 │                                                                                             │
 │  ① 导入：CSV 拖拽/内置示例账单（编码探测链 UTF-8→GB18030→GBK→AI 兜底，契约 §9）· 截图 OCR     │
-│     （调 /api/ocr：智谱 GLM-4V-Flash 主，SiliconFlow 网关降级，契约 §11）                    │
+│     （调 /api/ocr：deepseek-flash 主，智谱/SiliconFlow 网关降级，契约 §11 A11）            │
 │     · 快速记账：一句话 → qwen 解析 → zod 确认卡 → source='manual' 行入库（修订案 A3）              │
 │        ▼                                                                                    │
 │  ┌───────────────────────────────────────────────────────────────────┐                     │
@@ -227,7 +227,7 @@ export async function mountPersistence(db: duckdb.AsyncDuckDB): Promise<"opfs" |
 │ · SiliconFlow Qwen 轻任务         │   │ · query_bill_db_metadata：协议演示工具，只读         │
 │   + 反思自检 L2 judge（主，deepseek│   │   /api/followup 请求内 sessionSchema 快照          │
 │   降级 → 跳过 L2，契约 §20）       │   │ · bge-m3 查询嵌入 + bge-reranker 重排本地推理        │
-│ · GLM-4V-Flash  截图 OCR          │   │   （onnxruntime-node，GET /retrieve，零嵌入 API）    │
+│ · deepseek-flash 截图 OCR         │   │   （onnxruntime-node，GET /retrieve，零嵌入 API）    │
 │ （降级链：deepseek↔qwen 互备，ModelId 见 07 §12）│  │ 时间不足 → 砍为 Function Calling（仅换传输）         │
 └──────────────────────────────────┘   └──────────────────────────────────────────┘
 ```
@@ -334,7 +334,7 @@ spendct/
 │  │  ├─ ai/                           # provider.ts（三模型路由工厂+指数退避+超时）、streams.ts（AI SDK 数据流→spendct协议@2 转换）
 │  │  │  └─ router.ts                  # 任务级 LLM 路由表（契约 §12，全仓唯一）；无服务端缓存（契约 §10：服务端只做转发）
 │  │  ├─ sql/validator.ts              # 聚合摘要形状校验（02 文档细则）
-│  │  ├─ ocr/                          # GLM-4V-Flash 调用（智谱主 + SiliconFlow 降级，契约 §11）+ 置信度评估（低置信字段标记规则）
+│  │  ├─ ocr/                          # deepseek-flash 调用（主）+ 智谱/SiliconFlow 降级（契约 §11 A11）+ 置信度评估（低置信字段标记规则）
 │  │  └─ security/                     # isolation.ts（分隔符隔离/账单数据单独消息）、redact.ts（服务端侧再脱敏）、backoff.ts
 ├─ mcp-server/                         # 独立 MCP server 子包（Node 20 镜像；@modelcontextprotocol/sdk；契约 §14）
 │  ├─ index.ts                         # MCP server 入口（StreamableHTTP）；四工具：get_school_calendar / get_weather / get_promo_calendar / query_bill_db_metadata（协议演示工具，读请求内 sessionSchema 快照）
@@ -394,12 +394,15 @@ spendct/
 
 ```bash
 # ═══════════ AI 供应商密钥（仅服务端读取；严禁 NEXT_PUBLIC_ 前缀；07 契约 §12 唯一清单）═══════════
-DEEPSEEK_API_KEY=""                              # DeepSeek-V3 文本主脑；平台 https://platform.deepseek.com 申请
+DEEPSEEK_API_KEY=""                              # DeepSeek 文本主脑 + 截图 OCR 主视觉模型（deepseek-flash 同钥，07 §11 A11）；平台 https://platform.deepseek.com 申请
 DEEPSEEK_BASE_URL="https://api.deepseek.com/v1"  # 可选，一般不改
-SILICONFLOW_API_KEY=""                           # 免费 Qwen 轻任务（分类/CSV 兜底/反思自检 L2 judge）+ GLM-4V 降级网关；https://siliconflow.cn
+DEEPSEEK_VISION_MODEL="deepseek-flash"           # 可选：OCR 视觉模型覆盖键（默认 deepseek-flash，V4.1 Flash 原生多模态）
+SILICONFLOW_API_KEY=""                           # 免费 Qwen 轻任务（分类/CSV 兜底/反思自检 L2 judge）+ OCR 降级第 3 位；https://siliconflow.cn
 SILICONFLOW_BASE_URL="https://api.siliconflow.cn/v1"  # 可选
-GLM_API_KEY=""                                   # 智谱 GLM-4V-Flash 截图 OCR（主）；https://open.bigmodel.cn
+SILICONFLOW_VISION_MODEL="THUDM/GLM-4.1V-9B-Thinking"  # 可选：OCR 降级第 3 位视觉模型覆盖键
+GLM_API_KEY=""                                   # 智谱截图 OCR（降级第 2 位）；https://open.bigmodel.cn
 GLM_BASE_URL="https://open.bigmodel.cn/api/paas/v4"   # 可选
+GLM_VISION_MODEL="glm-4.6v-flash"                # 可选：OCR 降级第 2 位视觉模型覆盖键（官方 glm-4v-flash 不支持 base64，07 §11 A10）
 
 # ═══════════ 工具密钥 ═══════════
 QWEATHER_API_KEY=""                              # 和风天气（MCP 工具 weather）
@@ -426,9 +429,9 @@ DEMO_MODE="mock"                                 # mock=零密钥剧本演示（
 
 | 键 | 谁读 | 用途 | 泄露后果 |
 |---|---|---|---|
-| `DEEPSEEK_*` | `src/server/ai/provider.ts` | 文本主脑路由 | 他人盗刷额度（费用纪律上限 ¥150 的防线） |
-| `SILICONFLOW_*` | 同上 | 轻任务 + 反思自检 L2 judge + GLM-4V 降级网关（OCR 降级链，契约 §11/§12） | 同上 |
-| `GLM_*` | `src/server/ocr` | 截图 OCR（主，智谱） | 同上 |
+| `DEEPSEEK_*` | `src/server/ai/provider.ts`、`src/server/ocr` | 文本主脑路由 + OCR 主视觉模型 deepseek-flash（同钥，07 §11 A11） | 他人盗刷额度（费用纪律上限 ¥150 的防线） |
+| `SILICONFLOW_*` | 同上 | 轻任务 + 反思自检 L2 judge + OCR 降级第 3 位（契约 §11/§12） | 同上 |
+| `GLM_*` | `src/server/ocr` | 截图 OCR 降级第 2 位（智谱） | 同上 |
 | `QWEATHER_API_KEY` | MCP 容器 `get_weather` | 和风天气工具 | 同上 |
 | `AI_*` | `src/server/ai/provider.ts` | 文本任务降级链顺序 | 无（非机密，但需与契约 §12 一致） |
 | `DEMO_MODE` | `src/server/ai/provider.ts`、`/api/health` | mock/live 切换（01 §7 自有开关） | 无 |
@@ -730,7 +733,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 | R4 | **Next.js 16 Turbopack 边缘行为** | wasm MIME/静态资源、Route Handler 流式在 Turbopack 下的差异 | 钉 16.4.0；W1 spike 同时覆盖 build 产物验证；出现阻塞且无解 → 降 16.2.x（仍在 16 线内，非大改） | 冻结 |
 | R5 | **ECharts 6 与 5.x 教程差异** | API 变化 | 钉 6.1.0；只经自研 `EChart.tsx` 壳访问（全项目唯一入口，出问题只改一处） | 冻结 |
 | R6 | **DeepSeek/SiliconFlow 限流与改价**（免费额度是命门） | 比赛期间限流/欠费/模型下线 | 三重抗限流（客户端 `llm:v1`/`stage:v1` 缓存 + 嵌入离线预计算 + 双供应商互备 + 指数退避）+ `AI_TEXT_FALLBACK_ORDER` 降级链（任务级降级链以 07 契约 §12 路由表为准）+ mock 兜底（§7）；费用预充 ¥30–100，上限 ¥150（06 文档记账） | 模型名写死 env，仅在平台下架时换名（30 分钟级变更） |
-| R7 | **GLM-4V-Flash 可用性** | OCR 是第一入口（P0），视觉模型不稳 | 降级链（07 契约 §11）：智谱 GLM-4V-Flash → SiliconFlow 版 GLM-4V-Flash（同网关低风险切换）→ 两者失败返回 `ok:false` → UI 引导改用 CSV/示例账单（OCR 第一入口但绝不阻塞主流程）；低置信度字段截取原图局部 → GLM-4V 二次复核 → 仍低置信则人工确认 | 同 R6 |
+| R7 | **视觉模型可用性** | OCR 是第一入口（P0），视觉模型不稳 | 降级链（07 契约 §11 A11）：deepseek-flash → 智谱 glm-4.6v-flash → SiliconFlow 版 GLM-4.1V-9B（同协议低风险切换）→ 三者失败返回 `ok:false` → UI 引导改用 CSV/示例账单（OCR 第一入口但绝不阻塞主流程）；低置信度字段截取原图局部 → 视觉模型二次复核 → 仍低置信则人工确认 | 同 R6 |
 | R8 | **zod 4 API 与 v3 教程差异** | `strictObject`/错误格式变化 | 钉 4.6.7；schema 全部集中 `lib/schema/`，单测覆盖修复循环 | 冻结 |
 | R9 | **Tailwind 4.3 + shadcn/ui 版本耦合** | CLI 生成模板漂移 | 组件 vendoring 入库（git 冻结）；生成后不改动 `components/ui/` 内部（覆写走包裹层） | 冻结；赛后重跑 CLI 升级 |
 | R10 | **Transformers.js 4.3 体积**（P2 可选） | 浏览器推理模型下载 >100MB 违反 B2 | 仅作 **P2 可选「断网商户分类」**（ModelId `local-tfjs`）、动态导入、模型仅选量化微模型；主线不依赖；**未实现则材料不宣称浏览器端推理**（评审 #25 裁决） | 整段可砍（06 文档砍法） |

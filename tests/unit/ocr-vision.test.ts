@@ -67,8 +67,17 @@ describe("resolveOcrMode 运行模式判定（07 §7 局部判定）", () => {
     expect(resolveOcrMode()).toBe("live");
   });
 
-  it("双视觉 key 全缺 → mock（零密钥部署演示可跑）", () => {
+  it("仅 DEEPSEEK_API_KEY 即 live（deepseek-flash 主供应商，08 修订案 A11）", () => {
     delete process.env.DEMO_MODE;
+    delete process.env.GLM_API_KEY;
+    delete process.env.SILICONFLOW_API_KEY;
+    process.env.DEEPSEEK_API_KEY = "sk-test";
+    expect(resolveOcrMode()).toBe("live");
+  });
+
+  it("三网关视觉 key 全缺 → mock（零密钥部署演示可跑）", () => {
+    delete process.env.DEMO_MODE;
+    delete process.env.DEEPSEEK_API_KEY;
     delete process.env.GLM_API_KEY;
     delete process.env.SILICONFLOW_API_KEY;
     expect(resolveOcrMode()).toBe("mock");

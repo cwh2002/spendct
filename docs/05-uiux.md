@@ -168,7 +168,7 @@ export const featureFlags = {
   │ 技术架构展示条（图标化管线图）：                │
   │   浏览器 DuckDB-WASM → 服务端 AI 接入层 →      │
   │   MCP 容器 + 三模型分工一行字（deepseek 叙事 /   │
-  │   qwen 轻任务 / glm4v OCR，07 §12）           │
+  │   qwen 轻任务 / deepseek-flash OCR 主+glm4v 降级，07 §12） │
   ├────────────────────────────────────────────┤
   │ 六阶段预览（横向 mini stepper，静态，保留）      │
   └────────────────────────────────────────────┘

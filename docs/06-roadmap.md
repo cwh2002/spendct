@@ -648,7 +648,7 @@ graph LR
 | 1 项目概述 | 1 | 定位/目标用户/核心卖点/方向 8 | 创新性·选题 10% | — | S1 |
 | 2 需求分析 | 1 | 痛点（账单看不懂/隐私担忧/订阅刺客）+竞品对标表（6.4） | 创新性·选题 10% | — | S1 |
 | 3 系统架构设计 | 3 | 总体架构图；前端/浏览器计算/AI 接入层/服务端最小化；**数据可见性对照表缩略版**（引自 02 第 2 章）；技术选型表+选型理由 | 前端工程·架构设计 3%；AI 技术选型理由（提交物要求） | src/lib/**、src/app/api/** | S1/S7 |
-| 4 AI 技术方案 | 8 | 4.1 三模型分工+流式接入（Vercel AI SDK）；4.2 六阶段状态机+确定性 SQL；4.3 三层 LLM 输出 zod「生成→校验→修复」闭环；4.4 RAG（案例库 **60 条**+本地关键词匹配检索；嵌入检索与金标评测标注「国赛窗口」）；4.5 多模态 OCR（已上线：智谱 glm-4.6v-flash 主 / SiliconFlow GLM-4.1V-9B 降级，base64 入参不落盘；低置信字段截取原图局部二次复核，07 §11 A10）；4.6 AI 安全与可控性；4.7 工具集成（4 个结构化 LLM 短任务 + 浏览器内 SQL；MCP 协议未上线，正文标注国赛窗口）；**4.8 扩展 AI 任务路由表（半页，修订案 A5/A6）：/api/ai/task 判别联合 zod 图 + quick-entry 解析/预算建议/预测叙事/贴士个性化四任务一行一卡 + 年度故事 AnnualStorySchema** | 大模型集成 8% / Agent 工作流 8% / RAG 6% / 多模态 5% / AI 安全 4% / MCP 4% | 见下方 AI 深度逐条表 | S3-S6 |
+| 4 AI 技术方案 | 8 | 4.1 三模型分工+流式接入（Vercel AI SDK）；4.2 六阶段状态机+确定性 SQL；4.3 三层 LLM 输出 zod「生成→校验→修复」闭环；4.4 RAG（案例库 **60 条**+本地关键词匹配检索；嵌入检索与金标评测标注「国赛窗口」）；4.5 多模态 OCR（已上线：DeepSeek deepseek-flash 原生视觉主（与文本任务同钥）/ 智谱 glm-4.6v-flash / SiliconFlow GLM-4.1V-9B 降级，base64 入参不落盘；低置信字段截取原图局部二次复核，07 §11 A11）；4.6 AI 安全与可控性；4.7 工具集成（4 个结构化 LLM 短任务 + 浏览器内 SQL；MCP 协议未上线，正文标注国赛窗口）；**4.8 扩展 AI 任务路由表（半页，修订案 A5/A6）：/api/ai/task 判别联合 zod 图 + quick-entry 解析/预算建议/预测叙事/贴士个性化四任务一行一卡 + 年度故事 AnnualStorySchema** | 大模型集成 8% / Agent 工作流 8% / RAG 6% / 多模态 5% / AI 安全 4% / MCP 4% | 见下方 AI 深度逐条表 | S3-S6 |
 | 5 核心功能实现 | 5 | 洞察卡流/锚点追问 PEO/订阅刺客雷达（P1）/订阅管理墙（F06）+关键截图；**新增 1 页：预算中心（预算环+超支贴士）/快速记账（zod 确认卡）/年度海报（canvas 合成 PNG）截图——实用性证据；两大图表（日历热力图/类别桑基）小样入既有图表页（健康雷达/商户词云标注「国赛窗口」）** | 前端工程·组件化 4%；创新·交互模式 7%；AI 交互体验 3%；实用性 10%（证据页） | src/components/** | S4/S4.5/S5/S5.5 |
 | 6 测试与部署 | 3 | 测试矩阵（第 7 章清单，含 **A11 新功能回归**）+性能基准表（**补 4 行：两大图表单图渲染 <250ms（雷达/词云国赛落地后同基准）、/budget 首屏 <300KB gzip、年度海报 canvas 合成 <2s（1080×1920）、10k 行 CSV 导出 <3s**）+部署拓扑（Vercel+Gitee 镜像）；数据导出与数据集管理一句带过 | 前端工程·性能优化 3%；实用性 10% | tests/**、scripts/** | S7 |
 | 7 创新点 | 2 | ①交互范式翻转（AI 先体检、审阅追问）②账单默认本地处理+追问明细快照如实披露的隐私架构（浏览器端计算）③确定性优先+模板优先的 AI 工程 ④费用纪律（≤¥150 完赛） | 创新性·技术方案 8%+交互模式 7% | — | S1/S4/S5 |
@@ -662,7 +662,7 @@ graph LR
 | 大模型集成质量 8% | 4.1+4.3+4.8 | src/server/ai/（路由/缓存/流式，唯一 LLM 出口模块）、src/lib/schema/insight-card.ts（zod 校验闭环）、src/app/api/pipeline/stage/route.ts + src/app/api/followup/route.ts + **src/app/api/ai/task/route.ts（扩展任务判别联合）+ src/lib/schema/quick-entry.ts / annual-story.ts / budget.ts（08 §⑥ zod 单一来源）** | S3（流式叙事）+S4（校验后成卡）+S5.5（快速记账 zod 确认卡） |
 | Agent/工作流设计 8% | 4.2+5 | src/lib/pipeline/state-machine.ts（状态机+断点续跑）、反思自检 L2 judge 在 src/server/ai/*（07 §20：qwen 主/deepseek 降级） | S3（六阶段+思考状态）+S5（PEO 循环） |
 | RAG 应用 6% | 4.4 | src/lib/rag/（语料 JSON+嵌入向量+混合检索+TF-IDF 兜底）、data/cases/embeddings.json（bge-m3 离线预计算入库，运行时零嵌入 API，07 §16）、scripts/rag/eval-hit3.mjs（金标 tests/golden/rag-golden.json + **补充集 tests/golden/rag-golden-student.json，hit@3 ≥7/8 与主集分开报告，修订案 A4**） | S4（订阅卡 RAG 引用）+S7（hit@3+零嵌入 API 抓包证据+案例库 150 条） |
-| 多模态 5% | 4.5 | src/app/api/ocr/route.ts（glm-4.6v-flash 智谱主 / SiliconFlow GLM-4.1V-9B 降级，07 §11 A10）+低置信度字段多模态二次确认（客户端按行序截取原图纵向条带→视觉模型复核→仍低置信→人工确认） | S2 截图入口 |
+| 多模态 5% | 4.5 | src/app/api/ocr/route.ts（deepseek-flash 主 / glm-4.6v-flash / SiliconFlow GLM-4.1V-9B 降级，07 §11 A11）+低置信度字段多模态二次确认（客户端按行序截取原图纵向条带→视觉模型复核→仍低置信→人工确认） | S2 截图入口 |
 | AI 安全与可控性 4% | 4.6 | src/lib/sql-guard/（白名单+沙箱四件套）、src/lib/sanitize/sanitizer.ts（脱敏器，07 §5 唯一签名）、注入三层防护在 src/server/ai/*（唯一 LLM 出口） | S6（注入拦截+日志 10/10） |
 | MCP/工具集成 4% | 4.7 | mcp-server/ 独立子包（四工具，Node 20 镜像；丢分评估口径 04 §10.2） | S5/S6（若被砍：标注「降级为 Function Calling 及原因」） |
 

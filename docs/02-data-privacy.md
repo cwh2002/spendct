@@ -1378,6 +1378,8 @@ ECharts 校验要点：registry 渲染产物经**白名单拾取**（`pick` 已�
 ## 12. 截图 OCR 数据流与合规声明（P0 第一入口，已上线）
 
 > **实现收口（2026-10-15，对应 07 §11 修订案 A10）**：本节已按契约落地（`src/app/api/ocr/route.ts` + `src/server/ocr/vision.ts` + `src/components/ocr/*`）。两处落地细节以 §12.2 四约定为准裁决：① 主供应商默认模型为 **`glm-4.6v-flash`**——官方 glm-4v-flash 不支持 base64 入参，写临时文件传 URL 会违反 §12.2 ②「无任何 fs 写入」，glm-4.6v-flash 同属智谱免费 flash 档且支持 base64（`GLM_VISION_MODEL` 可覆盖）；② SiliconFlow 降级模型为 `THUDM/GLM-4.1V-9B-Thinking`（`SILICONFLOW_VISION_MODEL` 可覆盖）。其余：两网关视觉模型均不支持 `response_format=json_object` → prompt 内嵌 JSON 模板 + `extractJsonObject` 容错提取；低置信复核由客户端按行序截取原图纵向条带（前后各扩一行）复用 `/api/ocr`（mode=review）；safeParse 失败重试 1 次 = 降级网关这一次重试；未配任何视觉 key 或 DEMO_MODE=mock 时走 mock 剧本（§12.4 弹窗文案逐字渲染不变）；channel 由弹窗「截图来源」单选决定，不做模型猜测。
+>
+> **08 修订案 A11 追加（2026-10-15）**：主供应商改为 **DeepSeek `deepseek-flash`**（V4.1 Flash 原生多模态，与 `DEEPSEEK_API_KEY` 同一把密钥，`DEEPSEEK_VISION_MODEL` 可覆盖，默认 deepseek-flash）——2026-10-15 本地实测（`private-benchmark/probe-deepseek-vision.mjs`）合成账单卡三行文字逐行全对，视觉通道与 OCR 提取均验证通过；实测 `deepseek-v4-pro` 无视觉。降级链：deepseek-flash → glm-4.6v-flash → SiliconFlow THUDM/GLM-4.1V-9B-Thinking → 三败 `ok:false`。隐私约定不变：base64 内联仅内存中转、不落盘（§12.2 四约定对 DeepSeek 网关同样生效）。
 
 ### 12.1 数据流
 

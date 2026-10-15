@@ -1,18 +1,24 @@
 /**
  * OCR 视觉模型接入层（07 §11 降级链的服务端实现，02 §12.2 隐私硬约定）。
  *
- * 降级链（07 §11 唯一）：智谱 GLM-4V → SiliconFlow 版 GLM 视觉模型 →
- * 双败返回 { ok:false } 信封，由路由层转 502/503/504，UI 引导改用 CSV。
+ * 降级链（07 §11，08 修订案 A11 更新）：DeepSeek deepseek-flash（原生多模态）
+ * → 智谱 glm-4.6v-flash → SiliconFlow 版 GLM 视觉模型 → 三败返回 { ok:false }
+ * 信封，由路由层转 502/503/504，UI 引导改用 CSV。
  * 每次识别整体 15s 超时（02 §12.2 ④），路由 maxDuration=20 兜底。
  *
  * 模型选择说明（实现注记，收口时同步 07 §11）：
- * 契约主供应商为「智谱 GLM-4V-Flash」。智谱官方文档明确 glm-4v-flash
- * 不支持 base64 图片（仅公网 URL 传图），与本产品「截图仅本次请求内存、
- * 不落任何存储」的隐私硬约束冲突；同系 glm-4.6v-flash（同为 GLM-4V 系
- * 免费 flash 档）支持 base64 data URL 且输出上限更大，故默认模型取
- * glm-4.6v-flash，可用 GLM_VISION_MODEL 覆盖。两个网关的视觉模型均
- * 不支持 response_format=json_object，JSON 输出由提示词约束 + 容错提取
- * （围栏剥离、<think> 剥离、首尾花括号截取）兜底。
+ * 契约原主供应商为「智谱 GLM-4V-Flash」。实测两条路线均被产品约束改写：
+ * - 智谱官方文档明确 glm-4v-flash 不支持 base64 图片（仅公网 URL 传图），
+ *   与本产品「截图仅本次请求内存、不落任何存储」的隐私硬约束冲突；
+ *   同系 glm-4.6v-flash 支持 base64 data URL，故智谱位默认模型取
+ *   glm-4.6v-flash，可用 GLM_VISION_MODEL 覆盖；
+ * - DeepSeek 于 2026-09-10 发布 deepseek-flash（V4.1 Flash，CED 架构）
+ *   原生支持视觉，API 模型名 deepseek-flash，OpenAI 兼容接口 + base64
+ *   内联（单图 ≤32MiB），与既有 DEEPSEEK_API_KEY 共用同一把密钥，
+ *   2026-10-15 本地实测三行文字逐行全对 → 提升为主供应商（DEEPSEEK_VISION_MODEL
+ *   可覆盖，默认 deepseek-flash）。
+ * 三个网关的视觉模型均不支持 response_format=json_object，JSON 输出由
+ * 提示词约束 + 容错提取（围栏剥离、<think> 剥离、首尾花括号截取）兜底。
  *
  * 隐私硬约束（02 §12.2，code review 检查项）：
  * - 图片字节只在本次调用内存中存活（base64 编码后直接进请求体，响应后随 GC 释放）；
@@ -28,11 +34,15 @@ import {
   type OcrTransactionRow,
 } from "@/lib/schema/ocr";
 
+/** DeepSeek 网关默认地址（DEEPSEEK_BASE_URL 可覆盖，07 §12 env 唯一清单） */
+const DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com/v1";
 /** 智谱网关默认地址（GLM_BASE_URL 可覆盖，07 §12 env 唯一清单） */
 const ZHIPU_DEFAULT_BASE_URL = "https://open.bigmodel.cn/api/paas/v4";
 /** SiliconFlow 网关默认地址（SILICONFLOW_BASE_URL 可覆盖） */
 const SILICONFLOW_DEFAULT_BASE_URL = "https://api.siliconflow.cn/v1";
-/** 默认视觉模型（理由见文件头）：GLM-4V 系 flash 档、免费、支持 base64 */
+/** DeepSeek 默认视觉模型：V4.1 Flash 原生多模态（DEEPSEEK_VISION_MODEL 可覆盖） */
+const DEFAULT_DEEPSEEK_VISION_MODEL = "deepseek-flash";
+/** 智谱默认视觉模型（理由见文件头）：GLM-4V 系 flash 档、支持 base64 */
 const DEFAULT_GLM_VISION_MODEL = "glm-4.6v-flash";
 /** SiliconFlow 在架的 GLM 视觉模型（SILICONFLOW_VISION_MODEL 可覆盖） */
 const DEFAULT_SILICONFLOW_VISION_MODEL = "THUDM/GLM-4.1V-9B-Thinking";
@@ -50,12 +60,13 @@ export type OcrOutcome =
   | { ok: true; data: OcrResult }
   | { ok: false; error: { code: OcrErrorCode; message: string } };
 
-/** OCR 运行模式判定（局部判定，不动全局 resolveLlmMode）：mock 或双视觉 key 全缺 → mock */
+/** OCR 运行模式判定（局部判定，不动全局 resolveLlmMode）：mock 或三网关视觉 key 全缺 → mock */
 export function resolveOcrMode(): "live" | "mock" {
   if (process.env.DEMO_MODE === "mock") return "mock";
+  const hasDeepseek = Boolean(process.env.DEEPSEEK_API_KEY?.trim());
   const hasZhipu = Boolean(process.env.GLM_API_KEY?.trim());
   const hasSiliconflow = Boolean(process.env.SILICONFLOW_API_KEY?.trim());
-  if (!hasZhipu && !hasSiliconflow) return "mock";
+  if (!hasDeepseek && !hasZhipu && !hasSiliconflow) return "mock";
   return "live";
 }
 
@@ -137,15 +148,24 @@ export function extractJsonObject(text: string): unknown | null {
 /* ---------------- 网关调用 ---------------- */
 
 interface VisionProvider {
-  name: "zhipu" | "siliconflow";
+  name: "deepseek" | "zhipu" | "siliconflow";
   apiKey: string;
   baseUrl: string;
   modelId: string;
 }
 
-/** 按「智谱主 → SiliconFlow 降级」的契约顺序收集有 key 的网关 */
+/** 按「DeepSeek 主 → 智谱 → SiliconFlow 降级」的契约顺序收集有 key 的网关 */
 function collectProviders(): VisionProvider[] {
   const providers: VisionProvider[] = [];
+  const deepseekKey = process.env.DEEPSEEK_API_KEY?.trim();
+  if (deepseekKey) {
+    providers.push({
+      name: "deepseek",
+      apiKey: deepseekKey,
+      baseUrl: process.env.DEEPSEEK_BASE_URL?.trim() || DEEPSEEK_DEFAULT_BASE_URL,
+      modelId: process.env.DEEPSEEK_VISION_MODEL?.trim() || DEFAULT_DEEPSEEK_VISION_MODEL,
+    });
+  }
   const zhipuKey = process.env.GLM_API_KEY?.trim();
   if (zhipuKey) {
     providers.push({
@@ -223,10 +243,11 @@ function toDataUrl(mimeType: string, bytes: Uint8Array): string {
 
 /**
  * 识别账单截图（recognize / review 共用）：
- * - 15s 整体超时（AbortSignal.timeout，双网关共享同一截止时刻）；
- * - 依次尝试智谱 → SiliconFlow，单次生成 + JSON 提取 + OcrResultSchema.safeParse，
- *   任一网关返回校验通过的完整结构即成功（「safeParse 通过才回传」）；
- * - 双败时区分终态：有任一网关产出过文本但结构/解析失败 → OCR_PARSE_FAILED，
+ * - 15s 整体超时（AbortSignal.timeout，三网关共享同一截止时刻）；
+ * - 依次尝试 DeepSeek → 智谱 → SiliconFlow，单次生成 + JSON 提取 +
+ *   OcrResultSchema.safeParse，任一网关返回校验通过的完整结构即成功
+ *   （「safeParse 通过才回传」）；
+ * - 三败时区分终态：有任一网关产出过文本但结构/解析失败 → OCR_PARSE_FAILED，
  *   否则（网络/网关错误）→ OCR_UNAVAILABLE；超时 → OCR_TIMEOUT。
  * 契约「失败重试 1 次」即降级网关这一次重试（02 §12.1 注释口径）。
  */

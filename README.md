@@ -38,7 +38,7 @@
          └─► 20 类协议事件流(实时渲染到体检页)
 ```
 
-- **AI 技术点**：Agent 六阶段工作流、反思自检闸门、模型降级链、RAG 案例库检索（60 条案例 + 本地关键词匹配）、MCP 工具链（校历 / 和风天气 / 大促日历 / 账单元数据回执四工具，Streamable HTTP + 本地回退双轨，连接失败自动降级）、结构化 LLM 短任务（快速记账 / 预算建议 / 预测叙事 / 贴士个性化）、截图 OCR 多模态（智谱 glm-4.6v-flash 主 + SiliconFlow 降级网关，低置信字段截取原图局部二次复核）、LLM 生成 SQL 白名单拦截。
+- **AI 技术点**：Agent 六阶段工作流、反思自检闸门、模型降级链、RAG 案例库检索（60 条案例 + 本地关键词匹配）、MCP 工具链（校历 / 和风天气 / 大促日历 / 账单元数据回执四工具，Streamable HTTP + 本地回退双轨，连接失败自动降级）、结构化 LLM 短任务（快速记账 / 预算建议 / 预测叙事 / 贴士个性化）、截图 OCR 多模态（DeepSeek deepseek-flash 原生视觉主 + 智谱/SiliconFlow 降级网关，低置信字段截取原图局部二次复核）、LLM 生成 SQL 白名单拦截。
 - **工程**：Next.js 16（App Router）+ React 19 + TypeScript strict + Tailwind 4（CSS-first 令牌）+ Zustand + TanStack Query + ECharts（暗色主题经 CSS 变量桥接）。
 - **安全**：SQL 窄文法白名单（7 原因码 + 行数复检）、金额全链路整数分、`check-secrets` 钩子杜绝密钥进库。
 
@@ -53,7 +53,7 @@ pnpm dev              # http://localhost:3000
 ```
 
 - **零密钥演示**：不填任何 API key 即 mock 模式（演示账户 `demo` / `demo123`），「上传账单」页可用内置示例账单跑完整流程；
-- **接入真实模型**：在 `.env.local` 填 `DEEPSEEK_API_KEY`（文本主脑）、`SILICONFLOW_API_KEY`（轻任务）、`GLM_API_KEY`（智谱，截图 OCR 主供应商）；任一 key 就位即自动切 live 模式（`DEMO_MODE=mock` 可强制回零密钥演示）。截图 OCR 已上线：智谱 glm-4.6v-flash 主 + SiliconFlow GLM-4.1V-9B 降级（`GLM_VISION_MODEL` / `SILICONFLOW_VISION_MODEL` 可覆盖），未配视觉 key 时走 mock 剧本。
+- **接入真实模型**：在 `.env.local` 填 `DEEPSEEK_API_KEY`（文本主脑 + 截图 OCR 主视觉模型 deepseek-flash，同一把密钥）；任一 key 就位即自动切 live 模式（`DEMO_MODE=mock` 可强制回零密钥演示）。截图 OCR 降级链：deepseek-flash → 智谱 glm-4.6v-flash（`GLM_API_KEY`）→ SiliconFlow GLM-4.1V-9B（`SILICONFLOW_API_KEY`）；`DEEPSEEK_VISION_MODEL` / `GLM_VISION_MODEL` / `SILICONFLOW_VISION_MODEL` 可覆盖模型名，未配任何视觉 key 时走 mock 剧本。
 - **MCP 工具（可选）**：`.env.local` 填 `MCP_SERVER_URL`（如 `http://localhost:8317`）即接入真实工具链；未配置或连接失败时自动降级本地回退（校历/大促日历本地静态数据、天气诚实降级），不影响演示。mcp-server 独立启动见 [mcp-server/README.md](mcp-server/README.md)。
 
 ```bash

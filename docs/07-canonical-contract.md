@@ -3,9 +3,9 @@
 | 项目 | 内容 |
 | --- | --- |
 | 文档编号 | 07（docs/07-canonical-contract.md） |
-| 版本 | v1.4（并入 08《功能扩展方案》修订案 A1-A10；A10 于 2026-10-15 裁决） |
+| 版本 | v1.5（并入 08《功能扩展方案》修订案 A1-A11；A11 于 2026-10-15 裁决） |
 | 日期 | 2026-10-15 |
-| 状态 | 最终裁决：本文档取代 01-06 全部冲突表述，是后续一切编码的唯一权威；v1.1 起并入 08《功能扩展方案》修订案 A1-A7，v1.2 起并入修订案 A8（追问在线兜底明细出口，§18），v1.3 起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4 起并入修订案 A10（OCR 上线收口，§11/§12/§13）（均为增量修订，不推翻既有裁决），08 其余内容与本文档冲突时以本文档为准 |
+| 状态 | 最终裁决：本文档取代 01-06 全部冲突表述，是后续一切编码的唯一权威；v1.1 起并入 08《功能扩展方案》修订案 A1-A7，v1.2 起并入修订案 A8（追问在线兜底明细出口，§18），v1.3 起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4 起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5 起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12）（均为增量修订，不推翻既有裁决），08 其余内容与本文档冲突时以本文档为准 |
 | 维护 | 总仲裁人；任何一方修改契约字段必须同步更新本文档并重跑对应回归 |
 
 ---
@@ -19,7 +19,7 @@
 1. 任何文档与本文档冲突 → **以本文档为准**，且不视为推翻产品定义（产品定义 2026-10-13 版仍为不可推翻的上位事实）。
 2. 本文档未覆盖的细节 → 以原文档为准（01=技术栈与性能预算、02=隐私与数据、03=流水线、04=RAG/MCP、05=交互、06=日程、08=功能扩展增量方案中未被 A1-A7 覆盖的部分）。
 3. 引用格式：改动索引中 `#N` 指第 N 条评审问题，`§K` 指本文档第 K 个契约条目。
-4. 自 v1.1（2026-10-13）起，08《功能扩展方案》的修订案 A1-A7 并入本文档；v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18）；v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19）；v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13）：各条目内新增的「08 修订案」小节属于权威定义的一部分（§21 为索引）；修订案为增量，不推翻既有裁决。
+4. 自 v1.1（2026-10-13）起，08《功能扩展方案》的修订案 A1-A7 并入本文档；v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18）；v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19）；v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13）；v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12）：各条目内新增的「08 修订案」小节属于权威定义的一部分（§21 为索引）；修订案为增量，不推翻既有裁决。
 
 ### 0.2 六条裁决原则
 
@@ -455,13 +455,19 @@ GROUP BY b.ym, b.category;
 - **隐私**：截图仅本次请求内存使用，处理后即弃，不落盘不缓存；可见性对照表新增「OCR 截图（发送至 GLM-4V-Flash 视觉模型处理）」行（真实优先）。
 - OCR 输出结构化行 → 与 CSV 行同路径进映射/清洗（同一 RawTransaction 管线）。
 
-> **实现收口（2026-10-15）**：OCR 已按本节上线（`src/app/api/ocr/route.ts` + `src/server/ocr/vision.ts`，契约见 02 §12）。两个与产品定义不同的落地细节，均以本节「隐私：截图仅内存不落盘」红线为准裁决：
-> - **主供应商默认模型改为 `glm-4.6v-flash`**：官方 glm-4v-flash 不支持 base64 入参，与「截图不落任何存储」硬冲突（写临时文件才可传 URL/文件路径）。glm-4.6v-flash 同为智谱免费 flash 档、支持 base64，`GLM_VISION_MODEL` 可覆盖回任意模型名。
+> **实现收口（2026-10-15，08 修订案 A10）**：OCR 已按本节上线（`src/app/api/ocr/route.ts` + `src/server/ocr/vision.ts`，契约见 02 §12）。两处与产品定义不同的落地细节，均以本节「隐私：截图仅内存不落盘」红线为准裁决：
+> - **智谱位默认模型为 `glm-4.6v-flash`**：官方 glm-4v-flash 不支持 base64 入参，与「截图不落任何存储」硬冲突（写临时文件才可传 URL/文件路径）。glm-4.6v-flash 同为智谱免费 flash 档、支持 base64，`GLM_VISION_MODEL` 可覆盖回任意模型名。
 > - **SiliconFlow 降级模型为 `THUDM/GLM-4.1V-9B-Thinking`**：同网关 GLM-4V 系，`SILICONFLOW_VISION_MODEL` 可覆盖。
-> - 两网关视觉模型均**不支持 response_format=json_object**：改为 prompt 内嵌 JSON 模板 + 容错提取（`extractJsonObject`：剥 `<think>`、剥 markdown 围栏、首尾花括号截取）。
+> - 网关视觉模型均**不支持 response_format=json_object**：改为 prompt 内嵌 JSON 模板 + 容错提取（`extractJsonObject`：剥 `<think>`、剥 markdown 围栏、首尾花括号截取）。
 > - **低置信二次复核**已实现：confidence<0.8 行标黄 → 客户端按行序截取原图纵向条带（`cropImageBand`，前后各扩一行，字面落实「截取原图局部」）→ 复用 `/api/ocr`（mode=review）二次复核；人工编辑即标 manuallyConfirmed 退出标黄。
 > - 服务器侧 zod safeParse 通过才回传、失败重试 1 次=降级网关这一次重试；≤5MB、15s 超时、live 模式同实例内存限流 20 次/小时（mock 不限流）。channel 由合规弹窗「截图来源」单选决定（微信/支付宝），不做模型猜测。
 > - env 清单在既有键之外新增 `GLM_VISION_MODEL`、`SILICONFLOW_VISION_MODEL` 两个可选项（§12 同步）；未配任何视觉 key（或 DEMO_MODE=mock）时走 mock 剧本，OCR 入口不阻塞上传主流程。
+
+> **08 修订案 A11（2026-10-15）：主供应商改为 DeepSeek deepseek-flash（原生多模态）**
+>
+> **新裁决**：OCR 降级链改为 **deepseek-flash（主）→ glm-4.6v-flash（智谱）→ THUDM/GLM-4.1V-9B-Thinking（SiliconFlow）** → 三败返回 `ok:false`。依据：DeepSeek 于 2026-09-10 发布 deepseek-flash（V4.1 Flash，CED 架构，DocVQA 95.6），原生支持视觉、OpenAI 兼容接口 + base64 内联（单图 ≤32MiB），与 DEEPSEEK_API_KEY **共用同一把密钥**（零新增供应商注册）；2026-10-15 本地实测合成账单卡三行文字逐行全对（probe 脚本 `private-benchmark/probe-deepseek-vision.mjs`，同日实测 deepseek-v4-pro 无视觉、deepseek-chat 文本别名仍可用）。env 补 `DEEPSEEK_VISION_MODEL`（默认 deepseek-flash，§12 同步）；`resolveOcrMode` 的 live 判定扩展为三网关任一有 key（DEEPSEEK/GLM/SILICONFLOW）。
+>
+> **理由**：用户主推「用既有 DeepSeek key 做图文解析」；实测证据确凿（视觉通道 + OCR 文字提取均通过）；flash 档费用纪律与既有文本任务同源。智谱/SiliconFlow 降级保留，「双供应商互备」产品定义不破（变为三供应商互备）。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -486,7 +492,7 @@ GROUP BY b.ym, b.category;
 | CSV AI 兜底解析（≤6KB，用户确认后） | qwen | 无（失败即报错） |
 | 标题润色 / 展示文案 | qwen | 原样显示 |
 | 反思自检 L2 judge（§20） | **qwen** | deepseek → 跳过 L2（仅 L1 规则闸门） |
-| OCR | glm4v（智谱） | glm4v（SiliconFlow）→ 无 OCR |
+| OCR | deepseek（deepseek-flash 视觉，A11） | glm4v（智谱）→ glm4v（SiliconFlow）→ 无 OCR |
 | 断网商户分类（P2 可选） | local-tfjs | 本地词典 |
 | quick-entry 快速记账解析（A5） | qwen | 无备用 → 手动表单兜底（DegradeToast 说明，不阻塞流程） |
 | budget-advice 预算建议（A5） | qwen | 确定性模板兜底（severity 由 ratio 阈值直接判定） |
@@ -494,7 +500,7 @@ GROUP BY b.ym, b.category;
 | tip-personalize 贴士个性化（A5） | qwen | top-3 直出 + 通用适配句兜底 |
 | annual-story 年度故事分段（A5，并入 annual 阶段任务） | deepseek | qwen → 固定 6 段模板兜底 |
 
-- env 唯一清单（#69 fixHint 补全，08 修订案 A10 补 2 个视觉模型覆盖键）：`DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL(可选) / SILICONFLOW_API_KEY / SILICONFLOW_BASE_URL(可选) / GLM_API_KEY / GLM_BASE_URL(可选) / GLM_VISION_MODEL(可选) / SILICONFLOW_VISION_MODEL(可选) / QWEATHER_API_KEY / MCP_SERVER_URL / AI_TEXT_FALLBACK_ORDER="deepseek,siliconflow" / SQL_MAX_RESULT_ROWS=50 / AGG_MAX_ROWS=200 / AGG_AMOUNT_BUCKETS="[0,5,10,20,50,100,200,500]" / EMBEDDING_PROVIDER=tfidf-only|local-onnx`。密钥**只存服务端 env**，公开仓库只有 `.env.example`。
+- env 唯一清单（#69 fixHint 补全，08 修订案 A10/A11 补 3 个视觉模型覆盖键）：`DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL(可选) / DEEPSEEK_VISION_MODEL(可选) / SILICONFLOW_API_KEY / SILICONFLOW_BASE_URL(可选) / SILICONFLOW_VISION_MODEL(可选) / GLM_API_KEY / GLM_BASE_URL(可选) / GLM_VISION_MODEL(可选) / QWEATHER_API_KEY / MCP_SERVER_URL / AI_TEXT_FALLBACK_ORDER="deepseek,siliconflow" / SQL_MAX_RESULT_ROWS=50 / AGG_MAX_ROWS=200 / AGG_AMOUNT_BUCKETS="[0,5,10,20,50,100,200,500]" / EMBEDDING_PROVIDER=tfidf-only|local-onnx`。密钥**只存服务端 env**，公开仓库只有 `.env.example`。
 - 商户分类批处理 key = **原始商户名**（入参：名称列表；出参：名称→12 类映射；raw_ref 仅作行内引用，#68 fixHint）。
 
 ### 08 修订案 A5（2026-10-13）：任务级路由表 +5 行、新任务 zod 单一来源
@@ -900,6 +906,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 11. 浏览器端推理叙事（#25）：Transformers.js 标注为 P2 可选「断网商户分类」，未实现则不在材料中宣称推理能力，只讲「DuckDB-WASM 浏览器端计算」。
 12. 版本对应关系表记录 01-07 各文档版本号（#75）。
 13. §0 收口行更新为 A10 口径：6 条 API 路由（+ocr）、OCR 已上线（glm-4.6v-flash 主 + SiliconFlow GLM-4.1V-9B 降级，低置信字段条带裁剪二次复核）。
+14. §0 收口行与 §4.1 GLM_* 键注释按 A11 更新：OCR 主供应商 deepseek-flash（与 DEEPSEEK_API_KEY 同钥），降级 glm-4.6v-flash / SiliconFlow GLM-4.1V-9B-Thinking。
 
 ### 02-data-privacy.md
 
@@ -916,6 +923,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 11. §3.10 fixtures 清单与 06 合并为唯一清单（#62）；显著性门槛引用 §20（#58）；商户分类批处理 key 对齐 §12（#68）。
 12. §8 可见性对照表新增「追问在线兜底明细快照」行；「任何网络出口只出现聚合/脱敏结果」类不变量改为登记唯一明细出口（§18 修订案 A8）；§1.2 隐私承诺表述同步（明细默认本地，追问在线兜底例外）。
 13. §12 标题「设计态未上线」→「已上线」+ 实现收口注记（默认模型 glm-4.6v-flash 及 base64 理由、SiliconFlow 降级模型 THUDM/GLM-4.1V-9B-Thinking、extractJsonObject 容错提取、低置信条带裁剪复核复用 /api/ocr mode=review、safeParse 失败重试 1 次 = 降级网关这一次重试，§11 A10）。
+14. §12 收口注记按 A11 追加：主供应商 deepseek-flash（原生多模态、与 DEEPSEEK_API_KEY 同钥），降级链三网关。
 
 ### 03-agent-pipeline.md
 
@@ -981,6 +989,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 13. 视频脚本 S7 补「零嵌入 API 抓包证据」镜头（§16）。
 14. 视频脚本 S1 记忆点「你的账单不出浏览器，大模型只看聚合摘要」按 §18 修订案 A8 改写（大模型在追问时可见「汇总统计 + 最近 150 笔明细快照」，服务端零存储）；S8 与 3 分钟陈述提纲、竞品对照表口径同步。
 15. §6.3 PDF 大纲 4.5 与多模态落点表改已上线口径（glm-4.6v-flash 主 / SiliconFlow GLM-4.1V-9B 降级；删除「若被砍」脚注，§11 A10）。
+16. §6.3 按 A11 更新：OCR 主供应商 deepseek-flash（V4.1 Flash 原生多模态）。
 
 ### 08-feature-expansion.md（修订案 A1-A7，2026-10-13，v1.1）
 
@@ -998,10 +1007,11 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 | A8 | §18（§5/§6/§13 边界注记） | 追问在线兜底发送「汇总统计 + 最近 150 笔明细快照」（固定 SQL 直连、LIMIT 150、/api/ai/chat 转发、服务端零存储） |
 | A9 | §13/§18/§19 | MCP 工具链上线收口：在线兜底落位 /api/followup（SSE + tool 事件，/api/ai/chat 职责收窄）；工具徽章三态契约与展示名单一来源；ai@7.0.137 无 MCP 客户端 spike 结论回写（SDK Client 自建 + jsonSchema 包装透传 + callTool 运行时守卫） |
 | A10 | §11/§12/§13 | OCR 上线收口：默认模型 glm-4.6v-flash（官方 glm-4v-flash 不支持 base64，与「截图不落盘」冲突）、SiliconFlow 降级 THUDM/GLM-4.1V-9B-Thinking、env 补 GLM_VISION_MODEL/SILICONFLOW_VISION_MODEL、API 路由 5 → 6（路由口径 19 → 20） |
+| A11 | §11/§12 | OCR 主供应商改为 DeepSeek deepseek-flash（V4.1 Flash 原生多模态，与 DEEPSEEK_API_KEY 同钥，2026-10-15 实测视觉与 OCR 均通过）；降级链 deepseek-flash → glm-4.6v-flash → SiliconFlow GLM-4.1V-9B-Thinking；env 补 DEEPSEEK_VISION_MODEL；resolveOcrMode 三网关任一有 key 即 live |
 | — | §4 | ChartSpec 枚举不扩展；四大静态图表组件裁决（08 §④ 补记） |
 
 - **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）。
 
 ---
 
-*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
+*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
