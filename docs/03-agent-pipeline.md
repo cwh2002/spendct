@@ -1,12 +1,14 @@
 # 03 AI体检流水线与Agent设计
 
-> 文档编号：03/06 · 版本 v1.2 · 2026-10-15 · 状态：设计规格
-> 变更记录：v1.2（2026-10-15）按 08 修订案 A12 全局智能助理修订——追问面板与全局智能助理聊天共用共享问答管线 `use-chat-pipeline`（唯一实现 `src/lib/assistant/use-chat-pipeline.ts`；锚点追问 PEO 协议不变，仅在线兜底路径共享）；聊天输入闸门 `input-guard`（注入防护第四层）与 Web Speech 语音转写均为前端行为（本项目服务器与 LLM 不接收音频）；§9 协议事件 20 类 → 21 类（新增 plan 思考计划事件）；§10 新增 assistant-plan 任务（deepseek 主，承载于 `/api/followup` SSE 流，零新端点、不加入 `/api/ai/task` 判别联合）；本地案例检索双阈值（聊天 0.15 / 页面引用 0.08）与 sanitizeResult 改 async（WebCrypto 异步哈希，调用方一律 await）。v1.1（2026-10-13）按 08 功能扩展方案修订（对应 08 §⑨ 本文件改动清单与修订案 A2/A5/A6 落点）——§1.3 annual 输出增加 AnnualStorySchema 年度故事分段（08 ⑥.5，预计算清单不变）；§2.6 提示词增加故事分段要点与「答案图表仍限七类、不得引用四大静态图」（08 §④）；§2.8 同步七类图表约束；§7 新增 T5 四条扩展任务降级条目（quick-entry→手动表单，其余→模板兜底）；§10 路由表 +5 行新任务（A5，与 07 §12 同步）；§4.1/§11 标注 A2 白名单增补、§11 端点清单标注 A6；§12 补扩展任务评审落点。v1.0（2026-10-13）初版。
+> 文档编号：03/06 · 版本 v1.4 · 2026-10-16 · 状态：设计规格
+> 变更记录：v1.4（2026-10-16）按 08 修订案 A14 同步——在线兜底路径补深度分析模式：追问面板「深度分析」开关开启后本轮提问 analysisMode="deep" 跳过闲聊分流/本地规则/本地案例直连在线兜底（`/api/followup` body 带 `analysisMode:"deep"`，零新端点、零新路由、零新事件，协议仍 21 类）；上下文换成「全期白名单聚合统计（≤2400 字）+ 最近 150 笔明细」两条消息；`use-chat-pipeline` 的 submit/fallToOnline/runOnlineFallback 贯穿 deep 参数，ChatTurn.note 增 "deep"。v1.3（2026-10-15）按 08 修订案 A13 同步——§11 组件引用补页面级组件 MerchantView（/insights 第 4 视图「商户统计」，07 §14 两级注册口径，不占可复用注册组件名额）；商户统计为视图内扩展（视图 3 → 4，`?view=merchants`，路由数不变仍 10 条），两条白名单 SQL 经 runWhitelistedAggregate 双保险、全程浏览器内 DuckDB-WASM 白名单聚合，零新端点、零新事件、零新任务。v1.2（2026-10-15）按 08 修订案 A12 全局智能助理修订——追问面板与全局智能助理聊天共用共享问答管线 `use-chat-pipeline`（唯一实现 `src/lib/assistant/use-chat-pipeline.ts`；锚点追问 PEO 协议不变，仅在线兜底路径共享）；聊天输入闸门 `input-guard`（注入防护第四层）与 Web Speech 语音转写均为前端行为（本项目服务器与 LLM 不接收音频）；§9 协议事件 20 类 → 21 类（新增 plan 思考计划事件）；§10 新增 assistant-plan 任务（deepseek 主，承载于 `/api/followup` SSE 流，零新端点、不加入 `/api/ai/task` 判别联合）；本地案例检索双阈值（聊天 0.15 / 页面引用 0.08）与 sanitizeResult 改 async（WebCrypto 异步哈希，调用方一律 await）。v1.1（2026-10-13）按 08 功能扩展方案修订（对应 08 §⑨ 本文件改动清单与修订案 A2/A5/A6 落点）——§1.3 annual 输出增加 AnnualStorySchema 年度故事分段（08 ⑥.5，预计算清单不变）；§2.6 提示词增加故事分段要点与「答案图表仍限七类、不得引用四大静态图」（08 §④）；§2.8 同步七类图表约束；§7 新增 T5 四条扩展任务降级条目（quick-entry→手动表单，其余→模板兜底）；§10 路由表 +5 行新任务（A5，与 07 §12 同步）；§4.1/§11 标注 A2 白名单增补、§11 端点清单标注 A6；§12 补扩展任务评审落点。v1.0（2026-10-13）初版。
 > 对应评审得分核心：AI 深度 35% 中的「Agent·工作流 8%」与「大模型集成质量 8%」（并支撑 AI 安全 4%、AI 交互体验 3%、性能优化 3% 子项；评分细则唯一口径表见 06 §6.3，#26）
 >
 > **实现收口（2026-10-14）**：追问实际交付为三路问答面板（闲聊分流 / 本地规则 / 在线兜底——本地答不了时发送汇总统计 + 最近 150 笔明细快照，08 修订案 A8）；PEO 循环、Plan DAG 与 MCP 工具（AI SDK tools）为设计态（04 收口注记）。状态机、事件协议、reflect 发布闸门已按本文档落地。
 >
 > **实现收口（2026-10-15，08 修订案 A12）**：追问面板重构为共享问答管线 `src/lib/assistant/use-chat-pipeline.ts`（全局智能助理与追问面板共用，唯一实现；锚点追问 PEO 协议不变，仅在线兜底路径共享）。聊天输入闸门 `src/lib/assistant/input-guard.ts`（注入防护第四层：控制字符 → 超长 >500 字 → 四类注入特征，命中即拦、不进任何本地/在线路径）；语音输入 = Web Speech 浏览器转写（本项目服务器与 LLM 不接收音频）。新增 assistant-plan 结构化规划任务（归 deepseek，承载于 `/api/followup` SSE 流，8s 超时/失败静默跳过）与 plan 流事件（协议第 21 类思考计划）。本地案例检索 TF-IDF 聊天阈值 0.15（页面引用仍 0.08，最多 3 条，脚注「本地案例库 · 零 API 调用」，零命中转在线兜底）。sanitizeResult 改 async（WebCrypto 异步哈希，调用方一律 await）。
+>
+> **实现收口（2026-10-16，08 修订案 A14）**：追问面板新增「深度分析」开关（默认关）。开启后本轮提问跳过闲聊分流/本地规则/本地案例直连在线兜底 `/api/followup`（body 带 `analysisMode:"deep"`，零新端点、零新路由、零新事件，协议仍 21 类）；上下文换成两条消息——全期白名单聚合统计（`src/lib/chat/deep-analysis.ts`：`buildDeepAnalysisQueries()` 10 组代码常量白名单 SQL，支出类查询全部带 `status = 'paid'`、深夜逐月 50 月上限（占比标签诚实标注「近50个月」）、冲动按类目聚合全期不截断，`buildDeepAnalysisContext` 组装 ≤2400 字、逐组容错、超长整行丢弃、全失败空串，零动态拼接、经白名单预检）+ 最近 150 笔明细快照（两条消息各 ≤4000 字、总 ≤8000、≤20 条）；`use-chat-pipeline` 的 submit/fallToOnline/runOnlineFallback 贯穿 deep 参数，ChatTurn.note 增 "deep"，气泡脚注「深度分析 · 已发送账单统计与明细」（按实际发送组合标注：sentStats/sentDetails 都真才显示合称，缺一段只说发了的那段，live 档同机制）。
 
 ## 0. 文档说明
 
@@ -883,7 +885,7 @@ zod 之外的业务校验规则：
 
 ## 5. 锚点追问 Plan-Execute-Observe 循环
 
-本章协议仍为设计态（见文档头收口注记）；实现层已重构为共享问答管线 `src/lib/assistant/use-chat-pipeline.ts`（08 修订案 A12）——锚点追问与全局智能助理聊天共用该管线：追问面板不开启本地案例检索路径、PEO 协议不变，仅在线兜底路径共享；消息脚注三态（本地计算 / 本地案例库 / 在线生成）按路径如实标注。
+本章协议仍为设计态（见文档头收口注记）；实现层已重构为共享问答管线 `src/lib/assistant/use-chat-pipeline.ts`（08 修订案 A12）——锚点追问与全局智能助理聊天共用该管线：追问面板不开启本地案例检索路径、PEO 协议不变，仅在线兜底路径共享；消息脚注按路径如实标注（本地计算 / 本地案例库 / 在线生成 / 深度分析）。08 修订案 A14 在线兜底路径补深度分析模式：`use-chat-pipeline` 的 submit/fallToOnline/runOnlineFallback 贯穿 deep 参数（ChatTurn.note 增 "deep"），「深度分析」开关开启后本轮提问 analysisMode="deep" 跳过闲聊分流/本地规则/本地案例直连在线兜底，上下文换成「全期白名单聚合统计（≤2400 字）+ 最近 150 笔明细」两条消息。
 
 ### 5.1 选择上下文协议（SelectionContext）
 
@@ -1081,7 +1083,7 @@ export const DRILL_TEMPLATES = {
 | 工具 | 不可用时动作 | 对制品影响 |
 |---|---|---|
 | RAG 检索（04） | TF-IDF 本地兜底检索 → 仍 0 命中则无引用直出 | 卡片无 citation，通用建议文案，confidence ≤ 0.6 |
-| 智能助理本地案例检索（08 修订案 A12，`src/lib/assistant/local-cases.ts`；与上行为两条独立路径，仅智能助理开启） | TF-IDF 聊天路径阈值 `CASE_PATH_MIN_SCORE=0.15`（严于页面引用 0.08，最多 3 条，脚注「本地案例库 · 零 API 调用」）→ 零命中转在线兜底 | 无引用，回答走在线兜底脚注（「在线生成 · 已发送明细与统计」，A8 口径） |
+| 智能助理本地案例检索（08 修订案 A12，`src/lib/assistant/local-cases.ts`；与上行为两条独立路径，仅智能助理开启；深度分析模式跳过本路径直连在线兜底，A14） | TF-IDF 聊天路径阈值 `CASE_PATH_MIN_SCORE=0.15`（严于页面引用 0.08，最多 3 条，脚注「本地案例库 · 零 API 调用」）→ 零命中转在线兜底 | 无引用，回答走在线兜底脚注（「在线生成 · 已发送明细与统计」，A8 口径） |
 | MCP 三工具 + 浏览器两工具（07 §18 注册表） | 跳过该工具继续执行计划其余步骤（wrapTool 4s 超时、退避 1s/2s/4s、ok:false 封套） | 答复不提及该工具事实；不阻塞追问 |
 | DuckDB 预计算 SQL | 单查询重试 1 次 → 跳过该查询 | 该证据图表缺失，卡片仅覆盖成功项；全部失败 → 阶段 skipped |
 | Transformers.js 本地模型 | 跳过（分类归「其他」） | 类目粒度变粗，不影响流水线 |
@@ -1268,8 +1270,8 @@ export function resolveModel(task: LlmTask, ctx: { offline: boolean }): ModelId 
 | 02 | `ALLOWED_RELATIONS`（transactions + 13 视图 + 9 预计算表；08 修订案 A2 增补 budgets / budget_vs_actual / forecast_monthly）、`AggregatePolicy` | §4.1 |
 | 04 RAG与MCP | `retrieveCases(query, filter, { topK: 3 })`（浏览器端 `retrieveCasesInBrowser`）；08 修订案 A12 新增 `src/lib/assistant/local-cases.ts` 本地案例检索（TF-IDF，聊天阈值 `CASE_PATH_MIN_SCORE=0.15`、页面引用仍 0.08，最多 3 条、零 API 调用，零命中转在线兜底） | §2.4、§5.2 kind=rag、全局智能助理聊天路径 |
 | 04 | 工具注册表（07 §18）：服务端 MCP 三工具 calendar/weather/promo + 浏览器端 duckdb_meta/sql | §5.2 kind=tool、§7 T2 |
-| 01 技术总纲 | 07 §13 端点清单（/api/pipeline/stage、/api/followup、/api/ai/task——08 修订案 A6 后共 7 端点；LLM 调用唯一出口 `src/server/ai/*`）、Vercel AI SDK 配置、环境变量与密钥边界。08 修订案 A12 零新端点——全局智能助理在线兜底复用 `/api/followup`（question+messages 模式）；语音输入为 Web Speech 浏览器转写，本项目服务器与 LLM 不接收音频 | §9、§10 |
-| 05 界面交互 | 07 §14 组件注册表 19 组件（13 既有 + A7 新增 6）：PipelineStepper / ThinkingBubble / SqlCodeBlock / TypingCard / DegradeToast / EvidenceTable / InsightCard 等；08 修订案 A12 全局智能助理组件（AssistantDrawer 悬浮入口+聊天抽屉、ChatBubbles、PlanBlock 思考计划块）按 §14 两级注册口径在 05 §2.2 组件总表单列，不占可复用注册组件名额 | §9 映射表 |
+| 01 技术总纲 | 07 §13 端点清单（/api/pipeline/stage、/api/followup、/api/ai/task——08 修订案 A6 后共 7 端点；LLM 调用唯一出口 `src/server/ai/*`）、Vercel AI SDK 配置、环境变量与密钥边界。08 修订案 A12 零新端点——全局智能助理在线兜底复用 `/api/followup`（question+messages 模式）；08 修订案 A14 深度分析同样零新端点、零新路由、零新事件——同走 `/api/followup`（body 带 `analysisMode:"deep"`）；语音输入为 Web Speech 浏览器转写，本项目服务器与 LLM 不接收音频 | §9、§10 |
+| 05 界面交互 | 07 §14 组件注册表 19 组件（13 既有 + A7 新增 6）：PipelineStepper / ThinkingBubble / SqlCodeBlock / TypingCard / DegradeToast / EvidenceTable / InsightCard 等；08 修订案 A12 全局智能助理组件（AssistantDrawer 悬浮入口+聊天抽屉、ChatBubbles、PlanBlock 思考计划块）与 08 修订案 A13 页面级组件 MerchantView（/insights「商户统计」视图）按 §14 两级注册口径在 05 §2.2 组件总表单列，不占可复用注册组件名额 | §9 映射表 |
 | 06 路线图 | W2 最小闭环闸门：clean→profile→anomaly + 3 张流式卡（即 §1.3 前三阶段）；未达成则砍 MCP/OCR/框选 | §1 |
 
 错误码 = 07 §2 `ErrorCode` 枚举（唯一来源 `src/lib/protocol/events.ts`）：`EMPTY_DATASET | PARSE_FAILED | LLM_EXHAUSTED | DUCKDB_LOAD_FAILED | QUOTA_EXCEEDED | NETWORK_OFFLINE | WHITELIST_REJECTED | TIMEOUT`。UI 处置映射：

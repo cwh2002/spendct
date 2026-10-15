@@ -3,9 +3,9 @@
 | 项目 | 内容 |
 | --- | --- |
 | 文档编号 | 07（docs/07-canonical-contract.md） |
-| 版本 | v1.6（并入 08《功能扩展方案》修订案 A1-A12；A12 于 2026-10-15 裁决） |
-| 日期 | 2026-10-15 |
-| 状态 | 最终裁决：本文档取代 01-06 全部冲突表述，是后续一切编码的唯一权威；v1.1 起并入 08《功能扩展方案》修订案 A1-A7，v1.2 起并入修订案 A8（追问在线兜底明细出口，§18），v1.3 起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4 起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5 起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6 起并入修订案 A12（全局智能助理上线收口，§2/§5/§12/§13/§18）（均为增量修订，不推翻既有裁决），08 其余内容与本文档冲突时以本文档为准 |
+| 版本 | v1.8（并入 08《功能扩展方案》修订案 A1-A14；A14 于 2026-10-16 裁决） |
+| 日期 | 2026-10-16 |
+| 状态 | 最终裁决：本文档取代 01-06 全部冲突表述，是后续一切编码的唯一权威；v1.1 起并入 08《功能扩展方案》修订案 A1-A7，v1.2 起并入修订案 A8（追问在线兜底明细出口，§18），v1.3 起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4 起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5 起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6 起并入修订案 A12（全局智能助理上线收口，§2/§5/§12/§13/§18），v1.7 起并入修订案 A13（商户统计视图上线收口，§14），v1.8 起并入修订案 A14（追问深度分析上线收口，§12/§13）（均为增量修订，不推翻既有裁决），08 其余内容与本文档冲突时以本文档为准；v1.8 同日收口审查修正（2026-10-16）：A13 两条商户 SQL 补 `status = 'paid'`（§14）、A14 深析 SQL 同口径修正与深夜占比「近50个月」标签（§13）、A14 气泡脚注按实际发送组合标注（§13）、本地端点主机白名单校验（§12） |
 | 维护 | 总仲裁人；任何一方修改契约字段必须同步更新本文档并重跑对应回归 |
 
 ---
@@ -19,7 +19,7 @@
 1. 任何文档与本文档冲突 → **以本文档为准**，且不视为推翻产品定义（产品定义 2026-10-13 版仍为不可推翻的上位事实）。
 2. 本文档未覆盖的细节 → 以原文档为准（01=技术栈与性能预算、02=隐私与数据、03=流水线、04=RAG/MCP、05=交互、06=日程、08=功能扩展增量方案中未被 A1-A7 覆盖的部分）。
 3. 引用格式：改动索引中 `#N` 指第 N 条评审问题，`§K` 指本文档第 K 个契约条目。
-4. 自 v1.1（2026-10-13）起，08《功能扩展方案》的修订案 A1-A7 并入本文档；v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18）；v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19）；v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13）；v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12）；v1.6（2026-10-15）起并入修订案 A12（全局智能助理：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18）：各条目内新增的「08 修订案」小节属于权威定义的一部分（§21 为索引）；修订案为增量，不推翻既有裁决。
+4. 自 v1.1（2026-10-13）起，08《功能扩展方案》的修订案 A1-A7 并入本文档；v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18）；v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19）；v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13）；v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12）；v1.6（2026-10-15）起并入修订案 A12（全局智能助理：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18）；v1.7（2026-10-15）起并入修订案 A13（商户统计视图：/insights 第 4 视图 tab、全账单商户聚合两条白名单 SQL、行数上限与截断如实标注、追问锚点 merchant-view，§14）；v1.8（2026-10-16）起并入修订案 A14（追问深度分析：面板显式同意开关、全期白名单聚合上下文 + 明细两条消息、analysisMode 字段、本地大模型端点 env、气泡深度分析脚注，§12/§13）：各条目内新增的「08 修订案」小节属于权威定义的一部分（§21 为索引）；修订案为增量，不推翻既有裁决。
 
 ### 0.2 六条裁决原则
 
@@ -505,7 +505,8 @@ GROUP BY b.ym, b.category;
 | annual-story 年度故事分段（A5，并入 annual 阶段任务） | deepseek | qwen → 固定 6 段模板兜底 |
 | assistant-plan 智能助理规划（A12） | deepseek | 生成超时 8s / 失败一律静默跳过（不阻塞回答，仅不展示思考计划块；mock 走脚本化演示流） |
 
-- env 唯一清单（#69 fixHint 补全，08 修订案 A10/A11 补 3 个视觉模型覆盖键）：`DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL(可选) / DEEPSEEK_VISION_MODEL(可选) / SILICONFLOW_API_KEY / SILICONFLOW_BASE_URL(可选) / SILICONFLOW_VISION_MODEL(可选) / GLM_API_KEY / GLM_BASE_URL(可选) / GLM_VISION_MODEL(可选) / QWEATHER_API_KEY / MCP_SERVER_URL / AI_TEXT_FALLBACK_ORDER="deepseek,siliconflow" / SQL_MAX_RESULT_ROWS=50 / AGG_MAX_ROWS=200 / AGG_AMOUNT_BUCKETS="[0,5,10,20,50,100,200,500]" / EMBEDDING_PROVIDER=tfidf-only|local-onnx`。密钥**只存服务端 env**，公开仓库只有 `.env.example`。
+- env 唯一清单（#69 fixHint 补全，08 修订案 A10/A11 补 3 个视觉模型覆盖键，A14 补 3 个本地端点键）：`DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL(可选) / DEEPSEEK_VISION_MODEL(可选) / SILICONFLOW_API_KEY / SILICONFLOW_BASE_URL(可选) / SILICONFLOW_VISION_MODEL(可选) / GLM_API_KEY / GLM_BASE_URL(可选) / GLM_VISION_MODEL(可选) / QWEATHER_API_KEY / MCP_SERVER_URL / AI_TEXT_FALLBACK_ORDER="deepseek,siliconflow" / SQL_MAX_RESULT_ROWS=50 / AGG_MAX_ROWS=200 / AGG_AMOUNT_BUCKETS="[0,5,10,20,50,100,200,500]" / EMBEDDING_PROVIDER=tfidf-only|local-onnx / LLM_BASE_URL(可选) / LLM_MODEL(可选) / LLM_API_KEY(可选)`。密钥**只存服务端 env**，公开仓库只有 `.env.example`。
+- 本地大模型端点（A14）：`LLM_BASE_URL` + `LLM_MODEL` **同时配置才生效**——生效时仅接管 chat 任务（追问在线兜底与深度分析上下文改发该 OpenAI 兼容端点，账单数据不出本机），其余任务（叙事/OCR/轻任务）路由不变；`LLM_API_KEY` 可选（多数本地端点免鉴权）。解析纯函数 `src/lib/llm/endpoint-config.ts`（resolveLocalEndpoint，读 process.env，空白值视为未配置），计入 resolveLlmMode 的 live 判定。resolveLocalEndpoint 内置主机白名单校验（2026-10-16 收口审查补）：baseURL 必须解析为 http/https URL 且主机名仅限 loopback（localhost、127.0.0.0/8、::1）或私网网段（10.0.0.0/8、172.16.0.0/12、192.168.0.0/16），否则视为未配置——配置错误宁可回落内置兜底，账单数据不出本机。
 - 商户分类批处理 key = **原始商户名**（入参：名称列表；出参：名称→12 类映射；raw_ref 仅作行内引用，#68 fixHint）。
 
 ### 08 修订案 A5（2026-10-13）：任务级路由表 +5 行、新任务 zod 单一来源
@@ -630,7 +631,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 **在线兜底事件契约（唯一实现 `src/app/api/followup/route.ts`，帧格式 `data: JSON\n\n`）**：
 
 - `run:start{datasetTxHash?,source,stageOrder:[]}` → 每次工具调用起止 `tool:start{tool,argsDigest}` / `tool:end{tool,ok,ms,errorReason?}`（面板工具徽章数据源，§18 A9）→ 回答文本增量 `stage:thinking{stage:"followup",text}`（复用 §2 思考文案事件——协议 20 事件封版，不新增事件类型）→ `run:complete{cards:[],elapsedMs,degraded?}`（cards 恒为空数组，追问不落洞察卡；degraded 记录 MCP 降级原因）；异常 `error{code,message,retryable}`；客户端中止 `abort{reason:"client-aborted"}`。
-- 请求体（zod 严格校验）：`{ question(≤500), messages(1-20 条，每条 ≤4000 字、总长 ≤8000 字), sessionSchema?（§18 协议演示工具快照）, datasetSource?("upload"|"sample") }`。
+- 请求体（zod 严格校验）：`{ question(≤500), messages(1-20 条，每条 ≤4000 字、总长 ≤8000 字), sessionSchema?（§18 协议演示工具快照）, datasetSource?("upload"|"sample"), analysisMode?("standard"|"deep"，A14) }`。
 - `sessionSchema` 存在时，路由先确定性调用 `query_bill_db_metadata` 回执（不进模型工具集，与模型决策解耦）；DEMO_MODE=mock 时问题命中大促关键词（§18 A9）走脚本化演示流，live 时装配 MCP 三工具连接 `streamChatWithTools` 逐 part 映射事件。
 - 隐私口径（A8 延伸）：消息里的汇总统计与最近明细快照只转发给 LLM 与 MCP（元数据回执只含聚合元数据），服务端零存储、不记日志。
 
@@ -643,6 +644,20 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 **新裁决**：`/api/ocr` 正式上线（实现与契约细节见 §11 实现收口注记、02 §12）。**本条同时更新 A9 的实现收口说明**：交付代码实际部署的 API 路由为 **6 条**——ocr / followup / rag / mcp/[tool] / ai/chat / ai/task（六阶段流水线、白名单 SQL、追问本地回答均在浏览器内确定性执行；health / pipeline/stage 端点由客户端实现吸收或未接线）；README / PDF 的构建口径按「**20 路由（13 静态页 + 6 API + not-found）**」表述，以本条为准。
 
 **理由**：OCR 是多模态 5% 的第一落点（第一入口但绝不阻塞主流程，§11 语义保留）；上线后 A9 收口说明中「ocr 端点未接线」的口径失效，端点清单与交付代码必须一致（真实优先）。
+
+### 08 修订案 A14（2026-10-16）：追问深度分析（analysisMode=deep + 本地端点 env）
+
+**新裁决**：追问面板新增「深度分析」开关，开启后本轮提问走深度分析路径——**跳过闲聊分流/本地规则/本地案例**直连在线兜底 `/api/followup`，body 带 `analysisMode: "deep"`（§13 请求体字段，zod 枚举校验）；**零新端点、零新路由、零新事件**（协议仍 21 类）。每问一次显式同意，延续 A8 同意模式；关闭态保持 A12 本地优先混合推理不变。
+
+- **深度上下文（唯一实现 `src/lib/chat/deep-analysis.ts`）**：`buildDeepAnalysisQueries()` 10 组代码常量白名单 SQL（数据范围 / 全期支出类目 / 全期商户 Top10 / 逐月收支 LIMIT 50 / 单笔金额分布 COUNT+MIN+MAX+ROUND(AVG,1)+ROUND(MEDIAN,1) / 收入类目 / 深夜逐月 / 冲动消费按类目 / 订阅候选 / direction 分组总额；支出类查询全部带 `status = 'paid'`，退款不计入——2026-10-16 收口审查口径修正），`buildDeepAnalysisContext` 逐组 try/catch 容错组装（深夜/冲动占比分母 = 第 9 组 expense 行；深夜逐月查询带 50 个月上限，达到上限时占比标签诚实标注「近50个月」；冲动按类目聚合 ≤12 行、全期不截断；超长从末尾整行丢弃）≤`DEEP_CONTEXT_MAX_LENGTH`(2400 字)；**全部 SQL 零动态拼接**，经白名单文法预检（单测持久回归，与 §6 口径一致）；全失败返回空串（面板不空手转在线）。
+- **消息组装（§13 A9 预算不变）**：深度上下文 + 最近 150 笔明细快照（§18 A8 口径）**分两条消息**发送（各自 ≤4000 字、总长 ≤8000、≤20 条），比 A8 的「统计 + 明细合一」多一条——深度统计全期化后单条放不下，两条各自在预算内。
+- **live 指令**：`streamChatWithTools(deep: true)` 追加深度分析指令（放开「三句以内」限制、要求结构化展开、数字必须来自输入上下文）；chat 任务优先查本地端点（§12 A14 env）——配置了 `LLM_BASE_URL`+`LLM_MODEL` 则深度分析与在线兜底上下文发本地端点，账单数据不出本机。
+- **mock 档**：`analysisMode="deep"` 走 mockTextStream chat 任务 deep 档脚本化演示流（文案不虚构账单数字；**deep 档优先于 promo 演示档**）；思考计划用通用档（deep 档文案不涉及大促工具，避免计划与徽章脱节）。
+- **前端**：开关 chip（aria-pressed 两态 + 开启/关闭提示文案，`FollowUpPanel` 内部扩展，不新增注册组件）；管线 `submit({deep})` / `runOnlineFallback(deep)` / `fallToOnline(deep)` 贯穿（`use-chat-pipeline`，ChatTurn.note 增 `"deep"`）；气泡脚注「深度分析 · 已发送账单统计与明细」（与「在线生成 · 已发送明细与统计」同样式）。**脚注按实际发送组合标注（2026-10-16 收口审查修正）**：ChatTurn 增 `sentStats`/`sentDetails` 字段，统计与明细都发送时才显示合称，缺一段只说发了的那段（「已发送账单统计」/「已发送账单明细」），live 档同机制。
+- **隐私口径（A8 延伸）**：深度分析发送的数据面 = 全期白名单聚合统计 + 最近 150 笔明细快照，出口与 A8 完全一致（只转发 LLM 与 MCP，服务端零存储、不记日志）——**不新增数据出口类、不新增网络路径**；本地端点配置下该出口指向本机。
+- **测试**：单测 `tests/unit/deep-analysis.test.ts`（10 条 SQL 逐条白名单预检 + 上下文组装/省略/空串/超长丢弃/深夜占比「近50个月」标签）、`tests/unit/endpoint-config.test.ts`（双必填/带 key/缺失/空白/远端与非法 URL 拒绝）；e2e `tests/e2e/deep-analysis.spec.ts`（开关两态、deep 档脚注与演示文案、deep 优先于 promo）。
+
+**理由**：用户要求「用 DeepSeek API / 本地大模型直接分析上传账单」——落成追问面板的显式同意开关而非常开，既满足深读需求又保留 A12 本地优先哲学；全期聚合上下文全部出自白名单 SQL（零动态拼接），隐私出口与 A8 完全一致；本地端点把「数据不出本机」做成配置级能力，双向覆盖 DeepSeek 云端与本地部署两种诉求。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -662,7 +677,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 | `/` | 落地页（上传入口 + 「加载示例账单」一键演示） |
 | `/upload` | 上传与解析预览（含 OCR 入口、映射确认、去重提示） |
 | `/checkup` | 六阶段体检 + 洞察卡流 + 锚点追问面板 |
-| `/insights` | 历史洞察 / 账本汇总（吸收原 /ledger） |
+| `/insights` | 历史洞察 / 账本汇总 / 商户统计（视图内切换，吸收原 /ledger） |
 | `/subscriptions` | 订阅刺客雷达（P1） |
 | `/report` | 年度报告 |
 | `/privacy` | 隐私说明 + 数据可见性对照表（吸收原 /about） |
@@ -686,6 +701,21 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - `/budget` 若被砍，路由一并下线，快速记账入口随之隐藏（`budget` flag）。
 
 **理由**：新页面与新组件需要全局唯一命名与引用锚点；登记而非私造，维持「组件名唯一清单」纪律（#52）。
+
+### 08 修订案 A13（2026-10-15）：/insights 视图扩展「商户统计」（路由不变，视图 3 → 4）
+
+- `/insights` 视图切换器新增第 4 个视图 tab「商户统计」（`?view=merchants`），与卡片流 / 图表廊 / 账本汇总并列；**路由数不变（仍 10 条）**。页面级组件按 §14 A7 两级注册口径登记进 05 §2.2 组件总表：`MerchantView`（含内部排名图与数据表，不占可复用注册表名额）；`ChartCard` 为账本汇总原有图表卡外壳提取成的共享组件，行为不变。
+- **数据口径（权威）**：按 `merchant` 聚合**全账单**（无时间窗）`direction = 'expense' AND status = 'paid'` 支出——每商户总额（分）、笔数、占全账单支出比（一位小数，分母 = 全账单 expense 总额）、均笔金额；金额降序，同名并列按中文序稳定。OCR 账单中 merchant 即账单上的支付单位名称（A10 入库口径）；CSV 账单同字段。
+- **口径修正（2026-10-16 收口审查）**：两条 SQL 补 `status = 'paid'` 过滤——退款行不再计入商户总额与占比分母，与账本汇总 / qa-engine / 深度分析（A14）的已支付口径一致；单测 `tests/unit/whitelist.test.ts` A13 预检 SQL 文本同步。
+- **真实动线两条 SQL（页面代码常量，无任何用户输入，经 runWhitelistedAggregate 预检双保险）**：
+  - 商户排名：`SELECT merchant, SUM(amount_cents), COUNT(*) FROM transactions WHERE direction = 'expense' AND status = 'paid' GROUP BY merchant ORDER BY SUM(amount_cents) DESC LIMIT 50`；
+  - 占比分母：`SELECT direction, SUM(amount_cents) FROM transactions WHERE status = 'paid' GROUP BY direction`（取 expense 行）。
+  - 聚合值按 SELECT 位置取值（§6 按位口径，白名单文法子集不支持 AS 别名）。
+- **展示与交互**：排名横向条形图只画前 10 名（图注「完整排名看数据表」）；数据表展示全量（白名单行数上限 50；结果恰满 50 行时脚注如实标注「商户较多，按金额取前 50 名」，不满 50 行标「全部展示」）；商户搜索同步过滤图表与数据表；点击柱子 → 追问锚点（anchor id `merchant-view`，label 含商户名 + 合计 + 占全账单比，§18 锚点协议不变，无新工具）；数据来源脚注区分「你的账单数据 / 内置数据」，并如实标注全账单支出合计。
+- **兜底动线**：无体检结果（lastRun 为空）或任一查询失败 → 确定性演示行（`src/lib/insights/ledger-demo.ts`，seed 20261013、100 行，与账本汇总同一生成器）浏览器内聚合，零 API 调用。
+- **重构登记**：账本汇总的演示行生成器与 ChartCard 外壳提取为共享模块（`src/lib/insights/ledger-demo.ts`、`src/components/insights/chart-card.tsx`），ledger-view 行为与演示口径不变；商户聚合映射纯函数在 `src/lib/insights/merchant-aggregate.ts`（aggregateMerchants / merchantsFromQuery / expenseTotalFromDirection）。
+- **隐私与端点**：视图全程浏览器内计算（DuckDB-WASM 白名单聚合）；**零新端点、零新 env 键、无新增网络请求**。
+- **测试**：单测 `tests/unit/merchant-aggregate.test.ts`（聚合数学、占比分母为 0、bigint 兜底、空商户过滤、总额行查找）；e2e `tests/e2e/merchant-view.spec.ts`（视图切换、排名图、数据表、搜索过滤、切回卡片流）。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -927,6 +957,8 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 13. §0 收口行更新为 A10 口径：6 条 API 路由（+ocr）、OCR 已上线（glm-4.6v-flash 主 + SiliconFlow GLM-4.1V-9B 降级，低置信字段条带裁剪二次复核）。
 14. §0 收口行与 §4.1 GLM_* 键注释按 A11 更新：OCR 主供应商 deepseek-flash（与 DEEPSEEK_API_KEY 同钥），降级 glm-4.6v-flash / SiliconFlow GLM-4.1V-9B-Thinking。
 15. §3 目录树/模块清单登记 `src/lib/assistant` 模块（use-chat-pipeline / input-guard / local-cases / use-speech-input）与全局智能助理组件（悬浮入口 + 聊天抽屉，按 §14 两级注册口径在 05 §2.2 组件总表单列）。
+16. §3 目录树/模块清单登记 `src/lib/insights`（ledger-demo / merchant-aggregate）与 `src/components/insights`（merchant-view / chart-card，§14 A13）；/insights 视图数写「4 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计）」。
+17. 附录 A 环境变量补 `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`（本地大模型端点，§12 A14；双必填才生效、仅接管 chat 任务）；§3 目录树登记 `src/lib/chat/deep-analysis.ts`（深度分析查询与上下文组装）、`src/lib/llm/endpoint-config.ts`（本地端点解析）。
 
 ### 02-data-privacy.md
 
@@ -945,6 +977,8 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 13. §12 标题「设计态未上线」→「已上线」+ 实现收口注记（默认模型 glm-4.6v-flash 及 base64 理由、SiliconFlow 降级模型 THUDM/GLM-4.1V-9B-Thinking、extractJsonObject 容错提取、低置信条带裁剪复核复用 /api/ocr mode=review、safeParse 失败重试 1 次 = 降级网关这一次重试，§11 A10）。
 14. §12 收口注记按 A11 追加：主供应商 deepseek-flash（原生多模态、与 DEEPSEEK_API_KEY 同钥），降级链三网关。
 15. §8 可见性对照表新增「语音输入（可选）」行（音频浏览器转写、服务器与 LLM 零接收，转写文字与手打内容同等对待）；§11 三层注入防护补第四层「输入闸门」（智能助理与追问面板共用，控制字符/超长 + 指令覆盖、角色劫持、泄露诱导、SQL 痕迹四类注入特征命中即拦、不进入任何模型，§18 A12）。
+16. §8 可见性对照表**表头注记**补商户统计视图口径：全程浏览器内 DuckDB-WASM 白名单聚合（§14 A13），不新增任何网络出口，故不新增可见性行。
+17. §8 可见性对照表「追问在线兜底」行（第 24 行）口径扩深度分析：开启「深度分析」开关后同出口发送「全期白名单聚合统计（≤2400 字）+ 最近 150 笔明细」两条消息（§13 A14），**不新增可见性行**；§8 表头注记补 A14 句；§12 补本地大模型端点说明（`LLM_BASE_URL`+`LLM_MODEL` 同时配置时 chat 任务改发本地端点，账单数据不出本机，其余任务路由不变）；版本行升 v1.5。
 
 ### 03-agent-pipeline.md
 
@@ -960,6 +994,8 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 10. §9 事件协议删除自拟 PipelineEvent，改为引用 §2（#3、#28）。
 11. §11 组件引用对齐 §14 组件注册表（#52）；循环上限对齐 §18（#21、#66）。
 12. 在线兜底（/api/followup）事件序列补第 0 步 plan 事件（§2 第 21 类，8s 超时静默跳过）与 assistant-plan 任务路由（§12 A12）。
+13. §11 组件引用补 `MerchantView`（页面级，§14 A13 口径）；/insights 视图枚举处补商户统计（4 视图）。
+14. 在线兜底路径补深度分析模式（§13 A14）：`analysisMode="deep"` 跳过闲聊分流/本地规则/本地案例直连在线兜底，上下文换成「全期白名单聚合统计 + 最近 150 笔明细」两条消息；use-chat-pipeline 的 submit/fallToOnline/runOnlineFallback 贯穿 deep 参数，ChatTurn.note 增 `"deep"`。
 
 ### 04-rag-mcp.md
 
@@ -977,6 +1013,8 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 12. §8.4 表枚举与快照指纹口径按实现收口：枚举 `transactions|merchants`；`datasetTxHash` = 导入层 `hashCleanRows` 的 SHA-256 前 16 位十六进制（regex `^[0-9a-f]{16,64}$`，与 mcp-server 侧 schema 镜像一致）。
 13. §9 末尾新增 §9.6「上线收口（2026-10-15 实测）」：接入层、L1→L2 回退双轨、事件契约、测试证据的实测落点；README / PDF 口径以该块为准。
 14. §8.5 信封 `meta` 增加 `generatedAt` 时间戳字段（回退与 MCP 两侧实现一致），错误码集合不变。
+15. 商户统计视图（§14 A13）与 RAG/MCP 零交集：不新增检索、工具调用与端点；若有「洞察页数据来源」类图补商户统计为本地白名单聚合。
+16. 追问深度分析（§13 A14）与 RAG/MCP 零交集：不新增检索、工具调用与端点（analysisMode 仅是 /api/followup 既有请求体的新字段）；本地端点接管仅发生在 chat 任务路由层（§12）。
 
 ### 05-uiux.md
 
@@ -994,6 +1032,8 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 12. 信任文案（首页三节点、底栏、登录壳、追问面板脚注、体检页角标）按 §18 修订案 A8 改写：不再笼统写「账单不出浏览器」，改为准确表述——解析 / 聚合 / 体检默认全在浏览器；追问在线兜底会发送「汇总统计 + 最近 150 笔明细快照」；服务端只转发不落盘。
 13. §2.1 UploadPage 子树与 §2.2 组件总表补页面级组件 `OcrImportPanel`（两级注册口径，§14）。
 14. 新增「智能助理」全局组件章节：悬浮入口（右下固定、任何非登录页可用）、聊天抽屉（桌面 400×600 面板 / 移动端全屏）、空态示例问题与「新对话」、语音麦克风入口（feature-flag `voice`）、思考计划块（PlanBlock）、三态来源脚注（本地计算 / 本地案例库 / 在线生成）、工具徽章复用 §18 A9 展示规格；全局组件按 §14 两级注册口径登记于 §2.2 组件总表。
+15. §1.6 /insights 视图切换器补第 4 视图「商户统计」（?view=merchants）；§2.2 组件总表登记页面级组件 `MerchantView` 与共享 `ChartCard`（提取自账本汇总，§14 A13）；交互规范：排名图前 10 + 数据表全量（50 行上限与截断脚注）、商户搜索、点击柱子 → 追问锚点 merchant-view。
+16. 追问面板章节补「深度分析」开关交互规范（§13 A14）：输入框上方 chip（aria-pressed 两态；开启提示「直接交给大模型分析，并发送账单统计与明细」、关闭提示「本地规则优先，答不了才转在线」）；开启后回答气泡脚注「深度分析 · 已发送账单统计与明细」（三态来源脚注 + 深度分析档；脚注按实际发送组合标注，缺一段只说发了的那段）。
 
 ### 06-roadmap.md
 
@@ -1014,6 +1054,8 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 15. §6.3 PDF 大纲 4.5 与多模态落点表改已上线口径（glm-4.6v-flash 主 / SiliconFlow GLM-4.1V-9B 降级；删除「若被砍」脚注，§11 A10）。
 16. §6.3 按 A11 更新：OCR 主供应商 deepseek-flash（V4.1 Flash 原生多模态）。
 17. §6.3 功能落点表补智能助理行（AI 深度：Agent 工作流 = 共享问答管线本地优先混合推理、大模型集成 = assistant-plan、RAG = 聊天案例路径、多模态 = 语音输入、AI 安全 = 输入闸门、MCP = 在线兜底工具层与计划联动）；§6.4 竞品对照表「锚点追问（非聊天窗）」行改写为「本地优先智能助理（非直连 API 聊天窗）」；PDF 大纲功能点清单同步。
+18. §6.1 README 大纲功能总览补「商户统计」视图（前端工程/可视化深度落点：全账单商户聚合排名图 + 数据表 + 追问联动，§14 A13）；PDF 大纲与分镜若有 /insights 视图枚举同步 4 视图。
+19. §6.1 README 大纲功能总览补「追问深度分析」行（大模型集成/隐私工程落点：面板开关 + 全期白名单聚合上下文 + 明细两条消息 + 本地端点 env，零新端点/零新路由，§13 A14）；测试数按最新全量更新（**单测 458 / e2e 38**，2026-10-16 实测）；§6.3 评分口径功能点清单与 PDF 大纲同步。
 
 ### 08-feature-expansion.md（修订案 A1-A7，2026-10-13，v1.1）
 
@@ -1033,10 +1075,12 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 | A10 | §11/§12/§13 | OCR 上线收口：默认模型 glm-4.6v-flash（官方 glm-4v-flash 不支持 base64，与「截图不落盘」冲突）、SiliconFlow 降级 THUDM/GLM-4.1V-9B-Thinking、env 补 GLM_VISION_MODEL/SILICONFLOW_VISION_MODEL、API 路由 5 → 6（路由口径 19 → 20） |
 | A11 | §11/§12 | OCR 主供应商改为 DeepSeek deepseek-flash（V4.1 Flash 原生多模态，与 DEEPSEEK_API_KEY 同钥，2026-10-15 实测视觉与 OCR 均通过）；降级链 deepseek-flash → glm-4.6v-flash → SiliconFlow GLM-4.1V-9B-Thinking；env 补 DEEPSEEK_VISION_MODEL；resolveOcrMode 三网关任一有 key 即 live |
 | A12 | §2/§5/§12/§13/§18 | 全局智能助理：plan 事件第 21 类（goal 非空 + 1-4 步）；assistant-plan 任务（deepseek，8s 静默跳过）；sanitizeResult 改 async（S2 WebCrypto 哈希）；输入闸门第四层（控制字符/超长 + 指令覆盖、角色劫持、泄露诱导、SQL 痕迹四类注入特征）；语音输入（浏览器转写，音频不出浏览器）；聊天案例路径阈值 0.15（页面引用 0.08 不变）；追问面板重构为共享管线 use-chat-pipeline；零新端点（复用 /api/followup）、零新 env 键 |
+| A13 | §14 | 商户统计视图：/insights 第 4 视图 tab（?view=merchants，路由数不变）；全账单商户聚合（两条白名单 SQL 常量、按位取值、LIMIT 50 + 截断如实标注）；占比分母 = direction 分组 expense 总额；追问锚点 merchant-view（无新工具）；共享演示行生成器与 ChartCard 提取；零新端点、零新 env |
+| A14 | §12/§13 | 追问深度分析：面板「深度分析」开关（显式同意，开启跳过本地三路直连在线兜底）；全期 10 组白名单聚合上下文（≤2400 字）+ 最近 150 笔明细两条消息；analysisMode 字段（zod 枚举）；deep 指令与 deep 脚注；mock deep 档（优先于 promo 档）；env +3（LLM_BASE_URL/LLM_MODEL 双必填才生效、仅接管 chat 任务，LLM_API_KEY 可选）；零新端点、零新路由、零新事件 |
 | — | §4 | ChartSpec 枚举不扩展；四大静态图表组件裁决（08 §④ 补记） |
 
-- **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）；修订案清单登记 A12（全局智能助理，2026-10-15），§11.2 工作量口径按 A12 补智能助理组件与语音输入。
+- **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）；修订案清单登记 A12（全局智能助理，2026-10-15），§11.2 工作量口径按 A12 补智能助理组件与语音输入；修订案清单登记 A13（商户统计视图，2026-10-15），§11.2 工作量口径按 A13 补 MerchantView 页面级组件；修订案清单登记 A14（追问深度分析，2026-10-16），§11.2 工作量口径按 A14 补面板开关 + 全期聚合上下文 + 本地端点 env（零新端点/零新路由）。
 
 ---
 
-*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6（2026-10-15）起并入修订案 A12（全局智能助理上线收口：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
+*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6（2026-10-15）起并入修订案 A12（全局智能助理上线收口：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18），v1.7（2026-10-15）起并入修订案 A13（商户统计视图上线收口：/insights 第 4 视图 tab、全账单商户聚合、追问锚点 merchant-view，§14），v1.8（2026-10-16）起并入修订案 A14（追问深度分析上线收口：面板显式同意开关、全期白名单聚合上下文 + 明细两条消息、analysisMode 字段、本地大模型端点 env、气泡深度分析脚注，§12/§13）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*

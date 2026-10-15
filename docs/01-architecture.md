@@ -2,14 +2,14 @@
 
 | 文档编号 | 01 |
 |---|---|
-| 版本 | v1.2（v1.0 本轮按 07 权威契约文档修订；v1.1 按 08 功能扩展方案落实；v1.2 按 08 修订案 A12（全局智能助理）落实，2026-10-15） |
-| 文档职责 | 全项目技术总纲：技术栈锁定、系统架构、目录结构、环境变量、状态管理、流式架构、全局智能助理（plan 流事件 / assistant-plan 任务 / 聊天输入闸门 / 语音转写 / 聊天案例检索）、mock 模式、性能预算、部署方案、依赖风险 |
+| 版本 | v1.4（v1.0 本轮按 07 权威契约文档修订；v1.1 按 08 功能扩展方案落实；v1.2 按 08 修订案 A12（全局智能助理）落实；v1.3 按 08 修订案 A13（商户统计视图）落实；v1.4 按 08 修订案 A14（追问深度分析）落实，2026-10-16） |
+| 文档职责 | 全项目技术总纲：技术栈锁定、系统架构、目录结构、环境变量、状态管理、流式架构、全局智能助理（plan 流事件 / assistant-plan 任务 / 聊天输入闸门 / 语音转写 / 聊天案例检索）、商户统计视图（/insights 第 4 视图，08 修订案 A13）、追问深度分析（深度分析开关 / 深度上下文与明细快照 / 本地大模型端点，08 修订案 A14）、mock 模式、性能预算、部署方案、依赖风险 |
 | 读者 | 全体团队成员（前端交互 / 数据管线+AI / 材料）；评委（作为 PDF 技术文档「系统架构设计 + 技术选型理由」章节的素材源） |
-| 上游依据 | 产品定义（2026-10-13 确认版，本文件不推翻任何已确认决策）；**07 权威契约文档（docs/07-canonical-contract.md）为本文件的上位裁决——任何冲突以 07 为准**；08 功能扩展方案（docs/08-feature-expansion.md，2026-10-13 确认版）为增量设计——本文件 v1.1 落实其「各文档改动索引」针对 01 的全部改动与修订案 A1-A7 的镜像条款；v1.2 落实 08 修订案 A12（全局智能助理）的镜像条款 |
-| 生效日期 | 2026-10-13，随 W1 建仓落地（v1.1 同日随 08 功能扩展方案生效；v1.2 于 2026-10-15 随 08 修订案 A12 生效） |
+| 上游依据 | 产品定义（2026-10-13 确认版，本文件不推翻任何已确认决策）；**07 权威契约文档（docs/07-canonical-contract.md）为本文件的上位裁决——任何冲突以 07 为准**；08 功能扩展方案（docs/08-feature-expansion.md，2026-10-13 确认版）为增量设计——本文件 v1.1 落实其「各文档改动索引」针对 01 的全部改动与修订案 A1-A7 的镜像条款；v1.2 落实 08 修订案 A12（全局智能助理）的镜像条款；v1.3 落实 08 修订案 A13（商户统计视图）的镜像条款；v1.4 落实 08 修订案 A14（追问深度分析）的镜像条款 |
+| 生效日期 | 2026-10-13，随 W1 建仓落地（v1.1 同日随 08 功能扩展方案生效；v1.2 于 2026-10-15 随 08 修订案 A12 生效；v1.3 于 2026-10-15 随 08 修订案 A13 生效；v1.4 于 2026-10-16 随 08 修订案 A14 生效） |
 | 版本核实 | 所有 npm 包版本于 2026-10-13 从 registry.npmjs.org 实时核实（见附录 A） |
 
-> **实现收口（2026-10-15）**：本文为设计总纲。其中嵌入检索（EMBEDDING_PROVIDER）、案例库 150+ 等条目为**设计态**；实际交付口径以 07 §13 A10 收口说明与 README 为准（案例库 60 条 + 本地关键词匹配、6 条 API 路由、MCP 工具链已上线（07 §19 A9，接入层自建 SDK Client）、截图 OCR 已上线（07 §11 A11：DeepSeek deepseek-flash 主 + 智谱 glm-4.6v-flash / SiliconFlow GLM-4.1V-9B 降级，低置信字段条带裁剪二次复核））。全局智能助理已上线（07 §18 A12）：与追问面板共用 `use-chat-pipeline` 问答管线；`plan` 流事件（协议第 21 类）与 assistant-plan 任务（归 DeepSeek，8s 超时静默跳过）；聊天输入闸门 input-guard、Web Speech 语音转写、聊天 TF-IDF 检索阈值 0.15；sanitizeResult 改 async（WebCrypto 异步哈希）。
+> **实现收口（2026-10-15）**：本文为设计总纲。其中嵌入检索（EMBEDDING_PROVIDER）、案例库 150+ 等条目为**设计态**；实际交付口径以 07 §13 A10 收口说明与 README 为准（案例库 60 条 + 本地关键词匹配、6 条 API 路由、MCP 工具链已上线（07 §19 A9，接入层自建 SDK Client）、截图 OCR 已上线（07 §11 A11：DeepSeek deepseek-flash 主 + 智谱 glm-4.6v-flash / SiliconFlow GLM-4.1V-9B 降级，低置信字段条带裁剪二次复核））。全局智能助理已上线（07 §18 A12）：与追问面板共用 `use-chat-pipeline` 问答管线；`plan` 流事件（协议第 21 类）与 assistant-plan 任务（归 DeepSeek，8s 超时静默跳过）；聊天输入闸门 input-guard、Web Speech 语音转写、聊天 TF-IDF 检索阈值 0.15；sanitizeResult 改 async（WebCrypto 异步哈希）。商户统计视图已上线（07 §14 A13）：/insights 第 4 视图 tab「商户统计」（?view=merchants）——4 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计），路由数不变（仍 10 条）；全程浏览器内 DuckDB-WASM 白名单聚合，零新端点、零新 env 键、无新增网络请求。追问深度分析已上线（07 §21 A14；单测 458 / e2e 38，2026-10-16 实测）：追问面板「深度分析」开关（默认关，aria-pressed 两态；开启提示「开启：直接交给大模型分析，并发送账单统计与明细」、关闭提示「本地规则优先，答不了才转在线」）；开启后本轮提问跳过闲聊分流/本地规则/本地案例，直连在线兜底 /api/followup（body 带 analysisMode:"deep"）；深度上下文 src/lib/chat/deep-analysis.ts（10 组代码常量白名单 SQL，零动态拼接、经白名单预检；buildDeepAnalysisContext ≤2400 字、逐组容错、超长整行丢弃）与最近 150 笔明细快照分两条消息（各 ≤4000 字、总 ≤8000、≤20 条）；气泡脚注「深度分析 · 已发送账单统计与明细」（按实际发送组合标注，缺一段只说发了的那段）；本地大模型端点 LLM_BASE_URL + LLM_MODEL 双配置才生效（仅接管 chat 任务，其余任务路由不变；LLM_API_KEY 可选），解析纯函数 src/lib/llm/endpoint-config.ts（主机白名单校验：仅 loopback/私网网段，越界视为未配置）；mock 下 analysisMode:"deep" 走 deep 档脚本化演示流（不虚构账单数字，deep 优先于 promo 档）；零新端点、零新路由、零新事件（协议仍 21 类）。
 
 ## 0. 本文档负责的范围与接口
 
@@ -202,6 +202,8 @@ export async function mountPersistence(db: duckdb.AsyncDuckDB): Promise<"opfs" |
 │  │  DuckDB-WASM 计算层（单线程 Worker + OPFS/内存降级持久化）          │                     │
 │  │   · 明细入库 / 去重（ROW_NUMBER 窗口去重）                          │                     │
 │  │   · 六阶段确定性 SQL 预计算（9 张预计算表 + 预算预计算 2 表，已注册白名单；LLM 不写 SQL）│        │
+│  │   · /insights 四视图（卡片流 / 图表廊 / 账本汇总 / 商户统计）   │                     │
+│  │   · 视图内浏览器白名单聚合，零新端点（08 修订案 A13）               │                     │
 │  │   · SQL 沙箱四件套：只读连接 + DDL/PRAGMA 黑名单 + Worker 超时 + 行数上限│                    │
 │  │   · 锚点追问 SQL 执行（Plan-Execute-Observe 之 Execute，onToolCall） │                     │
 │  │   · duckdb_meta 工具：直读实时 schema（追问实际使用）                │                     │
@@ -271,7 +273,7 @@ spendct/
 │  │  ├─ page.tsx                      # 路由 / 落地页：Hero 一句话主张（3 秒价值动画转国赛）+ 「10 大能力」亮点卡墙 + 技术架构展示条（F01 纯文案版，08 §2.2）+ 上传入口 + 「加载示例账单」一键演示 + 隐私声明摘要
 │  │  ├─ upload/page.tsx               # 路由 /upload：上传与解析预览（含 OCR 入口、映射确认、去重提示）
 │  │  ├─ checkup/page.tsx              # 路由 /checkup（核心页，'use client'）：六阶段体检 + 洞察卡流 + 锚点追问面板
-│  │  ├─ insights/page.tsx             # 路由 /insights：历史洞察 / 账本汇总（吸收原 /ledger）
+│  │  ├─ insights/page.tsx             # 路由 /insights：4 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计），?view 视图内切换（08 修订案 A13，路由数不变；吸收原 /ledger）
 │  │  ├─ subscriptions/page.tsx        # 路由 /subscriptions：订阅刺客雷达（P1）
 │  │  ├─ report/page.tsx               # 路由 /report：年度报告
 │  │  ├─ privacy/page.tsx              # 路由 /privacy：隐私说明 + 数据可见性对照表（吸收原 /about；对照表补预算/成就/通知/导出 3 行 + 「10 大能力」静态版，08 §2.2）
@@ -279,10 +281,10 @@ spendct/
 │  │  ├─ learn/page.tsx                # 路由 /learn：消费知识小课堂（案例库浏览/知识卡/防坑手册；浏览器 TF-IDF 搜索；chunk <60KB 不引 ECharts/DuckDB；P2 档 F11）
 │  │  ├─ settings/page.tsx             # 路由 /settings：数据管理与导出（数据集列表/切换/删除 + CSV/JSON 本地导出 + 通知开关 + 主题/演示模式入口；chunk <60KB；F12）
 │  │  ├─ loading.tsx / error.tsx / not-found.tsx   # 全站加载态/错误边界/404（评审「错误边界」落点）；/budget /learn /settings 各配路由级 loading.tsx + error.tsx（05 §1.1 约定）
-│  │  └─ api/                          # Route Handlers = AI 接入层全部接口（07 契约 §13 唯一清单 + 08 修订案 A6 第 7 端点；A12 零新端点——智能助理复用 /api/followup；前端路由 10 条同 §14/修订案 A7）
+│  │  └─ api/                          # Route Handlers = AI 接入层全部接口（07 契约 §13 唯一清单 + 08 修订案 A6 第 7 端点；A12 零新端点——智能助理复用 /api/followup；A13 零新端点——商户统计视图浏览器内白名单聚合；前端路由 10 条同 §14/修订案 A7，A13 为视图内切换不改路由数）
 │  │     ├─ health/route.ts            # GET：存活探针（模型可用性/密钥配置/DEMO_MODE/版本，降级链入口）
 │  │     ├─ pipeline/stage/route.ts    # POST：六阶段驱动（模板优先，LLM 只写叙事）→ SSE（契约 §2）
-│  │     ├─ followup/route.ts          # POST：共享问答管线（锚点追问 PEO + 全局智能助理在线兜底共用；body 含 sessionSchema 快照与追问上下文；聊天输入经 input-guard 闸门）→ SSE（契约 §2 + tool 事件 + plan 事件）
+│  │     ├─ followup/route.ts          # POST：共享问答管线（锚点追问 PEO + 全局智能助理在线兜底共用；body 含 sessionSchema 快照与追问上下文；聊天输入经 input-guard 闸门；深度分析 analysisMode:"deep" 跳过本地分流直连在线兜底，08 修订案 A14）→ SSE（契约 §2 + tool 事件 + plan 事件）
 │  │     ├─ ocr/route.ts               # POST：截图 → 结构化行（契约 §11），返回 ocrResultSchema + 低置信度字段标记
 │  │     ├─ rag/route.ts               # POST：dense 检索代理（→ MCP 容器 /retrieve）；容器不可用 → {ok:false, mode:"tfidf"} → 浏览器 TF-IDF
 │  │     ├─ mcp/[tool]/route.ts        # POST：MCP 工具代理（5s 连接超时；单工具 4s；{ok:false} 信封）
@@ -302,6 +304,7 @@ spendct/
 │  │  ├─ cards/                        # InsightCard：结论+证据图表+置信度+来源引用+操作条（确认/质疑/深挖）+ TypingCard + EvidenceTable
 │  │  ├─ followup/                     # FollowUpPanel（共享问答管线 use-chat-pipeline 封装，锚点追问与全局智能助理共用）、AnchorChip（点击图表生成的锚点标签）、ArtifactCard、DegradeToast、ToolBadge
 │  │  ├─ assistant/                    # 全局智能助理（08 修订案 A12，两级注册）：AssistantDrawer（悬浮入口+聊天抽屉）、ChatBubbles、PlanBlock（思考计划块）
+│  │  ├─ insights/                     # /insights 视图组件（08 修订案 A13）：MerchantView 商户统计视图（页面级，按 07 §14 两级注册口径登记于 05 §2.2 组件总表）、ChartCard（账本汇总图表卡外壳提取的共享组件，行为不变）；与既有 ledger-view（账本汇总）同目录
 │  │  └─ subscription-radar/           # 订阅刺客雷达（确定性 SQL 结果）+ 取消攻略 RAG 引用区
 │  ├─ lib/                             # 纯前端逻辑层（浏览器侧；禁止 import 'server-only' 包）
 │  │  ├─ duckdb/                       # DuckDB-WASM 封装（唯一允许 import @duckdb/duckdb-wasm 的目录）
@@ -326,8 +329,11 @@ spendct/
 │  │  ├─ sanitize/sanitizer.ts         # sanitizeResult 脱敏器（契约 §5，全仓唯一；A12 起改 async：S2 加盐哈希走 WebCrypto）
 │  │  ├─ rag/                          # 浏览器侧 RAG：tfidf.ts（本地兜底检索，纯 TS <150 行）、index-loader.ts（预计算嵌入加载）；本地案例检索双阈值：聊天 0.15 / 页面引用 0.08（08 修订案 A12）
 │  │  ├─ assistant/                    # 共享问答管线（08 修订案 A12）：use-chat-pipeline / input-guard（第四层闸门）/ local-cases（阈值 0.15）/ use-speech-input
+│  │  ├─ chat/deep-analysis.ts         # 深度分析查询与上下文组装（10 组代码常量白名单 SQL，≤2400 字、逐组容错；08 修订案 A14）
 │  │  ├─ tools/registry.ts             # 工具注册表（短名↔真实名映射，契约 §18，全仓唯一）
 │  │  ├─ llm/drill-templates.ts        # DRILL_TEMPLATES 内置分析模板（锚点追问 SQL 失败重试 1 次后的回退，契约 §18）
+│  │  ├─ llm/endpoint-config.ts        # 本地大模型端点解析（resolveLocalEndpoint 纯函数；LLM_BASE_URL + LLM_MODEL 双配置才生效、仅接管 chat 任务；08 修订案 A14）
+│  │  ├─ insights/                     # /insights 视图数据逻辑（08 修订案 A13）：ledger-demo.ts（确定性演示行生成器，seed 20261013、100 行，账本汇总/商户统计共用）、merchant-aggregate.ts（aggregateMerchants / merchantsFromQuery / expenseTotalFromDirection 商户聚合纯函数）
 │  │  ├─ store/                        # Zustand 切片（§5.1：pipeline/cards/anchor/dataset/ui/session）
 │  │  ├─ hooks/                        # useEChart / usePipelineRun / useDuckDBReady / useMediaQuery / useDemoMode（use-chat-pipeline 在 lib/assistant/，08 修订案 A12）
 │  │  ├─ utils/                        # format.ts、time-range.ts
@@ -369,13 +375,13 @@ spendct/
 │  ├─ data/sample-wechat-2026H1.csv    # 示例账单公开副本（与 data/sample 源文件内容一致，供「加载示例账单」fetch；断网时走打包资源，契约 §15）
 │  └─ icons/、og.png                   # favicon、分享图
 ├─ docs/                               # 技术文档（≤30 页 PDF 的素材源，编号即章节）
-│  ├─ 01-architecture.md               # 本文档：总体架构与技术选型（v1.2）
+│  ├─ 01-architecture.md               # 本文档：总体架构与技术选型（v1.4）
 │  ├─ 02-data-privacy.md               # 数据与隐私：transactions DDL/可见性对照表/SQL 白名单细则/脱敏器/注入防护
 │  ├─ 03-pipeline-agent.md             # 流水线与 Agent：六阶段详设/prompt 全文/反思自检/断点续跑
 │  ├─ 04-rag-mcp.md                    # RAG 与 MCP：检索链路/案例库/金标评测/MCP 砍法
 │  ├─ 05-ui-interaction.md             # 界面交互：组件详设/设计令牌/锚点追问/错误加载空态
 │  ├─ 06-roadmap.md                    # 路线图：5 周计划/闸门/竞品对标/费用说明/评审对照
-│  ├─ 07-canonical-contract.md         # 权威契约：01-06 全部冲突的唯一裁决（v1.6；并入 08 修订案 A1-A12 为增量修订）
+│  ├─ 07-canonical-contract.md         # 权威契约：01-06 全部冲突的唯一裁决（v1.8；并入 08 修订案 A1-A14 为增量修订）
 │  └─ 08-feature-expansion.md           # 功能扩展方案：13 项功能 F01-F13 + 修订案 A1-A7（v1.0）
 ├─ .env.example                        # 环境变量模板（公开提交，全部占位值，§4）
 ├─ .gitignore                          # .env* / node_modules / .next / bench-results.json / playwright-report / models/
@@ -413,6 +419,11 @@ QWEATHER_API_KEY=""                              # 和风天气（MCP 工具 wea
 # ═══════════ 路由与限流（三重抗限流的第一重）═══════════
 AI_TEXT_FALLBACK_ORDER="deepseek,qwen"           # 文本任务降级链（ModelId，07 §12）：主失败→次→指数退避（轻任务反向链见契约 §12 路由表）
 
+# ═══════════ 本地大模型端点（可选；LLM_BASE_URL 与 LLM_MODEL 双配置才生效，仅接管 chat 任务，其余任务路由不变；08 修订案 A14）═══════════
+LLM_BASE_URL=""                                   # 本地 OpenAI 兼容端点地址（可选）
+LLM_MODEL=""                                      # 本地模型名（可选）
+LLM_API_KEY=""                                    # 可选：本地端点鉴权密钥
+
 # ═══════════ SQL 安全常量（与 src/lib/sql-guard/whitelist.ts、src/lib/constants 对齐，改需双处同步）═══════════
 SQL_MAX_RESULT_ROWS="50"                         # 锚点追问 LLM 生成 SQL 的结果行数上限（契约 §7 两级语义的追问档）
 AGG_MAX_ROWS="200"                               # 模板六阶段产物行数上限（契约 §7 两级语义的模板档）
@@ -441,6 +452,7 @@ DEMO_MODE="mock"                                 # mock=零密钥剧本演示（
 | `SQL_*`/`AGG_*` | 客户端常量镜像 + `src/server/sql/validator.ts` 形状复核 | 沙箱与脱敏阈值（两级行数语义：模板 200 / 追问 50，契约 §7） | 无（但改单侧会导致行为漂移，必须双处同步） |
 | `EMBEDDING_PROVIDER` | `src/app/api/rag/route.ts` | 检索模式切换（tfidf-only / local-onnx，契约 §16） | 无 |
 | `MCP_SERVER_URL` | `src/server/ai` | 工具传输切换 | 无 |
+| `LLM_BASE_URL`/`LLM_MODEL`/`LLM_API_KEY` | `src/lib/llm/endpoint-config.ts`（resolveLocalEndpoint 纯函数） | 本地大模型端点（08 修订案 A14）：BASE_URL 与 MODEL 双配置才生效、仅接管 chat 任务（其余任务路由不变）；API_KEY 可选 | 无（用户自配端点） |
 
 **08 功能扩展零新增键声明（修订案 A5）**：新增 5 个 LLM 任务（quick-entry/budget-advice/forecast/tip-personalize/annual-story）全部复用上表既有三模型密钥与降级链配置，`.env.example` 不增任何键、Vercel 面板零新增变量——费用面与密钥面零扩张。08 修订案 A12 同口径：assistant-plan 复用 DeepSeek 既有密钥，语音转写为浏览器原生 Web Speech——零新键、零新配置。
 
@@ -800,11 +812,11 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 
 | 文档 | 版本 | 说明 |
 |---|---|---|
-| 01-architecture.md（本文档） | **v1.2** | v1.0 本轮按 07 权威契约修订；v1.1 按 08 功能扩展方案（修订案 A1-A7 镜像条款）落实；v1.2 按 08 修订案 A12（全局智能助理）落实 |
-| 02-data-privacy.md | **v1.2** | v1.1 按 07 权威契约 §21 改动索引修订；v1.2 落实 08 修订案 A1/A2/A3（manual 行内存中转红线、预算预计算表、`source='manual'` 语义） |
-| 03-agent-pipeline.md | **v1.1** | v1.0 初版；v1.1 按 08 功能扩展方案修订（A2/A5/A6 落点：annual-story 分段、§7 T5 扩展任务降级条目、路由表 +5 行） |
-| 04-rag-mcp.md | **v1.1** | v1.1 按 08 §⑤ 与修订案 A4 落实：案例库 100+→150+、第 8 类 student_benefits、student-golden-8 补充集（主集 20 题阈值不变） |
-| 05-uiux.md | **v1.1** | v1.0 随 07 契约冻结（自 v0.9 升，契约 #75：不得以 v0.9 状态交付）；v1.1 落实 08 功能扩展增量 A1-A7 |
-| 06-roadmap.md | **v1.1** | v1.1 并入 08《功能扩展方案》v1.0（T41-T56 / 砍法序号 6-10 / 视频分镜 S1-S10 / PDF 27 页正文 / 风险 R15-R16 / 回归 A11） |
-| 07-canonical-contract.md | **v1.6** | 权威契约：01-06 全部冲突的唯一裁决；v1.1 并入 08 修订案 A1-A7，v1.2-v1.6 并入 08 修订案 A8-A12（增量修订，同步 §21 改动索引） |
+| 01-architecture.md（本文档） | **v1.4** | v1.0 本轮按 07 权威契约修订；v1.1 按 08 功能扩展方案（修订案 A1-A7 镜像条款）落实；v1.2 按 08 修订案 A12（全局智能助理）落实；v1.3 按 08 修订案 A13（商户统计视图）落实；v1.4 按 08 修订案 A14（追问深度分析）落实 |
+| 02-data-privacy.md | **v1.5** | v1.1 按 07 权威契约 §21 改动索引修订；v1.2 落实 08 修订案 A1/A2/A3（manual 行内存中转红线、预算预计算表、`source='manual'` 语义） |
+| 03-agent-pipeline.md | **v1.4** | v1.0 初版；v1.1 按 08 功能扩展方案修订（A2/A5/A6 落点：annual-story 分段、§7 T5 扩展任务降级条目、路由表 +5 行） |
+| 04-rag-mcp.md | **v1.4** | v1.1 按 08 §⑤ 与修订案 A4 落实：案例库 100+→150+、第 8 类 student_benefits、student-golden-8 补充集（主集 20 题阈值不变） |
+| 05-uiux.md | **v1.4** | v1.0 随 07 契约冻结（自 v0.9 升，契约 #75：不得以 v0.9 状态交付）；v1.1 落实 08 功能扩展增量 A1-A7 |
+| 06-roadmap.md | **v1.4** | v1.1 并入 08《功能扩展方案》v1.0（T41-T56 / 砍法序号 6-10 / 视频分镜 S1-S10 / PDF 27 页正文 / 风险 R15-R16 / 回归 A11） |
+| 07-canonical-contract.md | **v1.8** | 权威契约：01-06 全部冲突的唯一裁决；v1.1 并入 08 修订案 A1-A7，v1.2-v1.8 并入 08 修订案 A8-A14（增量修订，同步 §21 改动索引） |
 | 08-feature-expansion.md | v1.0 | 功能扩展增量设计（13 项功能 F01-F13 + 修订案 A1-A7）；与 01-07 冲突时以 07 为准 |
