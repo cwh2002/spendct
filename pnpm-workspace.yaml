@@ -1,3 +1,6 @@
+packages:
+  - mcp-server
+
 minimumReleaseAgeExclude:
   - '@typescript-eslint/eslint-plugin@8.71.2'
   - '@typescript-eslint/parser@8.71.2'
@@ -14,3 +17,9 @@ minimumReleaseAgeExclude:
   - typescript-eslint@8.71.2
   - vitest@5.0.4
   - zod@4.6.7
+
+allowBuilds:
+  onnxruntime-node: true
+  protobufjs: true
+  unrs-resolver: true
+  esbuild: true

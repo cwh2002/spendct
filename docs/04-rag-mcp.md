@@ -114,7 +114,7 @@
 │    Stage1 SQL 元数据过滤（谓词参数化，等价 SQL）                                │
 │    → Stage2 dense：bge-m3 余弦（文档嵌入离线预计算进 repo；查询嵌入 onnx 本地推理│
 │    → Stage3 bge-reranker-base 重排（本地推理）→ 引用产出（≤3 条，宁缺毋滥）     │
-│  [MCP 客户端] AI SDK experimental_createMCPClient —— Streamable HTTP ──┐     │
+│  [MCP 客户端] 自建接入层（SDK Client + StreamableHTTP，07 §19 A9）─────┐     │
 └─────────────────────────────────────────────────────────────┬──────────┼─────┘
                                                                ▼          │
                                     ┌──────── MCP server（Railway/Render 免费容器）┐│
@@ -935,7 +935,7 @@ export interface PersonalContext {
    │                                                        │
    │ 锚点问题 + 聚合上下文                                    ▼
    ▼                                              AI 接入层注入快照为工具参数（服务端零存储）
-Next.js AI 接入层 ── AI SDK MCP client（Streamable HTTP）──▶ MCP server（Railway/Render 免费容器）
+Next.js AI 接入层 ── 自建 MCP 客户端（@modelcontextprotocol/sdk，07 §19 A9）──▶ MCP server（Railway/Render 免费容器）
    │                                                         ├ get_school_calendar     静态 JSON（repo）
    │                                                         ├ get_weather             和风天气免费档（key=env）
    │                                                         ├ get_promo_calendar      静态 JSON（repo）
@@ -1214,37 +1214,23 @@ CMD ["node", "dist/index.js"]
 
 **国内可达性**（Vercel 不稳定的同类风险，对策对齐 01/06）：Railway/Render 域名国内访问不稳 → **演示视频以本地 `pnpm dev` 起的 MCP server 录制为主证据**；答辩本地演示预案起本地 server；公网部署仅作可选加分项，不承载关键演示路径。
 
-### 9.4 与 Next.js 的接入方式
+### 9.4 与 Next.js 的接入方式（2026-10-15 按 07 §19 A9 spike 结论重写）
+
+ai@7.0.137 实测不导出任何 MCP 客户端，接入层基于 `@modelcontextprotocol/sdk` 客户端自建（`src/server/ai/mcp.ts`，唯一实现）：
 
 ```ts
-// src/server/ai/mcp.ts —— AI 接入层 MCP 客户端（单例、自动重连、失败返回空工具集）
-import { experimental_createMCPClient } from "ai";            // ai@7.0.137 精确锁定（07 §19）；MCP client 导出名以 7.0.137 装包实测为准，W4D1 spike 结论回写 01/04（#17）
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+// 连接单例：MCP_SERVER_URL 缺失或连接失败（5s 超时）→ 整体降级，30s 冷却期内不重试；
+// 单工具防护：4s 超时、1s/2s/4s 指数退避、连续失败 2 次移出工具集（§11）
 
-let mcpPromise: ReturnType<typeof experimental_createMCPClient> | null = null;
-
-export async function getMcpClient() {
-  if (!process.env.MCP_SERVER_URL) return null;                // 未配置 → 无工具（§10 L2 同路径）
-  if (mcpPromise) return mcpPromise;
-  mcpPromise = experimental_createMCPClient({
-    transport: new StreamableHTTPClientTransport(
-      new URL(process.env.MCP_SERVER_URL + "/mcp")),
-  }).catch((e) => { mcpPromise = null; console.warn("[mcp] connect failed:", e.message); return null; });
-  return mcpPromise;
-}
-
-// src/app/api/followup/route.ts（锚点追问 handler 内，03 文档编排层；LLM 调用在 src/server/ai/*，07 §13）
-const mcp = await withTimeout(getMcpClient(), 5000);           // 连接超时 5s → null
-const mcpTools = mcp ? await mcp.tools() : {};
-const tools = { ...mcpTools, ...localTools };                  // localTools：duckdb_meta / run_browser_sql（07 §18）+ L1 备选元数据工具
-const sysExtra = mcpTools  // 工具可用性声明注入（§11.2）
-  ? "可用外部工具：校历、和风天气、大促日历、账单元数据（协议演示）。"
-  : "外部工具（校历/天气/大促日历/元数据）当前不可用，禁止引用外部实时数据。";
-// schema 快照：随 /api/followup 请求体 sessionSchema 字段到达（07 §13，per-request）；
-// query_bill_db_metadata 被调用时由本层注入为工具参数（07 §18）
+// MCP tools/list 返回的 inputSchema 是原始 JSON Schema，透传为 ai SDK 工具时
+// 必须经 jsonSchema() 包装——ai@7.0.137 的 tool() 要求 FlexibleSchema，
+// 原始 JSON Schema 对象不能直接传（07 §19 A9 实测口径）
+import { jsonSchema, tool } from "ai";
 ```
 
-**接入要点**：① MCP 客户端只存在于 AI 接入层，浏览器只与 Next.js 通信（隐私架构不变）；② `tools()` 结果与本地工具合并进 Vercel AI SDK `streamText`，工具徽章数据（§8.5 `ToolInvocation`）由 SDK 流式回调解析后推给前端（05 文档 ToolBadge）；③ 工具调用失败不中断流——SDK 将工具结果（含 ok:false 信封）注入上下文，模型自行继续（§11）。
+**接入要点**：① MCP 客户端只存在于 AI 接入层，浏览器只与 Next.js 通信（隐私架构不变）；② 模型可调用的三工具（校历/天气/大促日历）经 `getMcpTools()` 装配，L1 连接 MCP 服务器 tools/list、L2 本地回退（`mcp-fallback.ts` 静态数据，与 MCP 侧过滤逻辑镜像）；`query_bill_db_metadata` 为协议演示工具，由 `/api/followup` 在会话开始时确定性调用（快照随请求体 `sessionSchema` 字段到达，per-request，无服务端存储），不进模型工具集；③ 工具徽章数据由 SSE `tool:start/tool:end` 事件推给前端（07 §18 A9），工具失败不中断流——`{ok:false}` 信封注入上下文，模型自行继续（§11）。
 
 ### 9.5 演示视频展示脚本（协议握手 + 结果注入归因）
 
@@ -1256,6 +1242,19 @@ const sysExtra = mcpTools  // 工具可用性声明注入（§11.2）
 | 2 工具调用流 | 25s | 浏览器内锚点追问「11月11号想买显示器，现在该不该下手？」→ 洞察卡流中依次亮起工具徽章：`get_promo_calendar`（running → ok，1.2s）→ 答案卡出现结论 + 引用 footer | 「注意看，这个问题触发了大促日历工具——模型按需调用，无关天气就不会去查天气。答案给出了双11节奏：预热期 10 月 20 号开始，峰值 11 月 11 号，并提醒大件关注价保。」 | 徽章数据 = §8.5 `ToolInvocation` 流；`meta.cache: hit` 展示缓存命中 |
 | 3 结果注入归因特写 | 10s | 引用 footer 特写：`[大促日历 v2026.10 · 自建数据]`、`[案例 C017 · 大促比价 · 来源：消协调查]`、`[和风天气 · 2026-10-13 14:00 更新]`，逐条可点击展开原始 JSON/链接 | 「每个外部数据的结论都带来源归因——数据来自哪个工具、哪个版本、何时更新，全部可点击核验。模型只负责叙述，数据来自工具与案例库。」 | 归因 = `Citation.kind: "tool"` + `meta.source/updatedAt`；技术文档截图 |
 | 4 优雅降级（备用镜头） | 15s | 终端 kill MCP server → 再追问「考试周是什么时候？」→ 灰色徽章「校历工具不可用（连接超时）· 已跳过」→ 答案基于内置知识完成并声明「无外部数据引用」 | 「工具挂了，Agent 不会卡死——它收到结构化降级结果，跳过该工具继续作答，并明确告知用户哪些外部数据不可用。」 | §11 降级链路实录；技术文档可作为故障演练证据 |
+
+### 9.6 上线收口（2026-10-15 实测，README / PDF 口径以本块为准）
+
+MCP 工具链已完整上线，四条链路实测证据如下：
+
+| 层 | 实现 | 实测证据 |
+|---|---|---|
+| MCP 服务器 | `mcp-server/`（@modelcontextprotocol/sdk@1.32.1 锁死小版本，Streamable HTTP 传输，express 挂 `/mcp` 与 `/healthz`） | 单测 31/31；构建 exit 0；smoke（initialize → tools/list 四工具 → tools/call 信封）通过 |
+| 主站接入层 | `src/server/ai/mcp.ts`（SDK Client 自建：5s 连接超时 / 30s 冷却 / 4s 工具超时 / 1s·2s·4s 退避 / 连续失败 2 次移除） | 单测 22/22：退避执行器五例、失败追踪、信封契约、L2 回退四工具 |
+| 在线兜底路由 | `POST /api/followup`（SSE 协议 §2 + tool 事件，07 §13/§18 A9） | e2e「大促关键词问题挂工具徽章与在线生成脚注」通过（26/26 全量）；live 模式 curl 实测事件直方图 run:start / tool:start / tool:end / stage:thinking×87 / run:complete 正确，degraded 机制工作 |
+| 本地回退（L2） | MCP 不可达时：校历/大促日历本地静态过滤、天气诚实降级（unavailable 信封，绝不编造）、元数据回执本地校验 | 单测覆盖（数据文件单一来源镜像断言） |
+
+与设计稿的三处实测修正：① ai@7.0.137 无 MCP 客户端（07 §19 A9）；② 在线兜底落位 `/api/followup` 而非 `/api/ai/chat`（07 §13 A9）；③ 快照指纹 `datasetTxHash` = 导入层 `hashCleanRows` 的 SHA-256 前 16 位十六进制（regex `^[0-9a-f]{16,64}$`），不是设计稿的 40-64 位——mcp-server / 本地回退 / 客户端 session-schema 三方镜像一致。
 
 ---
 

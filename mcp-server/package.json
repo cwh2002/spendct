@@ -1,0 +1,31 @@
+{
+  "name": "spendct-mcp-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SpendCT 独立 MCP 工具服务：校历 / 和风天气 / 大促日历 / 账单元数据（协议演示）（04 §8-§9）",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "dev:stdio": "tsx src/stdio.ts",
+    "build": "tsc -p tsconfig.json && node scripts/copy-data.mjs",
+    "start": "node dist/index.js",
+    "smoke": "node scripts/smoke.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "express": "5.1.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.3",
+    "@types/node": "26.6.5",
+    "tsx": "4.20.3",
+    "typescript": "5.9.3",
+    "vitest": "5.0.4"
+  }
+}

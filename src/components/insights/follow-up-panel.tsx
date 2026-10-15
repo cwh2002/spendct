@@ -3,7 +3,9 @@
 import {
   BookOpen,
   ChevronLeft,
+  CircleAlert,
   CircleCheck,
+  LoaderCircle,
   MessageSquare,
   MousePointerClick,
   PanelRightClose,
@@ -20,12 +22,15 @@ import {
   buildDetailContext,
   createDuckDbDetailSnapshot,
   createDuckDbRunner,
+  createDuckDbSchemaSnapshot,
   DATASET_EMPTY_TEXT,
   EXAMPLE_QUESTIONS,
   type QaIntent,
 } from "@/lib/chat/qa-engine";
 import { classifySmallTalk, SMALL_TALK_ANSWER } from "@/lib/llm/small-talk";
 import { usePipeline } from "@/lib/pipeline/store";
+import type { SessionSchema } from "@/lib/schema/session-schema";
+import { getToolLabel } from "@/lib/tools/registry";
 
 /**
  * 追问面板：洞察页右侧的账单问答区。
@@ -35,10 +40,12 @@ import { usePipeline } from "@/lib/pipeline/store";
  * 2. 本地规则（qa-engine）——意图解析 + 白名单聚合 SQL 直接读取账单数据回答，
  *    数字全部来自查询结果，答案气泡挂「已按你的账单数据计算」脚注；
  * 3. 在线兜底——本地答不了的问题，拼「汇总统计 + 最近明细快照 + 案例参考」
- *    上下文与最近对话交给在线服务流式回答（明细口径见 07 修订案 A8），气泡挂
- *    「在线生成 · 已发送明细与统计」脚注；案例参考由 POST /api/rag 检索得到，
- *    检索到的案例单独挂「案例参考」脚注（数据来自检索响应，非模型文本）；
- *    没有账单数据时不进这一环，直接回「先导入账单」。
+ *    上下文与最近对话 POST /api/followup（SSE，07 修订案 A9），气泡挂
+ *    「在线生成 · 已发送明细与统计」脚注；请求内随带 sessionSchema 聚合快照
+ *    （协议演示工具回执），服务端工具调用（MCP 校历/天气/大促日历）经
+ *    tool:start/tool:end 事件回传，渲染为回答气泡下的工具徽章；
+ *    案例参考由 POST /api/rag 检索得到，单独挂「案例参考」脚注（数据来自
+ *    检索响应，非模型文本）；没有账单数据时不进这一环，直接回「先导入账单」。
  *
  * 与页面的协作方式保持既有契约：锚点来自洞察卡「深挖」或账本图表数据点点击，
  * 页面通过 ref 触发「/」快捷键聚焦输入框；折叠窄轨、锚点确认条、快捷键均不变。
@@ -66,6 +73,19 @@ interface FollowUpTurn {
   smallTalk?: boolean;
   /** 在线回答挂的案例参考（来自 /api/rag 检索响应，非模型生成文本） */
   ragRefs?: { caseId: string; title: string; snippet: string }[];
+  /** 在线回答挂的工具徽章（来自 /api/followup 的 tool:start/tool:end 事件） */
+  toolBadges?: ToolBadge[];
+}
+
+/** 工具徽章：tool:start 生成（待定态），tool:end 补齐 ok/ms/errorReason */
+interface ToolBadge {
+  id: string;
+  tool: string;
+  label: string;
+  argsDigest?: string;
+  ok?: boolean;
+  ms?: number;
+  errorReason?: string;
 }
 
 /** 思考态：data＝读取本地账单数据；live＝等待在线服务返回 */
@@ -74,7 +94,7 @@ type ThinkingState = "data" | "live";
 /** 在线兜底时夹在对话开头的账单数据说明（汇总统计 + 最近明细快照，07 修订案 A8） */
 const ONLINE_CONTEXT_PREFIX = "以下是我的账单数据（汇总统计与最近明细）：\n";
 
-/** 在线接口的消息总长上限（与 /api/ai/chat 的参数校验同口径） */
+/** 在线接口的消息总长上限（与 /api/followup 的参数校验同口径） */
 const MESSAGE_BUDGET = 8000;
 
 /** 在线请求超时（毫秒）：超时即中止并落本地提示，避免思考态卡死面板 */
@@ -200,8 +220,12 @@ export function FollowUpPanel({
   }
 
   /**
-   * 在线兜底：拼汇总上下文（非空才拼）与最近对话，POST /api/ai/chat
-   * 逐片读取 text/plain 回答流，累积回填到最后一条回答气泡。
+   * 在线兜底：拼汇总上下文（非空才拼）、最近对话与 sessionSchema 聚合快照，
+   * POST /api/followup（SSE，07 修订案 A9），按空行分帧解析协议 §2 事件：
+   *   - tool:start / tool:end：维护工具徽章（待定 / 成功 / 失败三态）；
+   *   - stage:thinking：回答文本增量，累积回填到最后一条回答气泡；
+   *   - run:complete：挂「在线生成」脚注与案例参考；
+   *   - error：无内容撤占位气泡补本地提示，有内容保留已收文本；
    * 请求失败 / 流异常时落到本地提示气泡；组件卸载触发的中止直接静默返回。
    */
   async function runOnlineFallback(question: string) {
@@ -281,6 +305,19 @@ export function FollowUpPanel({
       }
       if (bailIfStopped()) return;
 
+      // sessionSchema 聚合快照（07 §18 协议演示工具回执）：只含列元数据与
+      // 统计，不含明细行；构建失败回 null，服务端跳过该工具直接进入回答
+      const txHash = usePipeline.getState().datasetTxHash;
+      let sessionSchema: SessionSchema | null = null;
+      if (txHash) {
+        try {
+          sessionSchema = await createDuckDbSchemaSnapshot(txHash)();
+        } catch {
+          sessionSchema = null;
+        }
+      }
+      if (bailIfStopped()) return;
+
       const messages: { role: "user" | "assistant"; content: string }[] = [];
       if (combined) {
         messages.push({ role: "user", content: `${ONLINE_CONTEXT_PREFIX}${combined}` });
@@ -292,10 +329,15 @@ export function FollowUpPanel({
       const budget = MESSAGE_BUDGET - messages.reduce((sum, m) => sum + m.content.length, 0);
       messages.push(...buildHistoryMessages(question, budget));
 
-      const response = await fetch("/api/ai/chat", {
+      const response = await fetch("/api/followup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task: "chat", messages }),
+        body: JSON.stringify({
+          question,
+          messages,
+          ...(sessionSchema ? { sessionSchema } : {}),
+          datasetSource: usePipeline.getState().source ?? undefined,
+        }),
         signal: controller.signal,
       });
 
@@ -311,28 +353,113 @@ export function FollowUpPanel({
       const turnId = seqRef.current;
       setTurns((prev) => [...prev, { id: turnId, role: "assistant", text: "" }]);
 
+      // 工具徽章：badges 为已完结调用，pending 为进行中（tool:start 后未收到
+      // tool:end）；同名工具按后进先出配对，与流的顺序一致
+      const badges: ToolBadge[] = [];
+      const pending: ToolBadge[] = [];
+      let badgeSeq = 0;
+      const flushBadges = () => {
+        setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, toolBadges: [...badges, ...pending] } : turn)));
+      };
+
+      /** 单帧事件分发：返回 true 表示流已收尾（complete/error/abort），停止读取 */
+      const handleEvent = (event: Record<string, unknown>): boolean => {
+        const type = event.t;
+        if (type === "tool:start") {
+          badgeSeq += 1;
+          pending.push({
+            id: `tool-${badgeSeq}`,
+            tool: String(event.tool ?? ""),
+            label: getToolLabel(String(event.tool ?? "")),
+            argsDigest: typeof event.argsDigest === "string" ? event.argsDigest : undefined,
+          });
+          flushBadges();
+        } else if (type === "tool:end") {
+          const tool = String(event.tool ?? "");
+          const index = pending.findLastIndex((badge) => badge.tool === tool);
+          if (index !== -1) {
+            const finished = pending[index];
+            if (finished) {
+              finished.ok = Boolean(event.ok);
+              finished.ms = typeof event.ms === "number" ? event.ms : undefined;
+              if (typeof event.errorReason === "string") finished.errorReason = event.errorReason;
+              badges.push(finished);
+            }
+            pending.splice(index, 1);
+            flushBadges();
+          }
+        } else if (type === "stage:thinking" && typeof event.text === "string") {
+          accumulated += event.text;
+          updateTurnText(turnId, accumulated);
+        } else if (type === "run:complete") {
+          outcome = "complete";
+          return true;
+        } else if (type === "error") {
+          outcome = "error";
+          return true;
+        } else if (type === "abort") {
+          outcome = "abort";
+          return true;
+        }
+        return false;
+      };
+
       const reader = response.body.getReader();
       const decoder = new TextDecoder("utf-8");
+      let buffer = "";
       let accumulated = "";
+      let outcome: "complete" | "error" | "abort" | null = null;
       for (;;) {
         const { done, value } = await reader.read();
         if (bailIfStopped()) return;
         if (done) break;
-        accumulated += decoder.decode(value, { stream: true });
-        updateTurnText(turnId, accumulated);
+        buffer += decoder.decode(value, { stream: true });
+        // SSE 按空行分帧；最后一帧可能还没收到空行，留待下一片或流结束处理
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf("\n\n");
+          const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
+          if (dataLine) {
+            try {
+              if (handleEvent(JSON.parse(dataLine.slice(6)) as Record<string, unknown>)) break;
+            } catch {
+              // 非法帧静默跳过：不阻断后续事件
+            }
+          }
+        }
+        if (outcome) break;
       }
-      accumulated += decoder.decode(); // 冲刷解码器内部残留字节
+
+      if (outcome === "abort") return; // 服务端已感知中止：静默返回
+      if (outcome === "complete") {
+        // 流正常收尾：最终文本与徽章落定，挂在线来源脚注与案例参考
+        updateTurnText(turnId, accumulated);
+        flushBadges();
+        markTurnLive(turnId);
+        if (ragCases.length > 0) {
+          setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)));
+        }
+        return;
+      }
+      if (outcome === "error") {
+        // 服务端显式报错：无内容撤掉占位气泡补本地提示；已有内容保留不挂脚注
+        if (accumulated.trim() === "") {
+          setTurns((prev) => prev.filter((turn) => turn.id !== turnId));
+          appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+        }
+        return;
+      }
+      // 流干净收尾但没等到 run:complete：按已收内容兜底；零内容则撤占位气泡
       if (accumulated.trim() === "") {
-        // 流干净收尾但零内容：上游错误（限流 / 内容过滤 / 启动失败）被 SDK 转成
-        // 错误 part 后以空流结束，必须撤掉占位气泡兜底成提示，不能把空气泡挂上
-        // 「在线生成」脚注
         setTurns((prev) => prev.filter((turn) => turn.id !== turnId));
         appendTurn({ role: "assistant", text: onlineFallbackTipText() });
         return;
       }
       updateTurnText(turnId, accumulated);
+      flushBadges();
       markTurnLive(turnId);
-      // 案例参考脚注挂在回答气泡下：数据来自 /api/rag 检索响应，不是模型文本
       if (ragCases.length > 0) {
         setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)));
       }
@@ -599,6 +726,40 @@ export function FollowUpPanel({
                           <span className="text-(--color-ink-muted)">：{c.snippet}</span>
                         </span>
                       </p>
+                    ))}
+                  </div>
+                ) : null}
+                {turn.toolBadges && turn.toolBadges.length > 0 ? (
+                  /* 工具徽章（07 §18）：待定 / 成功 / 失败三态，title 展示入参摘要 */
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {turn.toolBadges.map((badge) => (
+                      <span
+                        key={badge.id}
+                        title={badge.argsDigest}
+                        className={`inline-flex items-center gap-1 rounded-(--radius-sm) border px-2 py-1 text-[11px] leading-relaxed ${
+                          badge.ok === undefined
+                            ? "border-(--color-border) bg-(--color-surface) text-(--color-ink-muted)"
+                            : badge.ok
+                              ? "border-(--color-good)/20 bg-(--color-good)/10 text-(--color-good-ink)"
+                              : "border-(--color-warn)/40 bg-(--color-warn-soft)/60 text-(--color-warning-ink)"
+                        }`}
+                      >
+                        {badge.ok === undefined ? (
+                          <LoaderCircle className="size-3 shrink-0 animate-spin text-(--color-ink-muted)" aria-hidden />
+                        ) : badge.ok ? (
+                          <CircleCheck className="size-3 shrink-0" aria-hidden />
+                        ) : (
+                          <CircleAlert className="size-3 shrink-0" aria-hidden />
+                        )}
+                        <span>{badge.label}</span>
+                        {badge.ok === undefined ? (
+                          <span className="text-(--color-ink-muted)">调用中…</span>
+                        ) : badge.ok ? (
+                          badge.ms !== undefined ? <span className="tabular-nums">· {badge.ms}ms</span> : null
+                        ) : (
+                          <span>· 调用失败</span>
+                        )}
+                      </span>
                     ))}
                   </div>
                 ) : null}

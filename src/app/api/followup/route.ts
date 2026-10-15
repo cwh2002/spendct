@@ -1,0 +1,295 @@
+/**
+ * /api/followup —— 追问在线兜底端点（SSE，07 契约 §2/§13/§18 + 修订案 A9）。
+ *
+ * 与 /api/ai/chat（text/plain 纯转发）的分工：本端点承载追问面板第三路
+ * 「在线兜底」并叠加 MCP 工具层——回答以协议 §2 事件流返回：
+ *   - run:start / run:complete：会话边界（cards 恒为空数组，追问不落洞察卡；
+ *     degraded 数组记录 MCP 降级原因）；
+ *   - tool:start / tool:end：每次工具调用的起止（面板工具徽章数据源）；
+ *   - stage:thinking（stage="followup"）：回答文本增量（复用思考文案事件，
+ *     协议 20 事件封版，不新增事件类型）；
+ *   - error / abort：异常与客户端中止。
+ *
+ * 流程：
+ *   1. 若 body 带 sessionSchema 快照（07 §18 协议演示工具），先确定性调用
+ *      query_bill_db_metadata 回执（不进模型工具集，与模型决策解耦）；
+ *   2. DEMO_MODE=mock：问题命中大促关键词 → 脚本化演示流（get_promo_calendar
+ *      工具事件 + promo 档文案）；否则回 chat 兜底文案（与旧 /api/ai/chat
+ *      mock 口径一致）；
+ *   3. live：装配 MCP 三工具（连接失败整体降级并记入 degraded）→
+ *      streamChatWithTools 逐 part 映射事件。
+ *
+ * 隐私口径（07 修订案 A8 延伸）：消息里的汇总统计与最近明细快照只转发给
+ * LLM 与 MCP（账单库元数据回执只含聚合元数据），服务端零存储、不记日志。
+ */
+import { randomUUID } from "node:crypto";
+
+import { z } from "zod";
+
+import { LlmExhaustedError, mockTextStream, resolveLlmMode, streamChatWithTools } from "@/lib/llm/client";
+import { sessionSchemaSchema } from "@/lib/schema/session-schema";
+import { getFallbackTool } from "@/server/ai/mcp-fallback";
+import {
+  callMcpTool,
+  getMcpTools,
+  MCP_TOOL_TIMEOUT_MS,
+  parseToolEnvelope,
+} from "@/server/ai/mcp";
+
+export const runtime = "nodejs";
+
+const FollowupRequestSchema = z.strictObject({
+  question: z.string().min(1).max(500),
+  messages: z
+    .array(
+      z.strictObject({
+        role: z.enum(["user", "assistant"]),
+        content: z.string().min(1).max(4000),
+      }),
+    )
+    .min(1)
+    .max(20)
+    .refine(
+      (messages) => messages.reduce((total, message) => total + message.content.length, 0) <= 8000,
+      { message: "消息总长度不能超过 8000 字" },
+    ),
+  sessionSchema: sessionSchemaSchema.optional(),
+  datasetSource: z.enum(["upload", "sample"]).optional(),
+});
+
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-store",
+  Connection: "keep-alive",
+};
+
+/** mock 演示流：命中这些关键词才走大促日历工具演示，否则回兜底文案 */
+const PROMO_KEYWORDS = ["双11", "双十一", "双12", "双十二", "大促", "促销", "年货", "618"];
+
+function isPromoQuestion(question: string): boolean {
+  return PROMO_KEYWORDS.some((word) => question.includes(word));
+}
+
+/** 工具入参摘要：截断的 JSON 串，供工具徽章展示调用意图（不含敏感字段） */
+function argsDigest(args: unknown): string {
+  const text = JSON.stringify(args);
+  return text.length <= 120 ? text : `${text.slice(0, 117)}...`;
+}
+
+interface ToolCallTiming {
+  startedAt: number;
+}
+
+export async function POST(request: Request) {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return Response.json({ code: "BAD_REQUEST", message: "请求体必须是 JSON" }, { status: 400 });
+  }
+  const parsed = FollowupRequestSchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json({ code: "BAD_REQUEST", message: "参数校验失败" }, { status: 400 });
+  }
+  const { question, messages, sessionSchema, datasetSource } = parsed.data;
+
+  const encoder = new TextEncoder();
+  const runId = `fup-${randomUUID().slice(0, 8)}`;
+  const startedAt = Date.now();
+  const now = () => Date.now();
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: Record<string, unknown>) => {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+      };
+      const degraded: string[] = [];
+      // 单次回答内工具调用的起止计时：key = toolCallId（live）或工具名（确定性调用）
+      const timings = new Map<string, ToolCallTiming>();
+
+      function sendToolStart(key: string, tool: string, digest: string) {
+        timings.set(key, { startedAt: now() });
+        send({ t: "tool:start", ts: now(), runId, tool, argsDigest: digest });
+      }
+
+      function sendToolEnd(key: string, tool: string, ok: boolean, errorReason?: string) {
+        const timing = timings.get(key);
+        send({
+          t: "tool:end",
+          ts: now(),
+          runId,
+          tool,
+          ok,
+          ms: timing ? now() - timing.startedAt : 0,
+          ...(errorReason !== undefined ? { errorReason } : {}),
+        });
+        timings.delete(key);
+      }
+
+      function sendTextDelta(text: string) {
+        send({ t: "stage:thinking", ts: now(), runId, stage: "followup", text });
+      }
+
+      try {
+        send({
+          t: "run:start",
+          ts: now(),
+          runId,
+          datasetTxHash: sessionSchema?.datasetTxHash ?? null,
+          source: datasetSource ?? "sample",
+          stageOrder: [],
+        });
+
+        // —— 第 1 步：协议演示工具（确定性回执，与模型决策解耦）——
+        if (sessionSchema) {
+          sendToolStart("bill-meta", "query_bill_db_metadata", argsDigest(sessionSchema));
+          const outcome = await callMcpTool("query_bill_db_metadata", sessionSchema);
+          let envelope = parseToolEnvelope(outcome.text);
+          if (!envelope.ok && envelope.error?.code === "unavailable") {
+            // MCP 不可达 → 本地严格校验回执（L2，口径与 MCP 服务端一致）
+            envelope = parseToolEnvelope(
+              getFallbackTool("query_bill_db_metadata")?.execute(sessionSchema) ?? outcome.text,
+            );
+          }
+          sendToolEnd(
+            "bill-meta",
+            "query_bill_db_metadata",
+            envelope.ok,
+            envelope.ok ? undefined : envelope.error?.code,
+          );
+          if (!envelope.ok) degraded.push("mcp:query_bill_db_metadata");
+        }
+
+        // —— 第 2 步：回答生成（mock 演示流 / live 工具流）——
+        const mode = resolveLlmMode();
+        if (mode === "mock") {
+          if (isPromoQuestion(question)) {
+            // 脚本化演示：先模拟 get_promo_calendar 调用（演示口径与数据文件一致），
+            // 再逐片推送 promo 档文案；工具事件为演示模拟，非真实 MCP 调用
+            sendToolStart("demo-promo", "get_promo_calendar", argsDigest({ date: "2026-10-21" }));
+            await new Promise((resolve) => setTimeout(resolve, 80));
+            sendToolEnd("demo-promo", "get_promo_calendar", true);
+            const reader = mockTextStream("chat", { stage: "promo" }).getReader();
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done || request.signal.aborted) break;
+              sendTextDelta(new TextDecoder().decode(value));
+            }
+          } else {
+            const reader = mockTextStream("chat", {}).getReader();
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done || request.signal.aborted) break;
+              sendTextDelta(new TextDecoder().decode(value));
+            }
+          }
+          if (request.signal.aborted) {
+            send({ t: "abort", ts: now(), runId, reason: "client-aborted" });
+          } else {
+            send({
+              t: "run:complete",
+              ts: now(),
+              runId,
+              cards: [],
+              elapsedMs: now() - startedAt,
+              ...(degraded.length > 0 ? { degraded } : {}),
+            });
+          }
+          controller.close();
+          return;
+        }
+
+        // live：装配 MCP 工具集（连接失败 → 空工具集 + 降级记录，流照常）
+        const toolSet = await getMcpTools();
+        if (toolSet.status !== "connected") {
+          degraded.push(`mcp:${toolSet.status}:${toolSet.reason ?? "unknown"}`);
+        }
+
+        const parts = await streamChatWithTools({ messages, tools: toolSet.tools });
+        for await (const part of parts) {
+          if (request.signal.aborted) {
+            send({ t: "abort", ts: now(), runId, reason: "client-aborted" });
+            controller.close();
+            return;
+          }
+          if (part.type === "tool-call") {
+            sendToolStart(part.toolCallId, part.toolName, argsDigest(part.input));
+          } else if (part.type === "tool-result") {
+            if (part.preliminary) continue; // 多步流里的中间结果，只报最终一次
+            const envelope = parseToolEnvelope(
+              typeof part.output === "string" ? part.output : String(part.output ?? ""),
+            );
+            sendToolEnd(
+              part.toolCallId,
+              part.toolName,
+              envelope.ok,
+              envelope.ok ? undefined : envelope.error?.code,
+            );
+          } else if (part.type === "tool-error") {
+            sendToolEnd(part.toolCallId, part.toolName, false, "tool-error");
+          } else if (part.type === "text-delta") {
+            sendTextDelta(part.text);
+          } else if (part.type === "error") {
+            // 流内错误 part：把已收到的内容留在面板上，另发 error 事件收尾
+            send({
+              t: "error",
+              ts: now(),
+              runId,
+              code: "NETWORK_OFFLINE",
+              message: "在线服务流中断",
+              retryable: true,
+            });
+            controller.close();
+            return;
+          }
+        }
+        send({
+          t: "run:complete",
+          ts: now(),
+          runId,
+          cards: [],
+          elapsedMs: now() - startedAt,
+          ...(degraded.length > 0 ? { degraded } : {}),
+        });
+        controller.close();
+      } catch (error) {
+        if (request.signal.aborted) {
+          send({ t: "abort", ts: now(), runId, reason: "client-aborted" });
+        } else if (error instanceof LlmExhaustedError) {
+          send({
+            t: "error",
+            ts: now(),
+            runId,
+            code: "LLM_EXHAUSTED",
+            message: "在线服务暂不可用（未配置对应模型密钥）",
+            retryable: false,
+          });
+        } else if (error instanceof Error && error.name === "McpTimeoutError") {
+          send({
+            t: "error",
+            ts: now(),
+            runId,
+            code: "TIMEOUT",
+            message: `工具调用超时（${MCP_TOOL_TIMEOUT_MS / 1000}s）`,
+            retryable: true,
+          });
+        } else {
+          send({
+            t: "error",
+            ts: now(),
+            runId,
+            code: "NETWORK_OFFLINE",
+            message: "在线服务请求失败",
+            retryable: true,
+          });
+        }
+        controller.close();
+      }
+    },
+    cancel() {
+      // 客户端中止（面板卸载或超时）：start 内通过 request.signal 感知并收尾
+    },
+  });
+
+  return new Response(stream, { headers: SSE_HEADERS });
+}

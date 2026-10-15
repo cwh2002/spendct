@@ -25,6 +25,7 @@
 import { getDuckDB } from "@/lib/duckdb/service";
 import { fmtDate, fmtMonth, fmtYuan, numAt, valAt } from "@/lib/pipeline/stages/spec";
 import type { CategoryCode } from "@/lib/schema/bill";
+import type { SessionSchema } from "@/lib/schema/session-schema";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
 // ─────────────────────────── 公共类型 ───────────────────────────
@@ -1038,6 +1039,92 @@ export function createDuckDbDetailSnapshot(): () => Promise<Record<string, unkno
     const conn = await getDuckDB();
     const result = await conn.query(DETAIL_SNAPSHOT_SQL);
     return result.toArray() as unknown as Record<string, unknown>[];
+  };
+}
+
+/**
+ * 会话快照构建器（07 §18 协议演示工具 query_bill_db_metadata 的输入侧）：
+ * 直读 DuckDB-WASM 收集聚合元数据——行数、列 schema（information_schema.columns）、
+ * 金额列统计与类目基数。只发聚合元数据与单值样例，不发明细行；
+ * 任何一步失败返回 null（面板省略快照段，追问照常）。
+ * datasetTxHash 由面板从管线 store 注入（浏览器侧本地生成）。
+ */
+export function createDuckDbSchemaSnapshot(
+  datasetTxHash: string,
+): () => Promise<SessionSchema | null> {
+  return async () => {
+    try {
+      const conn = await getDuckDB();
+
+      const countRows = await (
+        await conn.query("SELECT COUNT(*) AS n FROM transactions")
+      ).toArray();
+      const rowCount = Number(countRows[0]?.n ?? 0);
+
+      // 列元数据：按物理列序取列名与类型，样例取首行单值（截断到 128 字）
+      const columnRows = await (
+        await conn.query(
+          "SELECT column_name, data_type FROM information_schema.columns " +
+            "WHERE table_name = 'transactions' ORDER BY ordinal_position",
+        )
+      ).toArray();
+      const firstRow =
+        rowCount > 0
+          ? ((await (await conn.query("SELECT * FROM transactions LIMIT 1")).toArray())[0] as
+              | Record<string, unknown>
+              | undefined)
+          : undefined;
+      const schema = columnRows.map((row) => {
+        const name = String(row.column_name);
+        const value = firstRow?.[name];
+        const sampleText = value === null || value === undefined ? "" : String(value);
+        return { name, type: String(row.data_type), sample: sampleText.slice(0, 128) };
+      });
+      if (schema.length === 0) return null;
+
+      // 统计：金额列数字统计 + 类目基数（列名与 MCP 工具白名单口径一致）
+      const stats: NonNullable<SessionSchema["stats"]> = [];
+      if (rowCount > 0) {
+        const amountRows = await (
+          await conn.query(
+            "SELECT MIN(amount_cents) AS mn, MAX(amount_cents) AS mx, " +
+              "ROUND(MEAN(amount_cents), 1) AS av, COUNT(DISTINCT amount_cents) AS dc FROM transactions",
+          )
+        ).toArray();
+        const amount = amountRows[0];
+        if (amount) {
+          const stat: { column: string; min?: number; max?: number; mean?: number; distinct?: number } = {
+            column: "amount_cents",
+          };
+          const mn = Number(amount.mn);
+          const mx = Number(amount.mx);
+          const av = Number(amount.av);
+          const dc = Number(amount.dc);
+          if (Number.isFinite(mn)) stat.min = mn;
+          if (Number.isFinite(mx)) stat.max = mx;
+          if (Number.isFinite(av)) stat.mean = av;
+          if (Number.isFinite(dc)) stat.distinct = dc;
+          stats.push(stat);
+        }
+        const categoryRows = await (
+          await conn.query("SELECT COUNT(DISTINCT category) AS dc FROM transactions")
+        ).toArray();
+        const categoryDistinct = Number(categoryRows[0]?.dc ?? 0);
+        if (Number.isFinite(categoryDistinct)) {
+          stats.push({ column: "category", distinct: categoryDistinct });
+        }
+      }
+
+      return {
+        table: "transactions",
+        rowCount,
+        datasetTxHash,
+        schema,
+        stats,
+      } satisfies SessionSchema;
+    } catch {
+      return null; // 快照读不到时省略该段，由面板决定是否仍转在线
+    }
   };
 }
 

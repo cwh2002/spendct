@@ -13,13 +13,15 @@ export default defineConfig({
   reporter: [["list"]],
   timeout: 120_000,
   use: {
-    baseURL: "http://localhost:3000",
+    // e2e 固定端口 3197：与本地开发常驻的 3000 实例隔离。
+    // 3000 可能以 live 模式运行（.env.local 有真实 key），mock 断言会静默失效
+    baseURL: "http://localhost:3197",
     trace: "retain-on-failure",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "pnpm dev",
-    url: "http://localhost:3000",
+    command: "pnpm exec next dev -p 3197",
+    url: "http://localhost:3197",
     reuseExistingServer: true,
     timeout: 120_000,
     // e2e 固定跑 mock：本地 .env.local 可能配了真实 DeepSeek key，

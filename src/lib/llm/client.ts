@@ -12,7 +12,7 @@ import "server-only";
 
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { generateObject, streamText } from "ai";
+import { generateObject, stepCountIs, streamText, type AsyncIterableStream, type TextStreamPart, type ToolSet } from "ai";
 import type { z } from "zod";
 
 import { pickMockText, type LlmTask } from "./mock-narratives";
@@ -105,6 +105,36 @@ function resolveModel(task: LlmTask) {
     baseURL: qwenBaseUrl(),
     apiKey,
   }).chatModel(QWEN_MODEL_ID);
+}
+
+/**
+ * 追问聊天流（带 MCP 工具，/api/followup 专用）：streamText 工具模式，
+ * 返回原始流（result.stream，v7 已由 fullStream 改名），由路由逐 part
+ * 映射为协议 §2 事件（tool:start/tool:end 与 stage:thinking 回答流）。
+ *
+ * - 工具轮次上限 stopWhen: stepCountIs(6)（07 §18 唯一值）；
+ * - 工具存在时追加调用纪律说明，防止模型为凑调用而调用；
+ * - 服务端不消费、不缓存、不落盘流内容（02 §1.2）。
+ */
+export async function streamChatWithTools(input: {
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  tools: ToolSet;
+}): Promise<AsyncIterableStream<TextStreamPart<ToolSet>>> {
+  const model = resolveModel("chat");
+  const hasTools = Object.keys(input.tools).length > 0;
+  const toolGuidance = hasTools
+    ? "\n你可以调用工具查询校历、城市天气或电商大促日历，作为消费归因的背景信息。" +
+      "只在问题确实涉及开学考试、天气或大促档期时调用，不要为凑调用而调用；" +
+      "工具结果以 JSON 信封返回（ok 字段标记成败），失败就把原因如实转述，不要假装调用成功。"
+    : "";
+  const result = streamText({
+    model,
+    instructions: TASK_INSTRUCTIONS.chat + toolGuidance,
+    messages: input.messages,
+    tools: input.tools,
+    stopWhen: stepCountIs(6),
+  });
+  return result.stream;
 }
 
 /**

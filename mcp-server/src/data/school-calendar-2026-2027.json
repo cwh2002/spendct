@@ -1,0 +1,117 @@
+{
+  "version": "2026.10",
+  "academicYear": "2026-2027",
+  "source": "教育部2026年节假日安排 + 公开高校校历汇编（清华/北大/浙大/复旦等10校，取多数区间）",
+  "events": [
+    {
+      "id": "SC-2026-11",
+      "name": "期中考试周",
+      "type": "exam_week",
+      "startDate": "2026-11-02",
+      "endDate": "2026-11-13",
+      "region": "nationwide",
+      "note": "多数高校第9-10周",
+      "source": "10校校历汇编"
+    },
+    {
+      "id": "SC-2026-cet",
+      "name": "四六级笔试（下半年）",
+      "type": "exam_week",
+      "startDate": "2026-12-12",
+      "endDate": "2026-12-12",
+      "region": "nationwide",
+      "note": "每年12月第二个周六，国家统一考试",
+      "source": "教育部考试安排"
+    },
+    {
+      "id": "SC-2027-01",
+      "name": "期末考试周",
+      "type": "exam_week",
+      "startDate": "2027-01-11",
+      "endDate": "2027-01-22",
+      "region": "nationwide",
+      "note": "寒假前1-2周",
+      "source": "10校校历汇编"
+    },
+    {
+      "id": "SC-2027-winter",
+      "name": "寒假",
+      "type": "vacation",
+      "startDate": "2027-01-23",
+      "endDate": "2027-02-28",
+      "region": "nationwide",
+      "note": "含春节 2027-02-06",
+      "source": "教育部节假日安排"
+    },
+    {
+      "id": "SC-2027-spring",
+      "name": "春季开学",
+      "type": "term_start",
+      "startDate": "2027-03-01",
+      "endDate": "2027-03-07",
+      "region": "nationwide",
+      "note": "",
+      "source": "10校校历汇编"
+    },
+    {
+      "id": "SC-2027-mid",
+      "name": "期中考试周（春季）",
+      "type": "exam_week",
+      "startDate": "2027-04-19",
+      "endDate": "2027-04-30",
+      "region": "nationwide",
+      "note": "多数高校春季学期第9-10周",
+      "source": "10校校历汇编"
+    },
+    {
+      "id": "SC-2027-cet",
+      "name": "四六级笔试（上半年）",
+      "type": "exam_week",
+      "startDate": "2027-06-12",
+      "endDate": "2027-06-12",
+      "region": "nationwide",
+      "note": "每年6月第二个周六，国家统一考试",
+      "source": "教育部考试安排"
+    },
+    {
+      "id": "SC-2027-grad",
+      "name": "毕业季",
+      "type": "graduation",
+      "startDate": "2027-06-01",
+      "endDate": "2027-06-30",
+      "region": "nationwide",
+      "note": "答辩/聚餐/租房消费高峰",
+      "source": "10校校历汇编"
+    },
+    {
+      "id": "SC-2027-final",
+      "name": "期末考试周（春季）",
+      "type": "exam_week",
+      "startDate": "2027-06-28",
+      "endDate": "2027-07-09",
+      "region": "nationwide",
+      "note": "暑假前1-2周",
+      "source": "10校校历汇编"
+    },
+    {
+      "id": "SC-2027-summer",
+      "name": "暑假",
+      "type": "vacation",
+      "startDate": "2027-07-12",
+      "endDate": "2027-08-29",
+      "region": "nationwide",
+      "note": "",
+      "source": "10校校历汇编"
+    },
+    {
+      "id": "SC-2027-autumn",
+      "name": "秋季开学",
+      "type": "term_start",
+      "startDate": "2027-08-30",
+      "endDate": "2027-09-05",
+      "region": "nationwide",
+      "note": "",
+      "source": "10校校历汇编"
+    }
+  ]
+}

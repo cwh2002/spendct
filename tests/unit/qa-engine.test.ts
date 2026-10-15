@@ -14,9 +14,12 @@
  * 5. buildDetailContext / DETAIL_SNAPSHOT_SQL（07 修订案 A8）：假行驱动的内容与
  *    截断断言、异常与空数据返回空串，以及固定 SQL 的静态口径断言（LIMIT 150、
  *    零动态拼接、不进聚合白名单的直连语句）；
- * 6. EXAMPLE_QUESTIONS：6 个示例问题非空且全部可被本地意图识别。
+ * 6. EXAMPLE_QUESTIONS：6 个示例问题非空且全部可被本地意图识别；
+ * 7. createDuckDbSchemaSnapshot（07 §18 协议演示工具入参）：mock getDuckDB
+ *    假连接按 SQL 内容分发夹具行，断言聚合元数据快照形状（无明细行、
+ *    统计口径、零行数据）与失败返回 null。
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   analyzeQuestion,
@@ -25,6 +28,7 @@ import {
   buildContextQueries,
   buildDetailContext,
   buildIntentQueries,
+  createDuckDbSchemaSnapshot,
   DETAIL_SNAPSHOT_SQL,
   EXAMPLE_QUESTIONS,
   type QaIntent,
@@ -32,6 +36,12 @@ import {
   type TimeWindow,
 } from "@/lib/chat/qa-engine";
 import { precheckAggregateSql } from "@/lib/sql-guard/whitelist";
+
+// 快照测试的假 DuckDB 连接：qa-engine 内 getDuckDB 调用全部走这里
+const getDuckDBMock = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/duckdb/service", () => ({
+  getDuckDB: getDuckDBMock,
+}));
 
 // ─────────────────────────── 测试工具 ───────────────────────────
 
@@ -782,5 +792,70 @@ describe("buildDetailContext / DETAIL_SNAPSHOT_SQL", () => {
     expect(DETAIL_SNAPSHOT_SQL).not.toContain("${");
     // 直连语句不经聚合白名单，本测试不调用 precheckAggregateSql（该语句会被
     // 白名单的「明细列禁投影」拒绝，正说明它不在聚合通道内）
+  });
+});
+
+describe("createDuckDbSchemaSnapshot 会话快照（07 §18 协议演示工具入参）", () => {
+  // 指纹口径与导入层 hashCleanRows 一致：SHA-256 前 16 位十六进制
+  const TX_HASH = "a".repeat(16);
+
+  beforeEach(() => {
+    getDuckDBMock.mockReset();
+  });
+
+  /** 假 DuckDB 连接：按 SQL 内容分发夹具行；overrides 可覆盖特定关键字的返回 */
+  function fakeConnection(overrides: Record<string, unknown[]> = {}) {
+    const rowsFor = (sql: string): unknown[] => {
+      for (const [keyword, rows] of Object.entries(overrides)) {
+        if (sql.includes(keyword)) return rows;
+      }
+      if (sql.includes("COUNT(*) AS n")) return [{ n: 3 }];
+      if (sql.includes("information_schema")) {
+        return [
+          { column_name: "amount_cents", data_type: "BIGINT" },
+          { column_name: "category", data_type: "VARCHAR" },
+        ];
+      }
+      if (sql.includes("LIMIT 1")) return [{ amount_cents: 1234n, category: "餐饮" }];
+      if (sql.includes("MIN(amount_cents)")) return [{ mn: 100, mx: 9999, av: 3200.5, dc: 3 }];
+      if (sql.includes("COUNT(DISTINCT category)")) return [{ dc: 2 }];
+      return [];
+    };
+    return { query: async (sql: string) => ({ toArray: async () => rowsFor(sql) }) };
+  }
+
+  it("读出聚合元数据快照：表名/行数/哈希/列元数据/统计，不含明细行", async () => {
+    getDuckDBMock.mockResolvedValue(fakeConnection());
+    await expect(createDuckDbSchemaSnapshot(TX_HASH)()).resolves.toEqual({
+      table: "transactions",
+      rowCount: 3,
+      datasetTxHash: TX_HASH,
+      schema: [
+        { name: "amount_cents", type: "BIGINT", sample: "1234" },
+        { name: "category", type: "VARCHAR", sample: "餐饮" },
+      ],
+      stats: [
+        { column: "amount_cents", min: 100, max: 9999, mean: 3200.5, distinct: 3 },
+        { column: "category", distinct: 2 },
+      ],
+    });
+  });
+
+  it("连接抛错 → null（面板按省略处理，不阻断在线兜底）", async () => {
+    getDuckDBMock.mockRejectedValue(new Error("WASM 未就绪"));
+    await expect(createDuckDbSchemaSnapshot(TX_HASH)()).resolves.toBeNull();
+  });
+
+  it("列元数据为空 → null", async () => {
+    getDuckDBMock.mockResolvedValue(fakeConnection({ information_schema: [] }));
+    await expect(createDuckDbSchemaSnapshot(TX_HASH)()).resolves.toBeNull();
+  });
+
+  it("零行数据：schema 仍读出，stats 为空数组", async () => {
+    getDuckDBMock.mockResolvedValue(fakeConnection({ "COUNT(*) AS n": [{ n: 0 }] }));
+    const snapshot = await createDuckDbSchemaSnapshot(TX_HASH)();
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.rowCount).toBe(0);
+    expect(snapshot?.stats).toEqual([]);
   });
 });

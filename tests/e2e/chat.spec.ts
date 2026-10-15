@@ -1,7 +1,8 @@
 /**
- * 追问面板问答动线端到端：真实账单的本地回答 + 空数据集的闲聊与示例问题入口。
+ * 追问面板问答动线端到端：真实账单的本地回答 + 空数据集的闲聊与示例问题入口
+ * + 在线兜底的工具徽章动线。
  *
- * 两条动线：
+ * 三条动线：
  * 1. 真实账单：/upload?sample=1 自动装配内置账单 → 「开始体检」跑真实管线 →
  *    自动跳转洞察页（写法与 pipeline.spec.ts 全动线一致），随后在追问面板
  *    输入两个账单问题，验证回答直接来自本地账单数据，且「类目支出 ≤ 总支出」。
@@ -9,6 +10,10 @@
  *    面板空态的示例问题 chips 可点击提问、闲聊输入走问候文案，且无数据时
  *    本地认识与不认识的账单问法都回「还没有账单数据」引导文案（不空手转在线），
  *    并确认旧版写死的占位回答文案及其固定数字不再出现在页面上。
+ * 3. 在线兜底（DEMO_MODE=mock 的确定性演示流）：真实账单装配后提问大促关键词
+ *    问题（本地意图不识别）→ 面板经 /api/followup（SSE）收到脚本化工具事件与
+ *    promo 档文案，回答气泡挂「在线生成」脚注与工具徽章（账单库元数据回执 +
+ *    大促日历两枚，徽章来自 tool:start/tool:end 事件而非模型文本）。
  *
  * 数据真实性约束：本文件不硬编码任何金额或笔数——金额一律从回答气泡里
  * 用正则解析，再做关系校验；旧版占位文案按整页断言排除。
@@ -135,5 +140,47 @@ test("空数据集：示例问题 chips 与闲聊分流动线", async ({ page })
   await expect(page.locator("body")).not.toContainText("42 笔");
 
   // 7) 全程零 console error
+  expect(errors).toEqual([]);
+});
+
+test("在线兜底：大促关键词问题挂工具徽章与在线生成脚注（mock 演示流）", async ({ page }) => {
+  const errors = collectConsoleErrors(page);
+
+  // 1) 与第一动线相同的真实账单装配：先落库，避免追问转在线时拿不到上下文
+  await page.goto("/upload?sample=1");
+  await page.getByRole("button", { name: "开始体检" }).click();
+  await expect(page).toHaveURL(/\/checkup/, { timeout: 60_000 });
+  await expect(page).toHaveURL(/\/insights/, { timeout: 120_000 });
+  await expect(page.locator("[id^='insight-card_']").first()).toBeVisible({ timeout: 60_000 });
+
+  const panel = page.locator(PANEL);
+  const input = page.getByLabel("追问输入框");
+  await expect(input).toBeVisible();
+
+  // 2) 大促关键词问题：本地意图不识别 → 在线兜底（DEMO_MODE=mock 走脚本化
+  //    演示流）。回答文案来自 mock promo 档叙事（数字与大促日历数据文件一致）。
+  //    「预热期」只出现在回答里（用户提问气泡不含），以此为回答气泡锚点
+  await input.fill("双11 大促期间我该怎么规划消费");
+  await input.press("Enter");
+  const promoBubble = panel.getByText(/预热期/).last();
+  await expect(promoBubble).toBeVisible({ timeout: 20_000 });
+  const promoText = await promoBubble.innerText();
+  expect(promoText).toContain("双11");
+  expect(promoText).toContain("10 月 20 日");
+
+  // 3) 在线来源脚注（数据口径声明，不是模型文本）
+  await expect(panel.getByText("在线生成 · 已发送明细与统计").first()).toBeVisible();
+
+  // 4) 工具徽章两枚：账单元数据回执（确定性调用）+ 大促日历（演示工具事件）。
+  //    徽章展示名来自工具注册表（getToolLabel），与 SSE 事件里的真实工具名分离
+  await expect(panel.getByText("账单库元数据回执").first()).toBeVisible();
+  await expect(panel.getByText("大促日历").first()).toBeVisible();
+
+  // 5) 旧版写死的占位回答文案与固定数字不得出现在整页任何位置
+  await expect(page.locator("body")).not.toContainText("内置回答");
+  await expect(page.locator("body")).not.toContainText("1,286 元");
+  await expect(page.locator("body")).not.toContainText("42 笔");
+
+  // 6) 全程零 console error
   expect(errors).toEqual([]);
 });

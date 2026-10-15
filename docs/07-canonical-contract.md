@@ -3,9 +3,9 @@
 | 项目 | 内容 |
 | --- | --- |
 | 文档编号 | 07（docs/07-canonical-contract.md） |
-| 版本 | v1.2（并入 08《功能扩展方案》修订案 A1-A8；A8 于 2026-10-14 裁决） |
+| 版本 | v1.3（并入 08《功能扩展方案》修订案 A1-A9；A9 于 2026-10-15 裁决） |
 | 日期 | 2026-10-14 |
-| 状态 | 最终裁决：本文档取代 01-06 全部冲突表述，是后续一切编码的唯一权威；v1.1 起并入 08《功能扩展方案》修订案 A1-A7，v1.2 起并入修订案 A8（追问在线兜底明细出口，§18）（均为增量修订，不推翻既有裁决），08 其余内容与本文档冲突时以本文档为准 |
+| 状态 | 最终裁决：本文档取代 01-06 全部冲突表述，是后续一切编码的唯一权威；v1.1 起并入 08《功能扩展方案》修订案 A1-A7，v1.2 起并入修订案 A8（追问在线兜底明细出口，§18），v1.3 起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19）（均为增量修订，不推翻既有裁决），08 其余内容与本文档冲突时以本文档为准 |
 | 维护 | 总仲裁人；任何一方修改契约字段必须同步更新本文档并重跑对应回归 |
 
 ---
@@ -19,7 +19,7 @@
 1. 任何文档与本文档冲突 → **以本文档为准**，且不视为推翻产品定义（产品定义 2026-10-13 版仍为不可推翻的上位事实）。
 2. 本文档未覆盖的细节 → 以原文档为准（01=技术栈与性能预算、02=隐私与数据、03=流水线、04=RAG/MCP、05=交互、06=日程、08=功能扩展增量方案中未被 A1-A7 覆盖的部分）。
 3. 引用格式：改动索引中 `#N` 指第 N 条评审问题，`§K` 指本文档第 K 个契约条目。
-4. 自 v1.1（2026-10-13）起，08《功能扩展方案》的修订案 A1-A7 并入本文档；v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18）：各条目内新增的「08 修订案」小节属于权威定义的一部分（§21 为索引）；修订案为增量，不推翻既有裁决。
+4. 自 v1.1（2026-10-13）起，08《功能扩展方案》的修订案 A1-A7 并入本文档；v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18）；v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19）：各条目内新增的「08 修订案」小节属于权威定义的一部分（§21 为索引）；修订案为增量，不推翻既有裁决。
 
 ### 0.2 六条裁决原则
 
@@ -604,6 +604,21 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - 该请求首条消息 = 「汇总统计（≤2000 字）+ 最近 150 笔明细快照（≤3000 字，随汇总段长度让出预算）」+ 最近对话历史，明细口径见 §18 修订案 A8。
 - **实现收口说明（真实优先）**：交付代码实际部署两条 API 路由——`/api/ai/chat`（追问对话流式转发）与 `/api/ai/task`（四个短任务）；六阶段流水线、白名单 SQL、追问的本地回答全部在浏览器内确定性执行，本表其余端点由客户端实现吸收。README / PDF 的构建口径按「17 路由（14 静态 + 2 API + not-found）」表述，与本条一致。
 
+### 08 修订案 A9（2026-10-15）：在线兜底端点落位 /api/followup（SSE + 工具事件）
+
+**新裁决**：追问面板的在线兜底从「POST /api/ai/chat 纯转发流」改为「POST /api/followup（SSE，协议 §2 + tool 事件）」承载——`/api/followup` 按请求体字段区分两种模式（带追问上下文 = 锚点追问 PEO；带 `question` + `messages` = 在线兜底），在线兜底叠加 MCP 工具层。`/api/ai/chat` 保留，职责收窄为「LLM 文本流式端点（text/plain）」——现仅被 /budget 页预算建议的 live 流式使用，不再承载追问面板。
+
+**在线兜底事件契约（唯一实现 `src/app/api/followup/route.ts`，帧格式 `data: JSON\n\n`）**：
+
+- `run:start{datasetTxHash?,source,stageOrder:[]}` → 每次工具调用起止 `tool:start{tool,argsDigest}` / `tool:end{tool,ok,ms,errorReason?}`（面板工具徽章数据源，§18 A9）→ 回答文本增量 `stage:thinking{stage:"followup",text}`（复用 §2 思考文案事件——协议 20 事件封版，不新增事件类型）→ `run:complete{cards:[],elapsedMs,degraded?}`（cards 恒为空数组，追问不落洞察卡；degraded 记录 MCP 降级原因）；异常 `error{code,message,retryable}`；客户端中止 `abort{reason:"client-aborted"}`。
+- 请求体（zod 严格校验）：`{ question(≤500), messages(1-20 条，每条 ≤4000 字、总长 ≤8000 字), sessionSchema?（§18 协议演示工具快照）, datasetSource?("upload"|"sample") }`。
+- `sessionSchema` 存在时，路由先确定性调用 `query_bill_db_metadata` 回执（不进模型工具集，与模型决策解耦）；DEMO_MODE=mock 时问题命中大促关键词（§18 A9）走脚本化演示流，live 时装配 MCP 三工具连接 `streamChatWithTools` 逐 part 映射事件。
+- 隐私口径（A8 延伸）：消息里的汇总统计与最近明细快照只转发给 LLM 与 MCP（元数据回执只含聚合元数据），服务端零存储、不记日志。
+
+**本条同时更新 A8 的实现收口说明**：交付代码实际部署的 API 路由为 5 条——followup / rag / mcp/[tool] / ai/chat / ai/task（六阶段流水线、白名单 SQL、追问本地回答均在浏览器内确定性执行；health / pipeline/stage / ocr 端点由客户端实现吸收或未接线）；README / PDF 的构建口径按「19 路由（13 静态页 + 5 API + not-found）」表述，以本条为准。
+
+**理由**：A8 的纯转发流让追问面板「在线兜底」与「MCP 工具」割裂为两条路径（工具徽章、降级归因无处安放）；归入 `/api/followup` 后，追问面板三路回答（本地规则 / 本地 LLM / 在线兜底）共用同一 SSE 事件面，工具徽章与降级声明按 §18 A9 单一实现。
+
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
 - 四套清单（#47）：01 六条 vs 03 `/api/ai/*`+轮询 vs 06 `/api/chat` vs 04 session/schema。
@@ -791,6 +806,17 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 
 **理由**：本地规则只能回答九类固定问题，超出覆盖面的追问（如自由分析）此前因模型拿不到数据而答非所问；放开明细快照后模型能基于真实数据回答。隐私边界从「LLM 只见聚合」调整为「LLM 见聚合 + 最多 150 笔明细快照、服务端零存储」，符合原则①真实优先（承诺与出口一致）。
 
+### 08 修订案 A9（2026-10-15）：在线兜底 SSE 契约与工具徽章
+
+**新裁决**：在线兜底（§13 A9）期间的 MCP 工具调用以 SSE `tool:start/tool:end` 事件流下发，面板渲染三态工具徽章（唯一实现 `src/components/insights/follow-up-panel.tsx` + 展示名单一来源 `src/lib/tools/registry.ts`）：
+
+- 徽章生命周期：`tool:start` 生成徽章（spinner + 「调用中…」）；同名工具的 `tool:end` 按后进先出配对（findLastIndex，同名多轮调用不串台）补 `ok/ms/errorReason`——成功显「✓ · {ms}ms」、失败显「⚠ 调用失败」；`argsDigest`（截断 ≤120 字的入参 JSON 摘要，不含敏感字段）作为悬浮 title 展示调用意图；
+- 展示名单一来源：`getToolLabel()` 先查注册表（短名/真实名），次查 EXTRA_TOOL_LABELS 补表（`query_bill_db_metadata` → 「账单库元数据回执」），最后回原名；
+- 降级声明：MCP 连接失败整体降级时记入 `run:complete.degraded`，面板按既有降级文案展示「在线生成」脚注与外部数据不可用声明（04 §8.5 行为约定不变：不虚构任何外部数据）；
+- mock 演示流：`PROMO_KEYWORDS`（双11/双12/大促/促销/年货/618 等）命中 → 脚本化 `get_promo_calendar` 工具事件对 + promo 档文案（演示稳定第一，与 06 视频脚本口径一致）。
+
+**与旧口径的关系**：本修订案只规定在线兜底路径的工具事件面；锚点追问 PEO 的既有契约（§18 权威定义）与浏览器直读工具（duckdb_meta / run_browser_sql）不变。
+
 ---
 
 ## 19. AI SDK 使用纪律（唯一）
@@ -804,6 +830,18 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 - **zod 全仓唯一 zod@4.6.7**：`z.strictObject` 为注入防护第 2 层闸门；02 的「zod@3」字样与 v3 风格代码删除（#12、#70）；01 锁表补 `zod-to-json-schema` 版本。
 - **Provider 包**：`@ai-sdk/deepseek@3.0.63`、`@ai-sdk/openai-compatible@3.0.67`（SiliconFlow 与智谱 GLM-4V 均经此包），精确锁定。
 - **MCP 客户端**：以 ai@7.0.137 实际导出的 MCP client 名称为准（`experimental_createMCPClient` 或已转正名），W4D1 spike 结论回写 01/04（#17 fixHint）。
+
+### 08 修订案 A9（2026-10-15）：MCP 客户端 spike 结论回写
+
+**新裁决**：W4D1 spike 实测（npm registry 装包 + 运行时枚举导出）：**ai@7.0.137 不导出任何 MCP 客户端**（`experimental_createMCPClient` 不存在，亦无转正名）。接入层改为基于 `@modelcontextprotocol/sdk@1.32.1`（锁死小版本，协议 2025-11-25）客户端自建（`src/server/ai/mcp.ts`）：`Client`（client/index.js）+ `StreamableHTTPClientTransport`（client/streamableHttp.js）；连接超时 5s、连接失败 30s 冷却、单工具超时 4s、指数退避 1s/2s/4s、连续失败 2 次移出工具集（04 §11 口径不变）。
+
+**ai@7.0.137 工具装配实测口径（回写 04 §9.4）**：
+
+- `tool()` 的 `inputSchema` 要求 FlexibleSchema——**原始 JSON Schema 对象不能直接传**，MCP `tools/list` 返回的 inputSchema 须经 `jsonSchema()`（从 "ai" 导出）包装后透传；
+- `dynamicTool` 注释明示专为「运行时才知 schema」的 MCP 场景设计，但本仓采用「`jsonSchema()` 包装 + 普通 `tool()`」路径（类型更精确、execute 入参有推断）；
+- SDK `callTool` 返回类型在 tsgo 下解析为 unknown（zod 推导的递归联合），须以运行时守卫提取 text 分片与 isError 标记（`extractToolText` / `isToolErrorResult`），不依赖类型层。
+
+**与旧口径的关系**：本条回填 §19 预留的 spike 结论落点，不改变「MCP 客户端只存在于 AI 接入层、浏览器只与 Next.js 通信」的既有裁决。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -843,6 +881,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 8. §8 性能基准表保留为唯一预算源，LCP 调整为 2.5s、补 RAG P95<900ms（#23、#56）。
 13. §8/§16 RAG P95 预算按 2026-10-15 实测修订：稳态 P95<2.5s、冷启动首查<6s（一次性）、TF-IDF<100ms；原 <900ms 的 Stage3 重排预估（150-400ms/30 对）实测约 1.9s（本地 CPU q8 交叉编码），修订明细与数据见 docs/eval-rag.md §3（RAG 金标评测数字回填收口）。
 9. e2e 用例标注所属周次，W2 仅覆盖 clean/profile/anomaly 三阶段（#76）。
+10. §1.4 AI SDK 纪律：MCP 客户端接入方式按 §19 A9 收口（ai@7.0.137 无 MCP 客户端导出 → `@modelcontextprotocol/sdk` 客户端自建接入层 `src/server/ai/mcp.ts`）。
 10. 附录 A 环境变量补 `QWEATHER_API_KEY`、`SILICONFLOW_API_KEY`（#69）；补 06 缺失键对照（§12）。
 11. 浏览器端推理叙事（#25）：Transformers.js 标注为 P2 可选「断网商户分类」，未实现则不在材料中宣称推理能力，只讲「DuckDB-WASM 浏览器端计算」。
 12. 版本对应关系表记录 01-07 各文档版本号（#75）。
@@ -888,6 +927,10 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 8. §11.1 maxToolRoundtrips/stepCountIs(6) 保留，与 §18 常量表互引（#21）。
 9. §13 里程碑日期改为引用 06（MCP gate 11/6、评测 11/7+，11/10-17 最终评测）（#61）。
 10. §14 费用预算保持；案例库 schema 增加社会议题证据字段的落点说明（legalBasis 扩展，供 PDF 第 8 章数据图）（#19）。
+11. §9.4 代码骨架按 §19 A9 spike 结论重写：ai@7.0.137 无 MCP 客户端 → SDK Client 自建接入层 + `jsonSchema()` 包装透传；§1.1/§8.0 架构图同步（#17 收口）。
+12. §8.4 表枚举与快照指纹口径按实现收口：枚举 `transactions|merchants`；`datasetTxHash` = 导入层 `hashCleanRows` 的 SHA-256 前 16 位十六进制（regex `^[0-9a-f]{16,64}$`，与 mcp-server 侧 schema 镜像一致）。
+13. §9 末尾新增 §9.6「上线收口（2026-10-15 实测）」：接入层、L1→L2 回退双轨、事件契约、测试证据的实测落点；README / PDF 口径以该块为准。
+14. §8.5 信封 `meta` 增加 `generatedAt` 时间戳字段（回退与 MCP 两侧实现一致），错误码集合不变。
 
 ### 05-uiux.md
 
@@ -935,10 +978,11 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 | A6 | §13 | 端点 6 → 7：新增 `/api/ai/task`（taskId 判别联合）；「唯一 LLM 出口」扩展为三路由 |
 | A7 | §14 | 路由 7 → 10（+`/budget` `/learn` `/settings`）；组件注册表 13 → 19（+6 组件，两级注册：可复用 19 个全名登记 + 页面级按 05 §2.2 单列）；**分档口径（08 §1.2）：省赛提交版本 = 9 条路由 + 3 个 P2「即将上线」角标，国赛窗口补齐 10 条** |
 | A8 | §18（§5/§6/§13 边界注记） | 追问在线兜底发送「汇总统计 + 最近 150 笔明细快照」（固定 SQL 直连、LIMIT 150、/api/ai/chat 转发、服务端零存储） |
+| A9 | §13/§18/§19 | MCP 工具链上线收口：在线兜底落位 /api/followup（SSE + tool 事件，/api/ai/chat 职责收窄）；工具徽章三态契约与展示名单一来源；ai@7.0.137 无 MCP 客户端 spike 结论回写（SDK Client 自建 + jsonSchema 包装透传 + callTool 运行时守卫） |
 | — | §4 | ChartSpec 枚举不扩展；四大静态图表组件裁决（08 §④ 补记） |
 
 - **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）。
 
 ---
 
-*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
+*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
