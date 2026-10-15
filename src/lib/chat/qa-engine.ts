@@ -497,8 +497,8 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
 
 // ─────────────────────────── 金额与文案工具 ───────────────────────────
 
-/** 金额展示：整数分 → 「¥X.XX 元」字符串（负数写作 -¥X.XX 元） */
-function yuanText(cents: number): string {
+/** 金额展示：整数分 → 「¥X.XX 元」字符串（负数写作 -¥X.XX 元）。导出供 deep-analysis（A14）共用 */
+export function yuanText(cents: number): string {
   return cents < 0 ? `-¥${fmtYuan(Math.abs(cents))} 元` : `¥${fmtYuan(cents)} 元`;
 }
 
@@ -512,13 +512,13 @@ function sumAt(rows: Record<string, unknown>[], index: number): number {
   return rows.reduce((sum, row) => sum + numAt(row, index), 0);
 }
 
-/** 把 SqlRunner 的 unknown[] 结果收窄为行对象数组（DuckDB 聚合结果行均为对象） */
-function asRowList(rows: unknown[]): Record<string, unknown>[] {
+/** 把 SqlRunner 的 unknown[] 结果收窄为行对象数组（DuckDB 聚合结果行均为对象）。导出供 deep-analysis（A14）共用 */
+export function asRowList(rows: unknown[]): Record<string, unknown>[] {
   return rows as Record<string, unknown>[];
 }
 
-/** 商户名展示：空值归并为「未注明商户」（聚合结果里 merchant 可能为 null） */
-function merchantName(value: unknown): string {
+/** 商户名展示：空值归并为「未注明商户」（聚合结果里 merchant 可能为 null）。导出供 deep-analysis（A14）共用 */
+export function merchantName(value: unknown): string {
   const name = String(value ?? "").trim();
   return name === "" ? "未注明商户" : name;
 }

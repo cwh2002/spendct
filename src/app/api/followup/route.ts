@@ -22,8 +22,10 @@
  *   3. live：装配 MCP 三工具（连接失败整体降级并记入 degraded）→
  *      streamChatWithTools 逐 part 映射事件。
  *
- * 隐私口径（08 修订案 A8 延伸）：消息里的汇总统计与最近明细快照只转发给
- * LLM 与 MCP（账单库元数据回执只含聚合元数据），服务端零存储、不记日志。
+ * 隐私口径（08 修订案 A8/A14 延伸）：消息里的汇总统计与最近明细快照只转发给
+ * LLM 与 MCP（账单库元数据回执只含聚合元数据），服务端零存储、不记日志；
+ * 深度分析模式（analysisMode="deep"）发送全期统计与最近明细两条上下文，
+ * 出口与本端点既有口径一致，不新增任何数据出口。
  */
 import { randomUUID } from "node:crypto";
 
@@ -60,6 +62,8 @@ const FollowupRequestSchema = z.strictObject({
     ),
   sessionSchema: sessionSchemaSchema.optional(),
   datasetSource: z.enum(["upload", "sample"]).optional(),
+  /** 深度分析模式（08 修订案 A14）：mock 走 deep 档演示流，live 追加深度分析指令 */
+  analysisMode: z.enum(["standard", "deep"]).optional(),
 });
 
 const SSE_HEADERS = {
@@ -102,7 +106,7 @@ export async function POST(request: Request) {
   if (!parsed.success) {
     return Response.json({ code: "BAD_REQUEST", message: "参数校验失败" }, { status: 400 });
   }
-  const { question, messages, sessionSchema, datasetSource } = parsed.data;
+  const { question, messages, sessionSchema, datasetSource, analysisMode } = parsed.data;
 
   const encoder = new TextEncoder();
   const runId = `fup-${randomUUID().slice(0, 8)}`;
@@ -157,7 +161,8 @@ export async function POST(request: Request) {
         // 展示层增强，任何异常都不阻断主回答流
         const mode = resolveLlmMode();
         if (mode === "mock") {
-          const plan = mockAssistantPlan(isPromoQuestion(question));
+          // 深度分析演示档用通用计划（deep 档文案不涉及大促工具，避免计划与徽章脱节）
+          const plan = mockAssistantPlan(!(analysisMode === "deep") && isPromoQuestion(question));
           send({ t: "plan", ts: now(), runId, goal: plan.goal, steps: plan.steps });
         } else if (!request.signal.aborted) {
           try {
@@ -205,7 +210,16 @@ export async function POST(request: Request) {
 
         // —— 第 2 步：回答生成（mock 演示流 / live 工具流，mode 已在第 0 步判定）——
         if (mode === "mock") {
-          if (isPromoQuestion(question)) {
+          if (analysisMode === "deep") {
+            // 深度分析演示档（08 修订案 A14）：脚本化文案演示产品口径，
+            // 不虚构具体账单数字——DEMO_MODE=mock 下与真实动线口径明确区分
+            const reader = mockTextStream("chat", { stage: "deep" }).getReader();
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done || request.signal.aborted) break;
+              sendTextDelta(new TextDecoder().decode(value));
+            }
+          } else if (isPromoQuestion(question)) {
             // 脚本化演示：先模拟 get_promo_calendar 调用（演示口径与数据文件一致），
             // 再逐片推送 promo 档文案；工具事件为演示模拟，非真实 MCP 调用
             sendToolStart("demo-promo", "get_promo_calendar", argsDigest({ date: "2026-10-21" }));
@@ -247,7 +261,11 @@ export async function POST(request: Request) {
           degraded.push(`mcp:${toolSet.status}:${toolSet.reason ?? "unknown"}`);
         }
 
-        const parts = await streamChatWithTools({ messages, tools: toolSet.tools });
+        const parts = await streamChatWithTools({
+          messages,
+          tools: toolSet.tools,
+          deep: analysisMode === "deep",
+        });
         for await (const part of parts) {
           if (request.signal.aborted) {
             send({ t: "abort", ts: now(), runId, reason: "client-aborted" });

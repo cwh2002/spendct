@@ -15,6 +15,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { generateObject, stepCountIs, streamText, type AsyncIterableStream, type TextStreamPart, type ToolSet } from "ai";
 import type { z } from "zod";
 
+import { resolveLocalEndpoint } from "./endpoint-config";
 import { pickMockText, type LlmTask } from "./mock-narratives";
 
 export { LLM_TASKS } from "./mock-narratives";
@@ -67,7 +68,10 @@ export function resolveLlmMode(): "live" | "mock" {
   if (process.env.DEMO_MODE === "mock") return "mock";
   const hasDeepseek = Boolean(process.env.DEEPSEEK_API_KEY?.trim());
   const hasQwen = Boolean(qwenApiKey());
-  if (!hasDeepseek && !hasQwen) return "mock";
+  // 本地大模型端点（A14）也算 live：chat 任务走本地端点，其余任务缺 key 时
+  // 仍由路由层抛 LlmExhaustedError 转模板兜底（降级链口径不变）
+  const hasLocalEndpoint = Boolean(resolveLocalEndpoint());
+  if (!hasDeepseek && !hasQwen && !hasLocalEndpoint) return "mock";
   return "live";
 }
 
@@ -97,6 +101,19 @@ const TASK_INSTRUCTIONS: Record<LlmTask, string> = {
 /** 按路由表取模型；对应 key 缺失抛 LlmExhaustedError */
 function resolveModel(task: LlmTask) {
   if (DEEPSEEK_TASKS.includes(task)) {
+    // 本地大模型端点（A14）：仅 chat 任务可被接管，其余 DeepSeek 任务
+    // （narrative / annual-story / assistant-plan）路由不变
+    if (task === "chat") {
+      const local = resolveLocalEndpoint();
+      if (local) {
+        return createOpenAICompatible({
+          name: "local",
+          baseURL: local.baseURL,
+          // 本地端点多免鉴权；SDK 要求 apiKey 字段，缺省时用占位值满足协议
+          apiKey: local.apiKey ?? "local",
+        }).chatModel(local.model);
+      }
+    }
     const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
     if (!apiKey) throw new LlmExhaustedError(task);
     return createDeepSeek({
@@ -122,9 +139,15 @@ function resolveModel(task: LlmTask) {
  * - 工具存在时追加调用纪律说明，防止模型为凑调用而调用；
  * - 服务端不消费、不缓存、不落盘流内容（02 §1.2）。
  */
+/** 深度分析（A14）追加的指令：与 chat 基础指令拼接，放开「三句以内」的简答限制 */
+const DEEP_INSTRUCTION_SUFFIX =
+  "\n用户开启了深度分析：请结合用户消息里提供的账单全期统计与最近明细，给出深入、结构化的分析（可分段展开），数字必须来自输入数据，绝不编造；统计口径以输入内容为准，不要自行改算。";
+
 export async function streamChatWithTools(input: {
   messages: Array<{ role: "user" | "assistant"; content: string }>;
   tools: ToolSet;
+  /** 深度分析模式（A14）：指令放开简答限制，要求结构化展开 */
+  deep?: boolean;
 }): Promise<AsyncIterableStream<TextStreamPart<ToolSet>>> {
   const model = resolveModel("chat");
   const hasTools = Object.keys(input.tools).length > 0;
@@ -135,7 +158,7 @@ export async function streamChatWithTools(input: {
     : "";
   const result = streamText({
     model,
-    instructions: TASK_INSTRUCTIONS.chat + toolGuidance,
+    instructions: TASK_INSTRUCTIONS.chat + (input.deep ? DEEP_INSTRUCTION_SUFFIX : "") + toolGuidance,
     messages: input.messages,
     tools: input.tools,
     stopWhen: stepCountIs(6),

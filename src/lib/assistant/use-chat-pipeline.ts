@@ -20,7 +20,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { buildHistoryMessages, MESSAGE_BUDGET, ONLINE_CONTEXT_PREFIX } from "@/lib/assistant/chat-context";
+import { buildHistoryMessages, DEEP_CONTEXT_PREFIX, DETAIL_CONTEXT_PREFIX, MESSAGE_BUDGET, MESSAGE_MAX_LENGTH, ONLINE_CONTEXT_PREFIX } from "@/lib/assistant/chat-context";
 import { checkChatInput, GUARD_BLOCKED_REPLY } from "@/lib/assistant/input-guard";
 import { streamFollowup, type FollowupPlanStep } from "@/lib/assistant/stream-followup";
 import {
@@ -35,6 +35,7 @@ import {
   EXAMPLE_QUESTIONS,
   type QaIntent,
 } from "@/lib/chat/qa-engine";
+import { buildDeepAnalysisContext } from "@/lib/chat/deep-analysis";
 import { searchLocalCases } from "@/lib/assistant/local-cases";
 import { classifySmallTalk, SMALL_TALK_ANSWER } from "@/lib/llm/small-talk";
 import { usePipeline } from "@/lib/pipeline/store";
@@ -70,8 +71,12 @@ export interface ChatTurn {
   id: number;
   role: "user" | "assistant";
   text: string;
-  /** 回答来源脚注：local＝本地规则；cases＝本地案例库；live＝在线服务 */
-  note?: "local" | "cases" | "live";
+  /** 回答来源脚注：local＝本地规则；cases＝本地案例库；live＝在线服务；deep＝深度分析（A14） */
+  note?: "local" | "cases" | "live" | "deep";
+  /** 在线回答实际发送了账单统计段（live/deep 脚注按组合标注实际发送内容） */
+  sentStats?: boolean;
+  /** 在线回答实际发送了账单明细分（与 sentStats 组合决定脚注文案） */
+  sentDetails?: boolean;
   /** 闲聊定稿回答（打招呼/询问身份）：不挂任何来源脚注 */
   smallTalk?: boolean;
   /** 输入被闸门拦截（A12）：气泡挂拦截脚注 */
@@ -101,20 +106,22 @@ function onlineFallbackTipText(): string {
   return `这个问题需要连接在线服务才能回答。可以先试试下面这些问题：\n${lines.join("\n")}`;
 }
 
-/** 在线兜底携带的最近对话轮数上限 */
-const HISTORY_TURNS = 10;
-
 /** 在线请求超时（毫秒）：超时即中止并落本地提示，避免思考态卡死面板 */
 const ONLINE_TIMEOUT_MS = 30_000;
-
-/** 在线接口的单条消息长度上限（与 /api/followup 参数校验同口径） */
-const MESSAGE_MAX_LENGTH = 4000;
 
 export interface ChatPipeline {
   turns: ChatTurn[];
   thinking: ChatThinkingState | null;
-  /** 提交一条问题（非空、已 trim）；anchor 供槽位补全，可传 null */
-  submit(text: string, anchor: { id: string; label: string } | null): Promise<void>;
+  /**
+   * 提交一条问题（非空、已 trim）；anchor 供槽位补全，可传 null。
+   * options.deep（A14）：跳过本地规则与案例检索，直接走在线兜底并携带
+   * 全期统计上下文——由追问面板的「深度分析」开关逐次传入。
+   */
+  submit(
+    text: string,
+    anchor: { id: string; label: string } | null,
+    options?: { deep?: boolean },
+  ): Promise<void>;
   /** 清空会话（智能助理「新对话」按钮） */
   reset(): void;
 }
@@ -167,9 +174,23 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
     setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, text } : turn)));
   }
 
-  /** 整段流结束后挂上在线来源脚注 */
-  function markTurnLive(turnId: number) {
-    setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, note: "live" } : turn)));
+  /**
+   * 整段流结束后挂上在线来源脚注（深度分析挂 deep 脚注，其余挂 live），
+   * 并记录实际发送的账单数据段组合：统计/明细按各自查询结果条件发送，
+   * 脚注必须如实标注「已发送账单统计」「已发送账单明细」或两者都在时的合称
+   */
+  function markTurnOnline(
+    turnId: number,
+    deep: boolean,
+    sent: { stats: boolean; details: boolean },
+  ) {
+    setTurns((prev) =>
+      prev.map((turn) =>
+        turn.id === turnId
+          ? { ...turn, note: deep ? "deep" : "live", sentStats: sent.stats, sentDetails: sent.details }
+          : turn,
+      ),
+    );
   }
 
   /** plan 事件落位：思考计划挂到目标气泡 */
@@ -184,9 +205,11 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
    *   - plan：思考计划挂气泡（A12）；
    *   - text-delta：回答文本增量，累积回填最后一条回答气泡；
    *   - complete / error / abort：流收尾。
+   * deep（A14）：上下文换为全期统计（buildDeepAnalysisContext），与明细快照
+   * 分成两条消息发送，各自不超过单条 4000 字上限；回答挂 deep 来源脚注。
    * 请求失败 / 流异常时落到本地提示气泡；组件卸载触发的中止直接静默返回。
    */
-  async function runOnlineFallback(question: string) {
+  async function runOnlineFallback(question: string, deep = false) {
     setThinking("live");
     const controller = new AbortController();
     abortRef.current = controller;
@@ -208,17 +231,23 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
     }
 
     try {
-      // 汇总上下文：任何一组统计查不到就由引擎省略该组，空串表示没有任何可发送的统计
+      // 统计上下文：deep 用全期聚合（A14），日常兜底用本月/近 90 天汇总；
+      // 任何一组统计查不到就由引擎省略该组，空串表示没有任何可发送的统计
       let context = "";
       try {
-        context = await buildAggregateContext(getRunner());
+        context = deep
+          ? await buildDeepAnalysisContext(getRunner())
+          : await buildAggregateContext(getRunner());
       } catch {
         context = "";
       }
-      // 明细快照：最近 150 笔收支明细（08 修订案 A8），读不到则省略该段
+      // 明细快照：最近 150 笔收支明细（08 修订案 A8），读不到则省略该段。
+      // deep 模式统计与明细分两条消息发送，明细可占满单条 4000 字预算
       let details = "";
       try {
-        const detailBudget = Math.max(0, MESSAGE_MAX_LENGTH - 100 - context.length);
+        const detailBudget = deep
+          ? MESSAGE_MAX_LENGTH - 100
+          : Math.max(0, MESSAGE_MAX_LENGTH - 100 - context.length);
         details = await buildDetailContext(createDuckDbDetailSnapshot(), detailBudget);
       } catch {
         details = "";
@@ -267,7 +296,15 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       if (bailIfStopped()) return;
 
       const messages: { role: "user" | "assistant"; content: string }[] = [];
-      if (combined) {
+      if (deep) {
+        // 深度分析：全期统计与明细快照分两条消息，各自语义完整（A14）
+        if (context) {
+          messages.push({ role: "user", content: `${DEEP_CONTEXT_PREFIX}${context}` });
+        }
+        if (details) {
+          messages.push({ role: "user", content: `${DETAIL_CONTEXT_PREFIX}${details}` });
+        }
+      } else if (combined) {
         messages.push({ role: "user", content: `${ONLINE_CONTEXT_PREFIX}${combined}` });
       }
       if (ragCases.length > 0) {
@@ -285,6 +322,7 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
           messages,
           ...(sessionSchema ? { sessionSchema } : {}),
           datasetSource: usePipeline.getState().source ?? undefined,
+          analysisMode: deep ? "deep" : "standard",
         }),
         signal: controller.signal,
       });
@@ -358,7 +396,7 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         // 流正常收尾：最终文本与徽章落定，挂在线来源脚注与案例参考
         updateTurnText(turnId, accumulated);
         flushBadges();
-        markTurnLive(turnId);
+        markTurnOnline(turnId, deep, { stats: context.length > 0, details: details.length > 0 });
         if (ragCases.length > 0) {
           setTurns((prev) =>
             prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)),
@@ -382,7 +420,7 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       }
       updateTurnText(turnId, accumulated);
       flushBadges();
-      markTurnLive(turnId);
+      markTurnOnline(turnId, deep, { stats: context.length > 0, details: details.length > 0 });
       if (ragCases.length > 0) {
         setTurns((prev) =>
           prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)),
@@ -404,21 +442,27 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
   }
 
   /** 转在线兜底前的最后一道本地闸门：没有账单数据时直接回「先导入账单」 */
-  async function fallToOnline(text: string) {
+  async function fallToOnline(text: string, deep = false) {
     if (usePipeline.getState().datasetTxHash === null) {
       setThinking(null);
       appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
       return;
     }
-    await runOnlineFallback(text);
+    await runOnlineFallback(text, deep);
   }
 
   /**
    * 回答问题的主管线（两个面板共用），按顺序尝试各条路径：
    * 闸门 → 闲聊分流 → 本地规则 → 本地案例（仅助理）→ 在线兜底。
    * 锚点随问题一起交给引擎，用于补全类目 / 时间窗等槽位。
+   * deep（A14）：闸门照常拦截注入，之后跳过闲聊 / 本地规则 / 案例检索，
+   * 直接转在线兜底——用户显式选择了大模型分析，本地路径不再抢答。
    */
-  async function submit(text: string, anchor: { id: string; label: string } | null) {
+  async function submit(
+    text: string,
+    anchor: { id: string; label: string } | null,
+    options?: { deep?: boolean },
+  ) {
     // 用户提问气泡由管线统一追加：两个面板的提交入口（输入框/示例 chips/锚点）
     // 都走本函数，避免各自维护用户气泡的重复逻辑
     appendTurn({ role: "user", text });
@@ -428,6 +472,11 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         appendTurn({ role: "assistant", text: GUARD_BLOCKED_REPLY, guarded: true });
         return;
       }
+    }
+
+    if (options?.deep) {
+      await fallToOnline(text, true);
+      return;
     }
 
     const smallTalkKind = classifySmallTalk(text);

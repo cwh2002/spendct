@@ -7,7 +7,9 @@
  * 并挂四类脚注/附件（数据口径声明，均非模型文本）：
  *   - note=local：本地引擎按账单数据计算（「已按你的账单数据计算」）；
  *   - note=cases：本地案例库检索命中（零 API 调用）；
- *   - note=live：在线服务生成（「已发送明细与统计」口径声明）；
+ *   - note=live：在线服务生成（按 sentStats/sentDetails 组合标注
+ *     实际发送的账单数据段，A8 合称「已发送明细与统计」）；
+ *   - note=deep：深度分析（A14，组合标注同 live，合称「已发送账单统计与明细」）；
  *   - guarded：输入被闸门拦截（未进入任何模型）；
  *   - plan：在线回答前的思考计划清单（plan 事件）；
  *   - ragRefs：案例参考（检索响应）；toolBadges：工具徽章三态。
@@ -38,7 +40,20 @@ export function ThinkingBubbles({ state }: { state: "data" | "cases" | "live" })
   );
 }
 
-/** 回答来源脚注（local/cases/live 三态 + 拦截态） */
+/**
+ * 在线回答实际发送的账单数据段文案：统计与明细按各自查询结果条件发送，
+ * 脚注按组合如实标注——两者都发用各档的既有合称（live 沿用 A8 口径
+ * 「已发送明细与统计」，deep 用「已发送账单统计与明细」），缺一段就只
+ * 说发了的那段（单段文案两档一致）
+ */
+function sentPartsLabel(turn: ChatTurn, bothText: string): string {
+  if (turn.sentStats && turn.sentDetails) return bothText;
+  if (turn.sentStats) return "已发送账单统计";
+  if (turn.sentDetails) return "已发送账单明细";
+  return "已生成回答";
+}
+
+/** 回答来源脚注（local/cases/live/deep 四态 + 拦截态） */
 function AnswerFootnote({ turn }: { turn: ChatTurn }) {
   if (turn.guarded) {
     return (
@@ -68,7 +83,15 @@ function AnswerFootnote({ turn }: { turn: ChatTurn }) {
     return (
       <span className="mt-2 flex w-fit items-center gap-1.5 rounded-(--radius-sm) bg-(--color-primary-soft) px-2 py-1 text-[11px] leading-relaxed text-(--color-brand-600)">
         <Sparkles className="size-3 shrink-0" aria-hidden />
-        在线生成 · 已发送明细与统计
+        在线生成 · {sentPartsLabel(turn, "已发送明细与统计")}
+      </span>
+    );
+  }
+  if (turn.note === "deep") {
+    return (
+      <span className="mt-2 flex w-fit items-center gap-1.5 rounded-(--radius-sm) bg-(--color-primary-soft) px-2 py-1 text-[11px] leading-relaxed text-(--color-brand-600)">
+        <Sparkles className="size-3 shrink-0" aria-hidden />
+        深度分析 · {sentPartsLabel(turn, "已发送账单统计与明细")}
       </span>
     );
   }

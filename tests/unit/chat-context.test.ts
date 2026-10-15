@@ -1,7 +1,7 @@
 /**
  * 在线兜底消息上下文装配单测（08 修订案 A12）。
  * 覆盖：预算内全量携带、从最旧裁剪、轮数上限、空消息跳过、
- * 本轮问题保底、总长不超预算。
+ * 本轮问题保底、总长不超预算、超长历史消息（>4000 字）整条跳过。
  */
 import { describe, expect, it } from "vitest";
 
@@ -71,5 +71,27 @@ describe("历史消息装配", () => {
 
   it("ONLINE_CONTEXT_PREFIX 声明账单数据随消息发送（A8 口径）", () => {
     expect(ONLINE_CONTEXT_PREFIX).toContain("汇总统计与最近明细");
+  });
+
+  it("超长历史消息（>4000 字）整条跳过、继续装更旧的（深度分析长回答不回灌请求）", () => {
+    const messages = buildHistoryMessages(
+      [
+        { role: "user", text: "更早的历史" },
+        { role: "assistant", text: "长".repeat(4100) },
+      ],
+      "本轮问题",
+      MESSAGE_BUDGET,
+    );
+    expect(messages).toEqual([
+      { role: "user", content: "更早的历史" },
+      { role: "user", content: "本轮问题" },
+    ]);
+  });
+
+  it("本轮问题不受单条上限约束（用户输入不替用户裁掉）", () => {
+    const longQuestion = "问".repeat(4100);
+    expect(buildHistoryMessages([], longQuestion, MESSAGE_BUDGET)).toEqual([
+      { role: "user", content: longQuestion },
+    ]);
   });
 });

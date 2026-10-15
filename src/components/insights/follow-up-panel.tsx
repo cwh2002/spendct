@@ -60,6 +60,9 @@ export function FollowUpPanel({
   onCancelAnchor,
 }: FollowUpPanelProps) {
   const [input, setInput] = useState("");
+  // 深度分析开关（08 修订案 A14）：开启后本次提问跳过本地规则，直接交给
+  // 大模型分析，并发送账单全期统计与最近明细（气泡挂「深度分析」脚注）
+  const [deepAnalysis, setDeepAnalysis] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const { turns, thinking, submit } = useChatPipeline({ enableCasePath: false });
@@ -80,13 +83,13 @@ export function FollowUpPanel({
     const text = input.trim();
     if (!text || thinking) return;
     setInput("");
-    void submit(text, anchor);
+    void submit(text, anchor, { deep: deepAnalysis });
   }
 
   /** 空态问题建议 chips：点击即提交（用户气泡由管线统一追加） */
   function handleChipClick(question: string) {
     if (thinking) return;
-    void submit(question, anchor);
+    void submit(question, anchor, { deep: deepAnalysis });
   }
 
   function askFromAnchor() {
@@ -94,7 +97,7 @@ export function FollowUpPanel({
     const anchorAtAsk = anchor;
     const text = `围绕「${anchorAtAsk.label}」展开追问`;
     onCancelAnchor();
-    void submit(text, anchorAtAsk);
+    void submit(text, anchorAtAsk, { deep: deepAnalysis });
   }
 
   // 桌面折叠轨：会话徽标挂在图标上，展开按钮在顶部
@@ -237,6 +240,27 @@ export function FollowUpPanel({
         }}
         className="border-t border-(--color-border) p-3"
       >
+        {/* 深度分析开关（08 修订案 A14）：开启后问题直接交给大模型，跳过本地规则 */}
+        <div className="mb-2 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setDeepAnalysis((value) => !value)}
+            aria-pressed={deepAnalysis}
+            className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full border px-2.5 text-xs font-medium transition-colors ${
+              deepAnalysis
+                ? "border-(--color-primary)/40 bg-(--color-primary-soft) text-(--color-brand-600)"
+                : "border-(--color-border) text-(--color-ink-muted) hover:border-(--color-border-strong) hover:text-(--color-ink-secondary)"
+            }`}
+          >
+            <Sparkles className="size-3.5" aria-hidden />
+            深度分析
+          </button>
+          <span className="min-w-0 flex-1 text-[11px] leading-4 text-(--color-ink-muted)">
+            {deepAnalysis
+              ? "开启：直接交给大模型分析，并发送账单统计与明细"
+              : "本地规则优先，答不了才转在线"}
+          </span>
+        </div>
         <div className="flex items-end gap-2">
           <textarea
             ref={inputRef}
