@@ -7,7 +7,6 @@
  */
 import { CASES } from "@/lib/cases";
 import { tfidfSearch, type TfidfManifest } from "@/lib/rag/tfidf";
-import { TFIDF_CITE_MIN } from "@/lib/rag/types";
 import tfidfManifest from "@/data/tfidf-manifest.json";
 
 /** 案例参考（检索响应，非模型生成文本） */

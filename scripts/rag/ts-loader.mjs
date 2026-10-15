@@ -29,8 +29,9 @@ export function loadTsModule(tsPath) {
     },
     fileName: abs,
   });
-  const module = { exports: {} };
-  cache.set(abs, module);
+  // 转译产物是 CommonJS：构造模块壳，注入 require/module/exports 后执行
+  const moduleShim = { exports: {} };
+  cache.set(abs, moduleShim);
   const localRequire = createRequire(abs);
   const myRequire = (spec) => {
     if (spec.startsWith("@/")) {
@@ -42,8 +43,8 @@ export function loadTsModule(tsPath) {
     }
     return localRequire(spec);
   };
-  new Function("require", "module", "exports", outputText)(myRequire, module, module.exports);
-  return module.exports;
+  new Function("require", "module", "exports", outputText)(myRequire, moduleShim, moduleShim.exports);
+  return moduleShim.exports;
 }
 
 function loadTarget(target) {

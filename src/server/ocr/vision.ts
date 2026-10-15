@@ -285,7 +285,7 @@ export async function recognizeBillImage(
         continue;
       }
       return { ok: true, data: parsed.data };
-    } catch (error) {
+    } catch {
       if (signal.aborted) {
         return {
           ok: false,

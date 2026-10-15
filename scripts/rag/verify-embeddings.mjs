@@ -46,7 +46,7 @@ check(
 // ③ 维度与归一化
 let dimOk = true;
 let normOk = true;
-for (const [id, vec] of Object.entries(embeddings.entries)) {
+for (const [, vec] of Object.entries(embeddings.entries)) {
   if (vec.length !== 1024) dimOk = false;
   let norm = 0;
   for (const v of vec) norm += v * v;

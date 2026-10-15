@@ -65,10 +65,17 @@ export function useSpeechInput(onFinalText: (text: string) => void): SpeechInput
   const [errorText, setErrorText] = useState("");
   const instanceRef = useRef<SpeechRecognitionLike | null>(null);
   const onFinalRef = useRef(onFinalText);
-  onFinalRef.current = onFinalText;
+  // 每次渲染后同步最新回调（识别轮询异步读 ref，避免闭包捕获旧函数）
+  useEffect(() => {
+    onFinalRef.current = onFinalText;
+  });
 
   useEffect(() => {
-    setSupported(recognitionCtor() !== null);
+    // 仅当浏览器提供识别构造器时置真；false 是初始值，不必再触发一次渲染。
+    // 能力检测只能发生在挂载后（SSR 无 window），这是 setState-in-effect
+    // 的合法场景：条件命中时恰好多渲染一次，无级联风险
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (recognitionCtor() !== null) setSupported(true);
   }, []);
 
   const stop = useCallback(() => {
