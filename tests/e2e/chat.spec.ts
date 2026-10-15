@@ -51,7 +51,10 @@ test("真实账单：追问面板按本地账单数据回答且类目支出不�
   //    完成后自动跳体检页再跳洞察页（与 pipeline.spec.ts 全动线同一写法）
   await page.goto("/upload?sample=1");
   await page.getByRole("button", { name: "开始体检" }).click();
-  await expect(page).toHaveURL(/\/checkup/, { timeout: 60_000 });
+  // 导入腿首次触发 DuckDB-WASM 引擎加载（38MB 自托管 wasm），全量并行时
+  // 各用例是全新浏览器上下文、无 HTTP 缓存，按 service.ts 的
+  // 120s 初始化预算给足断言窗口（与 pipeline.spec 同口径）
+  await expect(page).toHaveURL(/\/checkup/, { timeout: 120_000 });
   await expect(page).toHaveURL(/\/insights/, { timeout: 120_000 });
 
   // 2) 等真实洞察卡挂载（card_ 前缀）：确保账单数据已落库、洞察页数据就绪，
@@ -149,7 +152,10 @@ test("在线兜底：大促关键词问题挂工具徽章与在线生成脚注�
   // 1) 与第一动线相同的真实账单装配：先落库，避免追问转在线时拿不到上下文
   await page.goto("/upload?sample=1");
   await page.getByRole("button", { name: "开始体检" }).click();
-  await expect(page).toHaveURL(/\/checkup/, { timeout: 60_000 });
+  // 导入腿首次触发 DuckDB-WASM 引擎加载（38MB 自托管 wasm），全量并行时
+  // 各用例是全新浏览器上下文、无 HTTP 缓存，按 service.ts 的
+  // 120s 初始化预算给足断言窗口（与 pipeline.spec 同口径）
+  await expect(page).toHaveURL(/\/checkup/, { timeout: 120_000 });
   await expect(page).toHaveURL(/\/insights/, { timeout: 120_000 });
   await expect(page.locator("[id^='insight-card_']").first()).toBeVisible({ timeout: 60_000 });
 

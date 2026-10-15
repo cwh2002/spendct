@@ -15,7 +15,7 @@
 /* 键集合保持 as const 得到字面量联合（供 Capability.flag 引用），
    值类型放宽为 boolean：开关关闭时切 false，消费方 `=== false` 判断才不触发 TS2367 */
 const FLAG_DEFAULTS = {
-  ocr: false,
+  ocr: true,
   mcp: true,
   brush: true,
   dark: true,

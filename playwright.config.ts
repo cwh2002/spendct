@@ -8,6 +8,13 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "tests/e2e",
   fullyParallel: true,
+  // 并发上限 2：导入腿（5 条动线）每个都是全新浏览器上下文 + 38MB
+  // DuckDB-WASM 编译 + 1000 行落库，实测在 16GB 机器（VSCode 常驻、
+  // 空载仅剩 ~3.5GB 空闲）上 workers=4 全量并行时空闲内存探底到
+  // ~0.4GB，导入腿随机饿死在 120s 预算上（每次失败用例不同，属
+  // 资源性 flake 而非代码缺陷）。2 并发 = 至多 2 个 wasm 导入同跑，
+  // 实测稳定通过；慢机器可再降为 1。
+  workers: 2,
   forbidOnly: !!process.env.CI,
   retries: 0,
   reporter: [["list"]],

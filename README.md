@@ -38,7 +38,7 @@
          └─► 20 类协议事件流(实时渲染到体检页)
 ```
 
-- **AI 技术点**：Agent 六阶段工作流、反思自检闸门、模型降级链、RAG 案例库检索（60 条案例 + 本地关键词匹配）、MCP 工具链（校历 / 和风天气 / 大促日历 / 账单元数据回执四工具，Streamable HTTP + 本地回退双轨，连接失败自动降级）、结构化 LLM 短任务（快速记账 / 预算建议 / 预测叙事 / 贴士个性化）、LLM 生成 SQL 白名单拦截。
+- **AI 技术点**：Agent 六阶段工作流、反思自检闸门、模型降级链、RAG 案例库检索（60 条案例 + 本地关键词匹配）、MCP 工具链（校历 / 和风天气 / 大促日历 / 账单元数据回执四工具，Streamable HTTP + 本地回退双轨，连接失败自动降级）、结构化 LLM 短任务（快速记账 / 预算建议 / 预测叙事 / 贴士个性化）、截图 OCR 多模态（智谱 glm-4.6v-flash 主 + SiliconFlow 降级网关，低置信字段截取原图局部二次复核）、LLM 生成 SQL 白名单拦截。
 - **工程**：Next.js 16（App Router）+ React 19 + TypeScript strict + Tailwind 4（CSS-first 令牌）+ Zustand + TanStack Query + ECharts（暗色主题经 CSS 变量桥接）。
 - **安全**：SQL 窄文法白名单（7 原因码 + 行数复检）、金额全链路整数分、`check-secrets` 钩子杜绝密钥进库。
 
@@ -53,22 +53,22 @@ pnpm dev              # http://localhost:3000
 ```
 
 - **零密钥演示**：不填任何 API key 即 mock 模式（演示账户 `demo` / `demo123`），「上传账单」页可用内置示例账单跑完整流程；
-- **接入真实模型**：在 `.env.local` 填 `DEEPSEEK_API_KEY`（文本主脑）、`SILICONFLOW_API_KEY`（轻任务）；任一 key 就位即自动切 live 模式（`DEMO_MODE=mock` 可强制回零密钥演示）。截图 OCR 为预留能力（未接线，见 docs/06-roadmap.md 里程碑）。
+- **接入真实模型**：在 `.env.local` 填 `DEEPSEEK_API_KEY`（文本主脑）、`SILICONFLOW_API_KEY`（轻任务）、`GLM_API_KEY`（智谱，截图 OCR 主供应商）；任一 key 就位即自动切 live 模式（`DEMO_MODE=mock` 可强制回零密钥演示）。截图 OCR 已上线：智谱 glm-4.6v-flash 主 + SiliconFlow GLM-4.1V-9B 降级（`GLM_VISION_MODEL` / `SILICONFLOW_VISION_MODEL` 可覆盖），未配视觉 key 时走 mock 剧本。
 - **MCP 工具（可选）**：`.env.local` 填 `MCP_SERVER_URL`（如 `http://localhost:8317`）即接入真实工具链；未配置或连接失败时自动降级本地回退（校历/大促日历本地静态数据、天气诚实降级），不影响演示。mcp-server 独立启动见 [mcp-server/README.md](mcp-server/README.md)。
 
 ```bash
 pnpm typecheck       # tsgo 全量类型检查
 pnpm lint            # ESLint
-pnpm test            # Vitest 单测（340 用例）
-pnpm test:e2e        # Playwright 端到端（全路由冒烟 + 关键动线，26 用例）
-pnpm build           # 生产构建（19 路由：13 静态页 + 5 API + not-found）
+pnpm test            # Vitest 单测（385 用例）
+pnpm test:e2e        # Playwright 端到端（全路由冒烟 + 关键动线，28 用例）
+pnpm build           # 生产构建（20 路由：13 静态页 + 6 API + not-found）
 ```
 
 ## 目录结构
 
 ```
 src/
-├── app/                  # 13 个路由页 + api/{followup,rag,mcp,ai/{chat,task}} 路由
+├── app/                  # 13 个路由页 + api/{ocr,followup,rag,mcp,ai/{chat,task}} 路由
 ├── components/           # layout(壳/顶栏/底栏) · charts · auth · achievements ...
 ├── lib/
 │   ├── account/          # IndexedDB 账户与会话（本地账户模式）
@@ -81,8 +81,8 @@ src/
 │   ├── llm/              # 模型接入层（mock/live）· 叙事模板库
 │   └── ...               # demo-data · cases(60 条) · achievements · privacy-visibility
 tests/
-├── unit/                 # 白名单/账户/导入/协议/引擎/卡片 schema/运行桥 单测
-└── e2e/                  # Playwright：全路由冒烟 · 关键动线 · 账户登录
+├── unit/                 # 白名单/账户/导入/协议/引擎/卡片 schema/OCR/运行桥 单测
+└── e2e/                  # Playwright：全路由冒烟 · 关键动线 · OCR 截图识别 · 账户登录
 public/duckdb/            # 自托管 wasm + worker（sync-duckdb-wasm.mjs 同步）
 scripts/                  # 同步 · 密钥检查 · 验证 · 文档构建脚本
 docs/                     # 8 份设计文档 + benchmarks + finance

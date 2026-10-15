@@ -463,7 +463,7 @@ App
 │  └─ RouteGuard（data / checkup / report / budget）
 ├─ 页面层
 │  ├─ HomePage ── HeroCta · PromiseStrip · CapabilityCardWall · TechArchStrip · MiniPipelinePreview
-│  ├─ UploadPage ── UploadDropzone · OcrDropzone · ParsePreviewTable · SampleDataCard · QuickEntryLink
+│  ├─ UploadPage ── UploadDropzone · OcrDropzone · OcrImportPanel · ParsePreviewTable · SampleDataCard · QuickEntryLink
 │  ├─ CheckupPage ── PipelineStepper · CheckpointBar · ThinkingBubble · StageSummaryCard · StageEvidenceDrawer · StageOutputBadge
 │  ├─ InsightsPage ── InsightViewToggle · FavoritesPanel · InsightFilterBar · InsightCard[] · FollowUpPanel · TipCard · LedgerSummaryView（账本汇总，原 /ledger 并入）
 │  ├─ SubscriptionsPage ── StatRow · SubscriptionRadarCard[]（管理墙：NextBillingCountdown · CancelGuideChecklist）
@@ -494,6 +494,7 @@ App
 |---|---|---|---|
 | `UploadDropzone` | `accept: "csv"\|"image"`、`onFiles`、`onParseState` | idle / dragging / parsing / error / done | Skeleton |
 | `OcrDropzone` | `onImage`、`onOcrProgress`、`onLowConfidence` | idle / uploading / recognizing / failed | Skeleton、LowConfidenceCell |
+| `OcrImportPanel` | `initial`、`onCancel`、`onImported` | reviewing / confirming / done | OcrReviewTable |
 | `ParsePreviewTable` | `rows`、`mapping`、`lowConfidence: Set<CellKey>`、`onConfirm` | preview / editing | LowConfidenceCell |
 | `PipelineStepper` | `stages[6]`、`status: Record<StageId,StageStatus>`、`pct?`、`outputCount?` | 每阶段 pending/running/succeeded/skipped/failed（07 §1 StageStatus；paused 为 UI 局部覆盖态） | CheckpointBar |
 | `ThinkingBubble` | `events: ProtocolEvent[]`、`activeStage`、`paused`、`onPause/onResume` | streaming / idle / paused | SqlCodeBlock、ToolBadge、TypingCard |

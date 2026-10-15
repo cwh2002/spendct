@@ -17,7 +17,10 @@ test("内置账单全动线 → 订阅卡挂 RAG 案例引用 + 省钱贴士渲�
   // 上传页自动装配内置账单 → 体检 → 洞察（与 pipeline.spec 同动线）
   await page.goto("/upload?sample=1");
   await page.getByRole("button", { name: "开始体检" }).click();
-  await expect(page).toHaveURL(/\/checkup/, { timeout: 60_000 });
+  // 导入腿首次触发 DuckDB-WASM 引擎加载（38MB 自托管 wasm），全量并行时
+  // 各用例是全新浏览器上下文、无 HTTP 缓存，按 service.ts 的
+  // 120s 初始化预算给足断言窗口（与 pipeline.spec 同口径）
+  await expect(page).toHaveURL(/\/checkup/, { timeout: 120_000 });
   await expect(page).toHaveURL(/\/insights/, { timeout: 120_000 });
 
   // ① 订阅卡 2（最大订阅项明细）可见，展开「来源」弹层后含 RAG 案例引用

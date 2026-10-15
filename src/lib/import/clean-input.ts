@@ -72,8 +72,9 @@ export function classifyMerchant(merchant: string, note: string | undefined): {
   return { category: "其他", subCategory: null };
 }
 
-/** sha256 摘要；无 WebCrypto 环境退化为双种子 FNV-1a（与管线引擎同一降级口径） */
-async function sha256Hex(text: string): Promise<string> {
+/** sha256 摘要；无 WebCrypto 环境退化为双种子 FNV-1a（与管线引擎同一降级口径）。
+ *  导出供 OCR 转换层（src/lib/ocr/ocr-to-clean.ts）复用同一指纹口径。 */
+export async function sha256Hex(text: string): Promise<string> {
   if (typeof crypto !== "undefined" && typeof crypto.subtle !== "undefined") {
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
     return Array.from(new Uint8Array(digest))

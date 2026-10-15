@@ -52,6 +52,9 @@ import { generateSampleCsv, SAMPLE_BILL_FILE_NAME, SAMPLE_ROW_COUNT } from "@/li
 import type { ParseResult } from "@/lib/import/types";
 import { usePipeline } from "@/lib/pipeline/store";
 
+import { OcrDropzone, type OcrRecognizedResult } from "./ocr-dropzone";
+import { OcrImportPanel } from "./ocr-import-panel";
+
 /* ---------------- 常量与纯工具 ---------------- */
 
 /** 单文件上限 20MB：超出后解析与内存压力不可控，入口层直接拦 */
@@ -147,6 +150,12 @@ const INITIAL_STATE: UploadState = {
   importError: "",
 };
 
+/** OCR 截图识别动线的相位（与 CSV 的 Stage 互斥：OCR 激活时右栏接管预览区） */
+type OcrPhase =
+  | { phase: "idle" }
+  | { phase: "recognizing" }
+  | { phase: "review"; result: OcrRecognizedResult };
+
 /* ---------------- 预览区各状态视图（纯展示，无钩子） ---------------- */
 
 function DirectionChip({ direction }: { direction: "expense" | "income" }) {
@@ -186,6 +195,22 @@ function ParsingPreview({ text, fileName }: { text: string; fileName: string }) 
         <p className="mt-1 truncate text-sm text-(--color-ink-muted)">{fileName || "本地文件"}</p>
       </div>
       <p className="text-xs text-(--color-ink-muted)">文件只在本地处理，不会上传到任何服务器</p>
+    </div>
+  );
+}
+
+/** OCR 识别中视图：隐私口径与 CSV 不同（截图已按合规确认发给视觉模型），单独文案 */
+function OcrRecognizingPreview() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
+      <Loader2 className="size-8 animate-spin text-(--color-primary)" aria-hidden />
+      <div className="max-w-xs">
+        <p className="font-semibold text-(--color-ink)">正在识别截图…</p>
+        <p className="mt-1 text-sm text-(--color-ink-muted)">逐行读取时间、商户与金额，一般几秒内完成</p>
+      </div>
+      <p className="text-xs text-(--color-ink-muted)">
+        截图仅本次识别转发至视觉模型，服务端不保存
+      </p>
     </div>
   );
 }
@@ -487,6 +512,7 @@ export function UploadWorkspace() {
   const [state, setState] = useState<UploadState>(INITIAL_STATE);
   const [dragging, setDragging] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
+  const [ocr, setOcr] = useState<OcrPhase>({ phase: "idle" });
 
   /** 解析序号：新文件到来时递增，旧的异步分步文案不再有权写状态 */
   const parseSeqRef = useRef(0);
@@ -528,6 +554,7 @@ export function UploadWorkspace() {
   }, []);
 
   const handleSample = useCallback(() => {
+    setOcr({ phase: "idle" });
     void startParse(generateSampleCsv(), SAMPLE_BILL_FILE_NAME);
   }, [startParse]);
 
@@ -536,10 +563,32 @@ export function UploadWorkspace() {
     parseSeqRef.current += 1;
     setEntryError(null);
     setState(INITIAL_STATE);
+    setOcr({ phase: "idle" });
   }, []);
+
+  /* ---------------- OCR 动线（与 CSV 互斥接管右栏） ---------------- */
+
+  /** 点截图入口卡：清空 CSV 预览态，右栏进入识别中视图 */
+  const beginOcr = useCallback(() => {
+    parseSeqRef.current += 1;
+    setEntryError(null);
+    setState(INITIAL_STATE);
+    setOcr({ phase: "recognizing" });
+  }, []);
+
+  /** 识别成功：右栏切换为确认表 */
+  const handleOcrRecognized = useCallback((result: OcrRecognizedResult) => {
+    setOcr({ phase: "review", result });
+  }, []);
+
+  /** OCR 导入成功：与 CSV 路径同款延时后跳转（面板已显示成功视图） */
+  const handleOcrImported = useCallback(() => {
+    navTimerRef.current = setTimeout(() => router.push(nextPath), SUCCESS_NAV_DELAY_MS);
+  }, [router, nextPath]);
 
   const handleFile = useCallback(
     (file: File) => {
+      setOcr({ phase: "idle" });
       if (!/\.csv$/i.test(file.name)) {
         setEntryError("请选择微信、支付宝等 App 导出的账单文件");
         return;
@@ -674,6 +723,15 @@ export function UploadWorkspace() {
           <section aria-label="选择导入入口" className="space-y-4 lg:col-span-2">
             <ResumeBanner />
 
+            {featureFlags.ocr ? (
+              <OcrDropzone
+                active={ocr.phase !== "idle"}
+                onBegin={beginOcr}
+                onCancel={resetToEmpty}
+                onRecognized={handleOcrRecognized}
+              />
+            ) : null}
+
             <button
               type="button"
               onClick={handleSample}
@@ -756,25 +814,39 @@ export function UploadWorkspace() {
           {/* 右：预览区 */}
           <section aria-label="账单预览" className="lg:col-span-3">
             <div className="flex min-h-[480px] flex-col rounded-(--radius-card) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm) md:p-6">
-              {stage === "empty" ? <EmptyPreview /> : null}
-              {stage === "parsing" ? (
-                <ParsingPreview text={progressText} fileName={fileName} />
-              ) : null}
-              {stage === "success" ? <SuccessPreview count={importedCount} /> : null}
-              {stage === "preview" && result ? (
-                rejected ? (
-                  <RejectedPreview warnings={result.warnings} onReselect={resetToEmpty} />
+              {ocr.phase !== "idle" ? (
+                ocr.phase === "recognizing" ? (
+                  <OcrRecognizingPreview />
                 ) : (
-                  <ParsedPreview
-                    result={result}
-                    fileName={fileName}
-                    importStatus={importStatus}
-                    importError={importError}
-                    onImport={() => void startImport()}
-                    onReselect={resetToEmpty}
+                  <OcrImportPanel
+                    initial={ocr.result}
+                    onCancel={resetToEmpty}
+                    onImported={handleOcrImported}
                   />
                 )
-              ) : null}
+              ) : (
+                <>
+                  {stage === "empty" ? <EmptyPreview /> : null}
+                  {stage === "parsing" ? (
+                    <ParsingPreview text={progressText} fileName={fileName} />
+                  ) : null}
+                  {stage === "success" ? <SuccessPreview count={importedCount} /> : null}
+                  {stage === "preview" && result ? (
+                    rejected ? (
+                      <RejectedPreview warnings={result.warnings} onReselect={resetToEmpty} />
+                    ) : (
+                      <ParsedPreview
+                        result={result}
+                        fileName={fileName}
+                        importStatus={importStatus}
+                        importError={importError}
+                        onImport={() => void startImport()}
+                        onReselect={resetToEmpty}
+                      />
+                    )
+                  ) : null}
+                </>
+              )}
             </div>
           </section>
         </div>

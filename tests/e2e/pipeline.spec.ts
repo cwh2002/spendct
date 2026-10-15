@@ -15,7 +15,10 @@ test("内置账单走通 上传 → 体检 → 洞察 全动线", async ({ page 
   //    点击「开始体检」触发真实导入（清洗 → initDataset → 写 store），完成后自动跳体检页
   await page.goto("/upload?sample=1");
   await page.getByRole("button", { name: "开始体检" }).click();
-  await expect(page).toHaveURL(/\/checkup/, { timeout: 60_000 });
+  // 导入腿首次触发 DuckDB-WASM 引擎加载（38MB 自托管 wasm），全量并行时
+  // 各用例是全新浏览器上下文、无 HTTP 缓存，按 service.ts 的
+  // 120s 初始化预算给足断言窗口
+  await expect(page).toHaveURL(/\/checkup/, { timeout: 120_000 });
 
   // 2) 体检页自动起跑真实管线，完成后倒计时自动跳洞察页
   await expect(page).toHaveURL(/\/insights/, { timeout: 120_000 });
