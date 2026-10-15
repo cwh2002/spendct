@@ -3,8 +3,8 @@
 | 项目 | 内容 |
 |---|---|
 | 文档编号 | 05 / 06（本文件负责界面交互，06 负责路线图） |
-| 版本 | 1.1（v1.0 随 07 契约冻结；v1.1 落实 08 功能扩展增量 A1-A7；schema/事件/路由/组件名以 07 为准、扩展以 08 §⑨ 索引为准） |
-| 日期 | 2026-10-13 |
+| 版本 | 1.2（v1.0 随 07 契约冻结；v1.1 落实 08 功能扩展增量 A1-A7；v1.2 落实 08 修订案 A12 全局智能助理；schema/事件/路由/组件名以 07 为准、扩展以 08 §⑨ 索引为准） |
+| 日期 | 2026-10-15 |
 | 负责人 | 前端交互成员 |
 | 上游决策 | 产品定义（2026-10-13 已确认，本文档不推翻、只落地） |
 
@@ -20,7 +20,7 @@
 2. 组件树与可复用组件清单（组件名 / Props 概要 / 状态 / 用到的其他组件，含 TS 类型与 zod schema）；
 3. 设计系统（配色、字体、间距、圆角阴影、图标、ECharts 主题与图表配色规范）；
 4. 关键交互规范（锚点追问协议、打标反馈动画、流式节流与性能约束、加载/骨架屏/降级、移动端）；
-5. AI 交互体验细则（真实思考状态可视化、拒绝画图话术、断点续跑入口）；
+5. AI 交互体验细则（真实思考状态可视化、拒绝画图话术、断点续跑入口、全局智能助理（悬浮入口 + 聊天抽屉，08 修订案 A12））；
 6. 无障碍与细节打磨（键盘导航、对比度、空态文案示例）；
 7. sample-data 演示动线（评委 30 秒完整体检路径）。
 
@@ -41,7 +41,7 @@
 |---|---|---|---|
 | §1、§2 | 01 技术总纲 | App Router 路由结构、客户端/服务端边界、性能基准（10k 行清洗耗时 / WASM 加载时间） | 路由与 chunk 划分以本文 §1.1 为准；指标数值以 01 为准 |
 | §2.9 PrivacyBadge | 02 数据与隐私 | 「数据可见性对照表」是唯一数据源（`src/lib/privacy/visibility.ts` 由 02 维护）；商户名 merchantRef（`m_`+8hex，07 §0.3）、金额分箱的显示格式 | 以 02 为准；merchantRef 格式见 07 §0.3，渲染端明文还原规则见 07 §5（该商户笔数 ≥5 且用户开开关） |
-| §2.3、§4.1、§5.1 | 07 契约 | `InsightCardSchema` = 07 §4 insight-card@v1、`PipelineEvent` = 07 §2 spendct协议@2、`PlanStep[]` = 07 §18 | schema 与事件以 07 为唯一来源（src/lib/schema/insight-card.ts、src/lib/protocol/events.ts）；本文只 import 不复制，任何变更走 07 契约评审（#4/#33/#60） |
+| §2.3、§4.1、§5.1 | 07 契约 | `InsightCardSchema` = 07 §4 insight-card@v1、`PipelineEvent` = 07 §2 spendct协议@2（21 类事件，plan 为 08 修订案 A12 增补第 21 类）、`PlanStep[]` = 07 §18 | schema 与事件以 07 为唯一来源（src/lib/schema/insight-card.ts、src/lib/protocol/events.ts）；本文只 import 不复制，任何变更走 07 契约评审（#4/#33/#60） |
 | §2.4、§2.8 引用 | 04 RAG 与 MCP | 引用 ref 格式 = 07 §4 CitationSchema：`sql:${table\|view}:${tableId}` / `rag:${caseId}` / `tool:${toolName}`；取消攻略引用渲染 | ref 格式以 07 §4 为准；caseId 取值由 04 评测集编号提供 |
 | §1.1 FeatureFlag、§8.1 闸门 | 06 路线图 | W2 最小闭环闸门、W4 错误态周、砍法（MCP/OCR/框选）的 UI 显隐 | 砍哪个功能，本文 §1.1 的 flag 就关哪个 |
 | §1.1 路由与 flag、§2.2 组件表、§3.6 四大图 | 08 功能扩展 | 路由 7→10、组件注册表 13→19（修订案 A7）、四大静态图组件、FeatureFlag 新增 4 开关（08 §2.3）、新 LLM 任务 zod schema（08 §⑥） | 08 §⑨ 索引逐条落实；新增组件命名遵守 A7 与本文 §2.2 不重名纪律 |
@@ -111,7 +111,7 @@ export function RouteGuard({ require, children }: {
 }
 ```
 
-**全局 Shell**：顶部导航（Logo「消费CT」、分段导航 体检/账本/订阅/报告（账本 = /insights 内账本汇总视图）、右侧 PrivacyBadge、NotificationBell 通知铃（F13 落地后）、主题切换、演示模式 badge）；移动端（< 640px）顶部只留 Logo + PrivacyBadge + 主题切换，导航收进底部 tab bar（首页/体检/账本/订阅/我的）；**「我的」指向 `/settings`**（08 修订案 A7）；`/budget` 与 `/learn` 不新增 tab 项，从首页「10 大能力」卡墙与 `/settings` 链接进入（08 §2.1）。
+**全局 Shell**：顶部导航（Logo「消费CT」、分段导航 体检/账本/订阅/报告（账本 = /insights 内账本汇总视图）、右侧 PrivacyBadge、NotificationBell 通知铃（F13 落地后）、主题切换、演示模式 badge）；移动端（< 640px）顶部只留 Logo + PrivacyBadge + 主题切换，导航收进底部 tab bar（首页/体检/账本/订阅/我的）；**「我的」指向 `/settings`**（08 修订案 A7）；`/budget` 与 `/learn` 不新增 tab 项，从首页「10 大能力」卡墙与 `/settings` 链接进入（08 §2.1）。全局右下悬浮「智能助理」入口（AssistantDrawer：悬浮入口 + 聊天抽屉，任何非登录页可用；聊天抽屉桌面 400×600 面板、移动端全屏，08 修订案 A12，详见 §2.10）；移动端悬浮按钮与底部 tab bar 共存，同为 44×44 触控目标。
 
 **FeatureFlag（砍法落点，与 06 联动）**：
 
@@ -127,6 +127,7 @@ export const featureFlags = {
   reportStory: true,  // F05：砍数据故事时关，回退旧版报告布局（§1.8 旧布局即兜底，08 §⑩ 第 9 刀）
   achievements: true, // F10：砍成就段位时关（08 §⑩ 第 9 刀）
   learn: true,        // F11：砍知识课堂时关（/learn 路由下线，08 §⑩ 第 6 刀）
+  voice: true,        // A12 智能助理语音输入（Web Speech 浏览器转写）：关闭或浏览器不支持时隐藏麦克风入口
 } as const;
 ```
 
@@ -243,7 +244,7 @@ export const featureFlags = {
   │  确认·质疑·深挖·收藏           │             │
   └──────────────────────────────┴─────────────┘
   ```
-- **核心组件**：`InsightCard`、`InsightViewToggle`（卡片流 / 图表廊）、`FavoritesPanel`、`FavoriteButton`（收藏卡，写 `spendct:fav:v1`，08 修订案 A1）、`InsightFilterBar`（阶段 / 置信度 / 日期 / 类别四维筛选——F04 筛选增强转国赛备选池，08 §11.2 决议 ①）、`FollowUpPanel`、`PlanStepTree`、`FeedbackButton`、`ChartAnchorLayer`（每张证据图内置）、`TipCard`（省钱贴士卡，F09/P2：student_benefits 检索 top-3 + 一句话适配理由，年度阶段产出流入卡流）。
+- **核心组件**：`InsightCard`、`InsightViewToggle`（卡片流 / 图表廊）、`FavoritesPanel`、`FavoriteButton`（收藏卡，写 `spendct:fav:v1`，08 修订案 A1）、`InsightFilterBar`（阶段 / 置信度 / 日期 / 类别四维筛选——F04 筛选增强转国赛备选池，08 §11.2 决议 ①）、`FollowUpPanel`（08 修订案 A12 起与智能助理共用 use-chat-pipeline 问答管线，见 §4.1/§2.10）、`PlanStepTree`、`FeedbackButton`、`ChartAnchorLayer`（每张证据图内置）、`TipCard`（省钱贴士卡，F09/P2：student_benefits 检索 top-3 + 一句话适配理由，年度阶段产出流入卡流）。
 - **状态**：
   - 空：未体检 → 空态（§6.3 文案）+ [去上传]；
   - 加载：流水线运行中卡片流式发布——卡片先以骨架屏占位，结论文字逐字流式（真实 token 流），图表数据就绪后一次性渲染（不逐点动画，避免性能抖动）；
@@ -393,7 +394,7 @@ export const featureFlags = {
   - 加载：预算/实际/预测全部确定性 SQL（`budget_vs_actual` / `forecast_monthly`）亚秒级；AI 建议与预测叙事走 `/api/ai/task`（taskId=budget-advice / forecast，08 §⑦），卡片骨架 + 「正在生成 AI 建议…」真实任务状态（§5.1 不放假动画）；
   - 错误：AI 不可用 → 模板兜底卡 + DegradeToast「AI 建议不可用，已使用内置规则模板」；快速记账 `parseable:false` 或 LLM 失败 → 手动表单兜底（金额空、类别下拉预选 top-1 规则猜测）+ DegradeToast，不阻塞流程（08 §⑥.1）；
   - 成功：预算环进度 tabular-nums 实时更新；超支卡 actions（adjust_budget / view_detail / dismiss）可操作；预测卡保留 disclaimer 原文（zod literal「朴素季节外推，仅作参考，不构成建议」）。
-- **快速记账（F08，QuickEntryBar 协议）**：文本 ≤200 字 → `/api/ai/task` taskId=quick-entry → `QuickEntrySchema` zod 确认卡（金额分/方向/类别/商户/日期/备注）→ [确认入账] 写 `transactions`（`source='manual'`，08 修订案 A3；原始输入文本仅内存中转、绝不落盘）→ 账本即时可见；[修改] 打开手动表单。语音输入为 P3（国赛窗口）。
+- **快速记账（F08，QuickEntryBar 协议）**：文本 ≤200 字 → `/api/ai/task` taskId=quick-entry → `QuickEntrySchema` zod 确认卡（金额分/方向/类别/商户/日期/备注）→ [确认入账] 写 `transactions`（`source='manual'`，08 修订案 A3；原始输入文本仅内存中转、绝不落盘）→ 账本即时可见；[修改] 打开手动表单。语音输入为 P3（国赛窗口）。注意：与智能助理的语音输入（08 修订案 A12，Web Speech 浏览器转写、音频不出浏览器）是两回事，互不影响档期。
 - **路由**：`/budget`（守卫 require="budget"，§1.1）；`featureFlags.budget=false` 时路由下线、快速记账入口随之隐藏（08 §⑩ 第 10 刀）；`/upload` 入口卡与 `/insights` 空态有引流入口。
 
 ### 1.11 消费知识小课堂 `/learn`（08 修订案 A7，P2）
@@ -460,6 +461,7 @@ App
 ├─ Shell
 │  ├─ TopNav（Logo · 分段导航 · PrivacyBadge · ThemeToggle · DemoBadge · NotificationBell）
 │  ├─ MobileTabBar（< 640px；「我的」→ /settings，08 A7）
+│  ├─ AssistantDrawer（右下悬浮入口 + 聊天抽屉，任何非登录页，08 修订案 A12）── ChatBubbles · PlanBlock · ToolBadge（三态来源脚注）
 │  └─ RouteGuard（data / checkup / report / budget）
 ├─ 页面层
 │  ├─ HomePage ── HeroCta · PromiseStrip · CapabilityCardWall · TechArchStrip · MiniPipelinePreview
@@ -488,7 +490,7 @@ App
 
 ### 2.2 组件总表
 
-组件命名两级注册（07 §14 + 08 修订案 A7）：**第一级 = 注册表 19 个可复用组件**（既有 13：UploadDropzone、PipelineStepper、ThinkingBubble、SqlCodeBlock、InsightCard、TypingCard、EvidenceTable、DegradeToast、FollowUpPanel、AnchorChip、ArtifactCard、ToolBadge、OcrReviewTable，#52；新增 6：BudgetRing、QuickEntryBar、ForecastChart、CaseCard、DatasetManager、NotificationBell，08 A7）——全仓唯一命名，文档禁止引用未列入注册表的组件名；**第二级 = 本节组件总表为页面级组件的唯一登记表**（页面级组件不占注册表名额、与注册表同为唯一命名源、同样禁止私造，约 16 个：StageEvidenceDrawer、FavoritesPanel、PosterCanvasButton、CapabilityCardWall、NextBillingCountdown、CancelGuideChecklist 等，07 §21 第 10 条 / §14 A7 两级注册口径）。本文扩展组件（ChartCard、FeedbackButton、四大静态图组件等）按第二级登记，不得与注册表重名，也不得升级为注册表名。
+组件命名两级注册（07 §14 + 08 修订案 A7）：**第一级 = 注册表 19 个可复用组件**（既有 13：UploadDropzone、PipelineStepper、ThinkingBubble、SqlCodeBlock、InsightCard、TypingCard、EvidenceTable、DegradeToast、FollowUpPanel、AnchorChip、ArtifactCard、ToolBadge、OcrReviewTable，#52；新增 6：BudgetRing、QuickEntryBar、ForecastChart、CaseCard、DatasetManager、NotificationBell，08 A7）——全仓唯一命名，文档禁止引用未列入注册表的组件名；**第二级 = 本节组件总表为页面级组件的唯一登记表**（页面级组件不占注册表名额、与注册表同为唯一命名源、同样禁止私造，约 19 个：StageEvidenceDrawer、FavoritesPanel、PosterCanvasButton、CapabilityCardWall、NextBillingCountdown、CancelGuideChecklist、AssistantDrawer、ChatBubbles、PlanBlock 等，07 §21 第 10 条 / §14 A7 两级注册口径；08 修订案 A12 增补智能助理三组件按同一口径登记）。本文扩展组件（ChartCard、FeedbackButton、四大静态图组件等）按第二级登记，不得与注册表重名，也不得升级为注册表名。
 
 | 组件 | Props 概要 | 状态 | 用到的组件 |
 |---|---|---|---|
@@ -508,7 +510,7 @@ App
 | `InsightCard` | `card: InsightCardData`（07 §4 insight-card@v1）、`onFeedback`、`onDrill` | draft / published / withheld（07 §4 三态）+ UI 覆盖态 confirmed / disputed / error | ChartCard、FeedbackButton、CitationCollapse、ConfidenceDots |
 | `ChartCard` | `spec: ChartSpec`（07 §4：tableId/chartType/title/dimField/measureFields/sortBy/topN/note，registry 渲染，LLM 不产出 ECharts option）、`withAnchor?`、`withTable?`、`loading?`、`error?` | loading / ready / error / table | ChartAnchorLayer、Skeleton、EmptyState |
 | `ChartAnchorLayer` | `chartRef`、`selection?`、`disabled?`、`onHover`、`onSelect`、`onCancel` | idle / hover / selected | AnchorHintChip |
-| `FollowUpPanel` | `turns`、`running`、`onSend`、`onRetry` | idle / planning / executing / answered | PlanStepTree、ChartCard |
+| `FollowUpPanel` | `turns`、`running`、`onSend`、`onRetry` | idle / planning / executing / answered | PlanStepTree、ChartCard（08 修订案 A12：内部走 use-chat-pipeline，不开本地案例路径，保持 PEO 协议） |
 | `PlanStepTree` | `steps: PlanStep[]`、`onRetry?` | 每步 pending/running/done/failed | — |
 | `FeedbackButton` | `cardId`、`kind: "confirm"\|"dispute"`、`active?`、`onFeedback` | idle / active / animating | DisputeReasonPopover |
 | `SubscriptionRadarCard` | `hit: SubscriptionHit`、`onAnchor`、`onFeedback` | default / expanded / confirmed / false-positive | Sparkline、CitationCollapse、FeedbackButton |
@@ -541,6 +543,9 @@ App
 | `PosterCanvasButton` | `onGenerate`、`busy`（canvas 1080×1920 合成 < 2s） | idle / drawing / done / failed | DegradeToast |
 | `CapabilityCardWall` | `capabilities: CapabilityItem[10]`（与 /privacy 静态版同数据源） | default | — |
 | `TechArchStrip` | —（纯静态图标化管线） | default | — |
+| `AssistantDrawer` | 悬浮入口 + 聊天抽屉（全局，任何非登录页可用；桌面 400×600 面板、移动端全屏，08 修订案 A12） | closed / open | ChatBubbles、ToolBadge |
+| `ChatBubbles` | `turns: ChatTurn[]`（追问面板与智能助理共用的问答气泡展示层，08 修订案 A12） | idle / thinking / streaming / answered | PlanBlock、ToolBadge |
+| `PlanBlock` | `goal`、`steps`（渲染 plan 事件「思考计划」块，07 §2 第 21 类） | pending / running / done / failed | — |
 
 > 四大静态图组件（CalendarHeatmap / CategorySankey / HealthRadar / MerchantWordcloud）为「页面代码静态渲染」组件：确定性 SQL 直出数据 + ECharts 直接渲染，**不进 ChartSpec 枚举**（08 §④ 裁决），但实现与 ChartCard 相同的 `AnchorSelection` 捕获接口（§2.3）以保留锚点追问能力；色板与渲染规范见 §3.6。分档口径（08 §1.2）：省赛落地前两大图，后两大图国赛窗口补齐，四组件规格均按本节登记与 §3.6 规范实现。
 
@@ -565,11 +570,12 @@ export type InsightCardData = InsightCard; // UI 渲染别名
 
 ```ts
 // src/lib/protocol/events.ts —— 事件协议唯一来源（07 §2 spendct协议@2，SSE，#3/#28）
-// 20 类事件（任何文档不得自造事件名），公共字段 { t, ts, runId }：
+// 21 类事件（任何文档不得自造事件名），公共字段 { t, ts, runId }：
 // run:start / run:complete / error / abort / stage:start / stage:thinking / stage:evidence /
 // stage:complete / stage:skipped / card:delta / card:complete / card:withheld /
 // llm:degraded / llm:repair / rag:retrieved / tool:start / tool:end / reflect:result /
 // cache:hit / checkpoint:saved
+// plan（08 修订案 A12 第 21 类：goal 非空 + steps 1-4 步；在线兜底 run:start 后第 0 步发射，assistant-plan 8s 超时/失败静默跳过）
 import type { ProtocolEvent } from "@/lib/protocol/events";
 export type PipelineEvent = ProtocolEvent; // UI 消费别名
 export type StageId = "clean" | "profile" | "anomaly" | "subscription" | "attribution" | "annual"; // 07 §1 序号 1-6
@@ -595,7 +601,7 @@ export interface SelectionContext {
   anchor: { cardId: string; stage: StageId;
             dim: "merchant" | "category" | "time_month" | "channel";
             value: string; metric: string; dataIndex?: number };
-  slice: unknown[];                                    // sanitizeResult 脱敏后 ≤50 行（07 §5）
+  slice: unknown[];                                    // await sanitizeResult(…) 脱敏后 ≤50 行（07 §5；A12 起 S2 改 WebCrypto 异步哈希，签名 async，六阶段/追问/智能助理共享管线一律 await）
   tableMeta: { tableId: string; columns: string[] };   // tableId ∈ 07 §3 注册表
   chartType: ChartSpec["chartType"];                   // 07 §4 七类
   question: string;
@@ -826,6 +832,35 @@ type SkeletonProps = { variant: "card" | "chart" | "table" | "text"; rows?: numb
 // prefers-reduced-motion 时静止(§3.7)
 ```
 
+### 2.10 全局智能助理（AssistantDrawer / ChatBubbles / PlanBlock，08 修订案 A12）
+
+规格来源 = 07 §18 A12 / 07 §21 05 文档第 14 条。全局智能助理与洞察页追问面板**共用同一问答管线**（唯一实现 `src/lib/assistant/use-chat-pipeline.ts`）；组件已按两级注册口径登记于 §2.2 组件总表。
+
+```
+┌──────────────────────────────────────┐
+│ 智能助理（聊天抽屉）                   │
+│ ChatBubbles 消息列表 × N              │
+│  每条消息脚注三态：                    │
+│   本地计算 / 本地案例库 / 在线生成      │
+│ 思考计划块 PlanBlock（goal + 1-4 步）  │
+│ ToolBadge 工具徽章（07 §18 A9 展示规格）│
+│ [语音] 输入框 [发送]                   │
+│ 空态：示例问题 3-4 条 + [新对话]        │
+└──────────────────────────────────────┘
+悬浮入口：右下固定，任何非登录页可用（桌面抽屉 400×600 面板，移动端全屏）
+```
+
+1. **入口与形态**：AssistantDrawer 悬浮入口右下固定，任何非登录页可用；聊天抽屉桌面 400×600 面板、移动端全屏（§1.1/§4.5）。
+2. **管线顺序（唯一，07 §18 A12）**：输入闸门 → 闲聊分流（small-talk 罐头）→ 本地规则问答（`qa-engine` 九类意图 + 白名单 SQL，浏览器内按账单数据计算）→ 本地案例检索（仅智能助理）→ 在线兜底（`POST /api/followup` 的 `question+messages` 模式，零新端点）。
+3. **输入闸门（`src/lib/assistant/input-guard.ts`，注入防护第四层，02 §11）**：判定顺序 = 控制字符 → 超长（>500 字）→ 四类注入特征（指令覆盖、角色劫持、泄露诱导、SQL 痕迹）；命中即拦——固定拒绝话术 + 脚注「已拦截 · 未进入任何模型」，不进任何本地/在线路径（§4.4 降级链）。
+4. **本地案例检索（`src/lib/assistant/local-cases.ts`）**：攻略/常识类问题先查本地案例库（TF-IDF），聊天路径阈值 `CASE_PATH_MIN_SCORE = 0.15`（高于页面浏览引用的 0.08，页面引用口径不变），最多 3 条 + 脚注「本地案例库 · 零 API 调用」；零命中转在线兜底。
+5. **思考计划块（PlanBlock）**：在线兜底在 `run:start` 后第 0 步发射 plan 事件（07 §2 第 21 类）：goal 非空 + steps 1-4 步，`tool` 只填 get_school_calendar / get_weather / get_promo_calendar（用不到则省略）；mock 走脚本化演示流（`mockAssistantPlan`，大促档第一步挂 `get_promo_calendar`），live 走 assistant-plan 任务结构化生成（`generateLlmObject`，归 deepseek，07 §12），8s 超时/失败静默跳过——回答不受影响，仅不展示思考计划块（§4.4）。
+6. **语音输入（`src/lib/assistant/use-speech-input.ts`）**：Web Speech 浏览器转写（zh-CN，错误三态提示），转写文字只写入聊天输入框；音频由浏览器厂商语音服务处理，本项目服务器与 LLM 都不接收音频（02 §8）；feature-flag `voice` 控制，不支持的浏览器隐藏麦克风入口。
+7. **消息脚注三态**：本地计算 / 本地案例库 / 在线生成——按路径如实标注；在线兜底沿用 07 §18 A8 明细快照口径（气泡脚注「在线生成 · 已发送明细与统计」）与 A9 工具徽章/降级声明（ToolBadge 展示规格见 §2.5 第 3 区）。
+8. **与追问面板共享**：追问面板重构为同一 `use-chat-pipeline`（不开本地案例路径、PEO 协议不变，§4.1）；脱敏器 `sanitizeResult` 因 S2 改 WebCrypto 异步哈希而改 async 签名（07 §5），共享管线一律 `await`。
+9. **必落图范围注**：智能助理聊天为文本回答 + 思考计划块；「每答必落图」三选一（§0.4 原则三）仅约束锚点追问路径，不适用于智能助理聊天（07 §18 A12）。
+10. **隐私与端点**：本地两条路径（规则问答、案例检索）零 API 调用；在线兜底复用 `/api/followup`——零新端点、零新 env 键（07 §18 A12）。
+
 ---
 
 ## 3. 设计系统
@@ -949,10 +984,10 @@ type SkeletonProps = { variant: "card" | "chart" | "table" | "text"; rows?: numb
 | radius-sm | 6px | 按钮、输入框、chip |
 | radius-md | 10px | 图表容器、引用折叠条 |
 | radius-lg | 14px | 洞察卡、订阅卡 |
-| radius-xl | 20px | 弹层、浮层 |
+| radius-xl | 20px | 弹层、浮层、智能助理抽屉 |
 | shadow-sm | `0 1px 2px rgba(16,24,40,.06)` | 按钮悬停 |
 | shadow-md | `0 1px 3px rgba(16,24,40,.07), 0 4px 12px rgba(16,24,40,.05)` | 卡片默认 |
-| shadow-lg | `0 8px 24px rgba(16,24,40,.10), 0 2px 6px rgba(16,24,40,.06)` | 弹层/追问面板 |
+| shadow-lg | `0 8px 24px rgba(16,24,40,.10), 0 2px 6px rgba(16,24,40,.06)` | 弹层/追问面板/智能助理抽屉 |
 | shadow-anchor | `0 0 0 3px rgba(46,124,232,.25)` | 图表锚点选中高亮 |
 
 暗色模式：阴影改用表面层级区分（弹层比页面浅一档 `#1f2329`）+ 1px 发丝边框（`rgba(255,255,255,.10)`），不靠投影。
@@ -1091,10 +1126,12 @@ export type AnchorFollowUpState =
 |---|---|---|---|---|
 | 1 | 指针悬停图表元素 | 该元素十字准星高亮 + 顶部浮出 hint chip：「点击追问此数据点」+ 本地规则生成的示例问题（如「为什么 5 月餐饮突然变高？」） | 停留 200ms 后出现 | 移开即消失 |
 | 2 | 点击 / 框选（brush 开关开启时长按拖动） | 锚点高亮（shadow-anchor 3px 品牌光环，非选中系列降透明度 40%）+ 底部浮出「上下文确认条」：锚点描述（`xLabel` + `valueLabel`，如「2026-05 · 餐饮 · ¥1,294 / 23 笔」；商户维度用 merchantRef，按 07 §5 规则决定是否还原明文）+ [追问] [取消] | 即时 | Esc / 点击空白 |
-| 3 | 点 [追问]（或 Enter） | 确认条变「正在制定分析计划…」；追问面板展开（桌面 360px，移动端全屏 bottom sheet）；PlanStepTree 挂载为骨架 | planning ≤ 3s，超时用模板计划 | 面板关闭按钮 |
+| 3 | 点 [追问]（或 Enter） | 确认条变「正在制定分析计划…」；追问面板展开（桌面 360px，移动端全屏 bottom sheet；追问面板 = 共享管线 use-chat-pipeline 实例，不开本地案例路径，08 修订案 A12）；PlanStepTree 挂载为骨架 | planning ≤ 3s，超时用模板计划 | 面板关闭按钮 |
 | 4 | （Agent 产出 PlanStep[]，§4.1.1） | 步骤树逐条点亮：`running` 节点品牌蓝脉冲 + 右缘显示执行详情（脱敏 SQL 摘要 / 模型名 / 命中数） | 60ms/步 stagger | — |
 | 5 | 观察执行 | 全部 done → 答案以图表/表格卡片从底部滑入（240ms），自动滚动定位 + 2s 高亮脉冲；答案与 InsightCard 同构，**可继续锚定追问**（每答必落图：answer.chart 必填，除非 refused） | 240ms + 2s 脉冲 | — |
 | 6 | （可选）再锚定 | 回到 #1，形成追问链；历史 turns 保留在面板内可回看 | — | — |
+
+**A12 重构（2026-10-15）**：追问面板重构为与全局智能助理共用同一问答管线（唯一实现 `src/lib/assistant/use-chat-pipeline.ts`）——追问路径不开本地案例检索、保持 PEO 协议不变；在线兜底在 `run:start` 后第 0 步发射 plan 事件（07 §2 第 21 类，8s 超时/失败静默跳过，§2.10）；消息脚注三态（本地计算 / 本地案例库 / 在线生成）按路径如实标注；输入闸门（`src/lib/assistant/input-guard.ts`，注入防护第四层：控制字符 → 超长（>500 字）→ 指令覆盖、角色劫持、泄露诱导、SQL 痕迹四类注入特征，02 §11）对追问与智能助理输入同样生效。
 
 **4.1.1 上下文 JSON 与计划生成 Prompt（UI→Agent 的契约，canonical = 07 §18 SelectionContext，#65）**
 
@@ -1171,7 +1208,7 @@ export function flushNow(flush: (batch: PipelineEvent[]) => void) { flush(buffer
 | 更新对象 | 频率上限 | 机制 |
 |---|---|---|
 | ThinkingBubble 事件流 | 8 Hz | 120ms 批量 flush（上述） |
-| LLM 叙事流式文字（结论区/追问答案） | 20 Hz（50ms 合并） | delta 缓冲合并为一次 setState |
+| LLM 叙事流式文字（结论区/追问答案/智能助理消息） | 20 Hz（50ms 合并） | delta 缓冲合并为一次 setState |
 | SQL 预览 | 仅当新 SQL 开始/结束 | 每条截断 160 字符 × 3 行，全文折叠 |
 | PipelineStepper 进度 | 10 Hz | 确定性进度（行数/子任务）节流 |
 | 图表 setOption | 数据变更 ≤ 1 次 / 250ms；dataZoom 拖动内 60ms | 节流 + 合并 |
@@ -1194,6 +1231,8 @@ export function flushNow(flush: (batch: PipelineEvent[]) => void) { flush(buffer
 | 快速记账 LLM 不可用 / parseable:false | 转手动表单兜底（金额空、类别下拉预选 top-1 规则猜测，08 §⑥.1） | info 条：「已切换手动记账表单，填完即可入账」 |
 | 新任务 AI 不可用（budget-advice / forecast / tip-personalize / annual-story 某段） | 模板兜底（阈值规则句 / 固定句式 / top-3 直出 / 模板段，08 §⑥） | info 条：「已使用内置模板，结论来自确定性 SQL，图表不受影响」 |
 | 锚点追问 SQL 校验失败 | 重试 1 次 → 回退内置分析模板 | 步骤树该节点红标 + 条：「已改用内置分析模板」 |
+| assistant-plan 超时/失败（08 修订案 A12） | 静默跳过（回答不受影响，仅不展示思考计划块） | 无横幅（面板只缺「思考计划」块） |
+| 智能助理/追问输入命中闸门（08 修订案 A12） | 拦截，不进任何本地/在线路径 | 固定拒绝话术 + 脚注：「已拦截 · 未进入任何模型」 |
 | 断网 | 全程浏览器内计算不受影响，仅 AI 能力降级 | 顶部常驻条：「已离线：明细计算正常，AI 解读已降级为模板」 |
 | WASM 加载失败 | 提示重载 | error 页 + [重试] [观看演示视频]（答辩备用录像入口） |
 
@@ -1212,6 +1251,7 @@ export function flushNow(flush: (batch: PipelineEvent[]) => void) { flush(buffer
 7. 底部 tab bar 5 项（首页/体检/账本/订阅/我的），安全区 `env(safe-area-inset-bottom)`；「我的」指向 `/settings`（08 A7），`/budget` 与 `/learn` 不新增 tab 项，从首页能力卡与 `/settings` 链接进入；
 8. `/budget` 移动端单列布局：预算环 → 分类预算列表（每类一行已用比例条）→ 超支贴士 → 预测，快速记账入口收为底部悬浮条（44×44 触控目标），预算编辑弹层改 bottom sheet；
 9. `/report` 移动端故事段单列 + 海报按钮全宽；`/learn` 案例卡单列、搜索框吸顶（国赛窗口补齐后按本节适配，省赛版本仅首页 P2「即将上线」角标入口）；`/settings` 分区折叠为手风琴。
+10. 智能助理：聊天抽屉移动端全屏（滑动手势关闭），悬浮按钮保持 44×44 触控目标与底部 tab bar 安全区共存；语音按钮在浏览器不支持 Web Speech 或 featureFlags.voice=false 时隐藏（08 修订案 A12）。
 
 ---
 
@@ -1219,7 +1259,7 @@ export function flushNow(flush: (batch: PipelineEvent[]) => void) { flush(buffer
 
 ### 5.1 真实思考状态可视化（AI 交互体验 3 分的主战场）
 
-**展示三样真实东西**：正在执行的 SQL（脱敏聚合 SQL 本体）、命中的 RAG 案例（标题 + caseId）、模型流式文本（真实 token）。事件协议 = 07 §2 spendct协议@2（§2.3 只 import）。
+**展示四样真实东西**：正在执行的 SQL（脱敏聚合 SQL 本体）、命中的 RAG 案例（标题 + caseId）、模型流式文本（真实 token）、智能助理在线回答的 plan 思考计划（07 §2 第 21 类：goal + 1-4 步，assistant-plan 归 deepseek，08 修订案 A12）。事件协议 = 07 §2 spendct协议@2（§2.3 只 import）。
 
 **硬规定（评审逐条对照）**：
 
@@ -1269,7 +1309,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 
 ### 6.1 键盘导航
 
-- Tab 顺序 = 视觉顺序：TopNav → 主内容 → 追问面板 → 底部；所有操作不经快捷键也全程可达；
+- Tab 顺序 = 视觉顺序：TopNav → 主内容 → 追问面板 → 智能助理抽屉（开启时）→ 底部；所有操作不经快捷键也全程可达；
 - 快捷键表（`?` 呼出帮助浮层，可一键关闭）：
 
 | 键 | 作用 | 作用域 |
@@ -1303,6 +1343,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | 订阅雷达 | 没抓到连续扣费 | 这次体检没有命中连续小额扣费模式。如果你有已知订阅，可以去账本汇总视图点它的扣费记录，帮你核算总支出 | [去账本汇总] |
 | 年度报告 | 报告需要至少 3 个月数据 | 当前账单覆盖 {n} 个月，继续积累或换一份时间跨度更长的账单 | [回洞察流] |
 | 追问区（首次） | 从图表开始提问 | 点击或框选任何图表元素，AI 会制定分析计划并给出带图表的答案 | [看个例子] |
+| 智能助理（首次） | 直接问我 | 示例问题 3-4 条 + [新对话]：本地规则/本地案例优先回答，答不上才在线生成，每条消息脚注标注来源 | [看示例问题] |
 | 预算中心 | 还没有设置预算 | 给 12 个消费类别设一个月度预算，超支时 AI 会给你提示，还能预测下个月的花销 | [设置预算] |
 | 知识课堂 | 没有找到相关案例 | 换一个关键词，或清空搜索浏览全部 {n} 条案例（案例库加载中态 = 骨架屏，见 §1.11） | [清除搜索] |
 | 数据管理 | 还没有数据集 | 上传账单后，数据集会出现在这里，可导出 CSV/JSON 或一键删除 | [去上传账单] |
@@ -1312,7 +1353,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 - 卡片流用 `region` + `aria-label="洞察卡流"`；每张卡 `article`，结论区 `aria-live="polite"`（流式更新节流 120ms，避免刷屏）；置信度朗读为「置信度 72%，较高」；
 - ThinkingBubble `aria-live="polite"` 但只公告阶段切换与错误（SQL 滚动不朗读）；图表容器 `aria-label` = 图表标题 + 关键结论一句话 + 「可切换数据表视图」；
 - 计划步骤树：`role="tree"` / `treeitem` + `aria-expanded`，状态朗读「第 2 步：按月份聚合餐饮支出，执行中」；
-- 弹层/浮层：焦点陷阱 + Esc 关闭 + 打开时焦点移入。
+- 弹层/浮层：焦点陷阱 + Esc 关闭 + 打开时焦点移入；智能助理聊天抽屉同此规则，消息列表 `aria-live="polite"` 按 §4.3 节流。
 
 ### 6.5 细节打磨清单（W4 起每周固定 2 天逐项过，全部通过才允许出新功能）
 
@@ -1324,6 +1365,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 6. 移动端 375px 宽度全页面截图检查；
 7. 锚点追问 6 步流程各打断一次（Esc/中途关面板/刷新），状态可恢复不脏读；
 8. 注入攻击演示账单（商户名恶意文本）上传：所有渲染点显示脱敏 hash，无 HTML 注入。
+9. 智能助理输入闸门四类注入特征（指令覆盖、角色劫持、泄露诱导、SQL 痕迹）各注入一次，均命中固定拒绝话术且不进任何本地/在线路径（08 修订案 A12）。
 
 ---
 
@@ -1334,7 +1376,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | 产品 | 交互范式 | SpendCT 的差异 |
 |---|---|---|
 | Rocket Money | 订阅管理工具，列表+开关 | 体检流水线叙事 + 订阅只是六阶段之一 |
-| Cleo | 聊天窗问 AI | **洞察卡流 + 图表锚点追问**：AI 先体检、用户审阅追问，非聊天窗 |
+| Cleo | 聊天窗问 AI | **本地优先智能助理（非直连 API 聊天窗）**：洞察卡流 + 图表锚点追问，AI 先体检、用户审阅追问 |
 | 随手记/钱迹 | 记账流水与报表 | AI 生成「可审阅结论」（置信度+引用+打标），而非纯报表 |
 
 ### 7.2 评委 30 秒动线（演示视频分镜即此表，全程无需真实账单）
@@ -1357,7 +1399,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 
 ### 7.3 演示控制台（`?` 键，评委提问时的应急武器）
 
-浮层内按钮：`重放流水线`（回放事件流）/ `跳到最后阶段` / `注入一次错误`（演示错误边界与降级条）/ `切换暗色` / `断网模拟`（演示离线降级）/ `恢复断点`（演示续跑）/ 「跳转新功能」快捷键组（08 §12.1：`b`=预算中心、`l`=知识课堂、`s`=数据管理）。**演示模式（demoMode）下所有网络请求预跑 + datasetTxHash 对应缓存键命中，保证 0 抖动**。
+浮层内按钮：`重放流水线`（回放事件流）/ `跳到最后阶段` / `注入一次错误`（演示错误边界与降级条）/ `切换暗色` / `断网模拟`（演示离线降级）/ `恢复断点`（演示续跑）/ 「跳转新功能」快捷键组（08 §12.1：`b`=预算中心、`l`=知识课堂、`s`=数据管理、`a`=智能助理）。**演示模式（demoMode）下所有网络请求预跑 + datasetTxHash 对应缓存键命中，保证 0 抖动**。
 
 ### 7.4 60 秒扩展动线 v2（时间富余时按序加，08 §12.1）
 
@@ -1367,6 +1409,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 4. 年度数据故事+海报（10s）：/report 故事段逐段 scroll-reveal（annual-story 分段叙事，AI 深度主镜头）→ 一键生成 PNG 海报（F05）；
 5. 成就段位一屏（6s）：成就墙一屏 + 徽章弹出一枚（F10，UI 设计 4% + 前端交互 3% 的落点镜头）；
 6. 数据导出（5s）：CSV/JSON 导出 + 隐私提示（F12，隐私信任收口）。
+7. 智能助理（6s）：悬浮按钮 → 抽屉 → 示例问题本地命中（脚注「本地计算」）→ 一条在线兜底（plan 思考计划块 + ToolBadge）→ 语音输入一例（如浏览器支持）。（08 修订案 A12 未强制入动线，随 06 路线图 §6.3/§6.4 修订决定）
 
 接 30 秒动线（§7.2）后的富余时间依次播放；若 P1/P2 已砍（08 §⑩），按 E1/E2 验收结果跳过对应段，回退旧版三镜头（OCR / 健康仪表 / 导出 PDF）。**F09/F11/F13（P2）不进任何动线**：PDF/README 静态展示 + 首页「即将上线」角标，T52b/T53/T54 点亮后才考虑 60s v2 加映。演示控制台「跳转新功能」快捷键组（§7.3）按同一顺序直达。
 
@@ -1400,7 +1443,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | 性能优化（前端工程 20% 内 3 分） | §4.3 | 「120ms 事件节流、图表实例 ≤6、DuckDB/ECharts 按路由懒加载、缓存键命中（07 §10）」 |
 | AI 安全与可控性（4%） | §3.6-8、§6.5-8 | 「ECharts option 白名单清洗、SQL 白名单徽标可视化、注入演示账单脱敏显示」 |
 | 实用性 / 社会价值（10%/10%） | §1.6 两大图、§1.7 管理墙、§1.10-1.12 | 「预算/记账/订阅管理/数据导出四类实用功能 + 订阅倒计时与取消攻略，AI 先体检之外的可落地价值」 |
-| 大模型集成（AI 深度内） | §1.10 zod 确认卡、§1.8 故事段、§2.3 新 schema | 「5 个新 LLM 任务全部 zod 强校验 + 模板兜底 + 降级链（08 §⑥），扩展不稀释 AI 深度主线」 |
+| 大模型集成（AI 深度内） | §1.10 zod 确认卡、§1.8 故事段、§2.3 新 schema、§2.10 assistant-plan（08 修订案 A12，deepseek） | 「6 个新 LLM 任务（08 5 个 + A12 assistant-plan）全部 zod 强校验 + 模板兜底 + 降级链（08 §⑥/07 §12），扩展不稀释 AI 深度主线」 |
 
 ### 8.3 本文档修订记录
 
@@ -1409,4 +1452,5 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | 2026-10-13 | v0.9 初稿：全页面/组件/交互/设计系统/演示动线；图表色板经验证实测（§3.1.3 数据） |
 | 2026-10-13 | v1.0：对齐 07 契约——7 条路由（07 §14，#46）、insight-card@v1（07 §4，#4/#33/#60）、spendct协议@2（07 §2，#3/#28）、SelectionContext/PlanStepKind/工具短名（07 §18，#65）、ModelId 四枚举+展示名（07 §12，#64）、StageStatus（07 §1）、merchantRef 与金额单位分（07 §0.3/§3，#29/#50）、订阅业务规则（07 §3，#24/#48）、断点键 spendct:run:latest（07 §17，#22/#41）、组件注册表 13 组件（07 §14，#52）、Tailwind v4 @theme（01 锁表，#11）、评分口径引用 06 §6.3（#26）、演示时长口径（#77） |
 | 2026-10-13 | v1.1：落实 08 功能扩展增量（08 §⑨ 索引 + 修订案 A1-A7）——路由 7→10（A7：/budget /learn /settings 三页完整四态，§1.10-1.12）；组件注册表 13→19（A7 六组件：BudgetRing/QuickEntryBar/ForecastChart/CaseCard/DatasetManager/NotificationBell）并新增四大静态图与 16 个页面级组件入表（§2.2）；§3.6 四大静态图渲染规范 +「LLM 答案仍限七类」声明（08 §④.2）；FeatureFlag 新增 budget/reportStory/achievements/learn（08 §2.3）；降级链表补快速记账/新任务两行（08 §⑥）；移动端「我的」→/settings、/budget 单列布局（§4.5）；空态文案补预算/课堂/设置 3 条（§6.3）；§7.4 扩展动线 v2 + 演示控制台跳转快捷键组 b/l/s（08 §12.1）；§8.1 补 E1（11/2）/E2（11/9）扩展闸门 |
+| 2026-10-15 | v1.2：落实 08 修订案 A12 全局智能助理（07 §18 A12 / 07 §21 05 文档第 14 条）——新节 §2.10（悬浮入口右下固定 + 聊天抽屉桌面 400×600/移动全屏 + 空态示例问题与新对话 + 语音入口 feature-flag voice + PlanBlock 思考计划块 + 三态来源脚注 + 工具徽章复用 07 §18 A9）；§2.2 组件总表新增 AssistantDrawer/ChatBubbles/PlanBlock（两级注册口径，约 16→19 个）；§2.3 事件 20→21 类（plan，在线兜底第 0 步，8s 超时静默跳过）并标注 sanitizeResult async（WebCrypto）；§4.1 补 A12 共享管线 use-chat-pipeline 与输入闸门注记；§1.1 全局 Shell 补悬浮入口、FeatureFlag 新增 voice；§4.4 降级链补 assistant-plan 静默跳过/闸门拦截两行；§4.5 移动端补第 10 条；§6.3 空态补智能助理行；§6.5 补闸门四类注入特征走查；§7.1 竞品行改「本地优先智能助理」口径；§7.3/§7.4 补助理快捷键与扩展镜头 |
 

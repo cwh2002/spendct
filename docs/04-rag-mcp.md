@@ -1,8 +1,10 @@
 # 04 RAG 与 MCP 工具设计（SpendCT · 消费CT）
 
-> 版本 v1.1 ｜ 2026-10-13 ｜ 作者：数据管线/AI（主笔）、材料（案例来源核验与评测数字口径）
+> 版本 v1.2 ｜ 2026-10-15 ｜ 作者：数据管线/AI（主笔）、材料（案例来源核验与评测数字口径）
 >
 > v1.1 变更（08 功能扩展方案 §⑤ 与修订案 A4 落地）：案例库总目标 100+ → 150+；新增第 8 类 `student_benefits` 与 `benefitTags`/`audience` 字段；新增金标补充集 `student-golden-8`（hit@3 ≥7/8 独立断言）；金标主集 20 题三档阈值（18/16/12）不变。
+>
+> v1.2 变更（08 修订案 A12 落地，2026-10-15）：新增全局智能助理本地案例检索路径（`src/lib/assistant/local-cases.ts`，TF-IDF，聊天阈值 `CASE_PATH_MIN_SCORE=0.15`，页面引用阈值 0.08 不变）；追问面板重构为共享问答管线 `use-chat-pipeline`（PEO 协议不变）；在线兜底 `/api/followup` 服务智能助理与追问面板两入口（question+messages 模式）并补 plan 事件（spendct协议@2 第 21 类）。
 >
 > **实现收口（2026-10-15）**：RAG 检索已按本文档设计态上线，实际交付口径如下（与设计态的偏差均已在此列明，未列明的均按原文实现）：
 >
@@ -13,9 +15,10 @@
 > - TF-IDF 兜底：词表 697 词（df≥2 平滑 idf），manifest 放 `src/data/tfidf-manifest.json` 静态 import（浏览器内检索零网络零请求，替代 public/data 副本——避免运行时拉取、构建期即可做一致性校验）；
 > - 金标评测：主集 20 题 + 学生补充集 8 题按 §5 口径落库；实测 hit@3——full 主集 20/20（hit@1=20/20，MRR=1.000）、学生集 8/8；dense-only 主集 20/20、学生集 8/8；tfidf 主集 19/20、学生集 8/8；三档全部达标，逐题明细与延迟分档见 docs/eval-rag.md（唯一数字源）；检索延迟预算随实测修订：稳态 P95<2.5s、冷启动首查<6s（§4.1 预算表原 900ms 的修订说明见 eval-rag.md §3）；
 > - 服务形态：`POST /api/rag` 默认进程内直跑（onnxruntime-node），`RAG_SERVER_URL` 代理容器模式为预留位（07 §16 拓扑），MCP 容器复用同一 `src/server/rag/retrieve.ts` 纯 node 模块；
-> - UI 接入：订阅卡 2 挂浏览器内 TF-IDF 检索的同族案例引用（score ≥ 0.08 才引用，宁缺毋滥）、省钱贴士按 top 类目语义匹配、知识课堂搜索 TF-IDF 排序、追问面板在线兜底前置 `/api/rag` 检索并挂「案例参考」脚注（数据来自检索响应，非模型文本）。
+> - UI 接入：订阅卡 2 挂浏览器内 TF-IDF 检索的同族案例引用（score ≥ 0.08 才引用，宁缺毋滥——0.08 为页面浏览引用阈值，08 修订案 A12 保持不变）、省钱贴士按 top 类目语义匹配、知识课堂搜索 TF-IDF 排序、追问面板重构为共享问答管线 `use-chat-pipeline` 后（不开启案例路径、PEO 协议不变），在线兜底前置 `/api/rag` 检索并挂「案例参考」脚注（数据来自检索响应，非模型文本）。
+> - 智能助理本地案例检索：全局智能助理聊天路径 TF-IDF 检索（`src/lib/assistant/local-cases.ts`，聊天阈值 `CASE_PATH_MIN_SCORE=0.15`——严于页面引用 0.08，最多 3 条，脚注「本地案例库 · 零 API 调用」，零命中转在线兜底；08 修订案 A12）。
 >
-> **MCP 四工具独立服务仍未上线（国赛窗口）**：工具集成当前以浏览器内 SQL + 4 个结构化 LLM 短任务体现（07 §13 收口说明）。本文档 §8–§11 的 MCP 部分仍为设计态。
+> **MCP 四工具独立服务仍未上线（国赛窗口）**：工具集成当前以浏览器内 SQL + 4 个结构化 LLM 短任务 + assistant-plan 智能助理规划任务体现（07 §13 收口说明；assistant-plan 归 deepseek、8s 超时静默跳过，08 修订案 A12）。本文档 §8–§11 的 MCP 部分仍为设计态。
 
 ---
 
@@ -33,7 +36,7 @@
 | ④ | 金标主集 20 条 + 学生权益补充集 student-golden-8 + hit@3 评测脚本 + 引用准确率指标 | §5 |
 | ⑤ | TF-IDF 本地兜底（纯 TS 轻量实现） | §6 |
 | ⑥ | 用户历史账单个人化 RAG | §7 |
-| ⑦ | MCP 四工具规格（校历/和风天气/大促日历/DuckDB 元数据） | §8 |
+| ⑦ | MCP 四工具规格（校历/和风天气/大促日历/DuckDB 元数据；在线兜底工具层与 plan 事件联动，08 修订案 A12） | §8 |
 | ⑧ | MCP server 实现方案（SDK/传输/部署/接入/演示脚本） | §9 |
 | ⑨ | 砍法（时间不足退 Function Calling 的确切路径与丢分评估） | §10 |
 | ⑩ | 「工具不可用 → Agent 跳过该工具继续跑」优雅降级 | §11 |
@@ -54,7 +57,7 @@
 | `Citation.kind = "sql"｜"rag"｜"tool"｜"rule"｜"personal"`（07 §4 唯一枚举；案例引用 kind=rag） | §4.6、§8.5 | 03、05 |
 | `personalContext` 洞察卡扩展字段 | §7.4 | 03、05 |
 | `ToolInvocation { tool, state, latencyMs, meta }` 工具调用徽章数据流 | §8.5、§11.4 | 03（编排层产出）、05（ToolBadge 组件） |
-| 检索服务两处挂载点：订阅雷达（浏览器内）+ 锚点追问（AI 接入层） | §1 | 03（流水线 subscription 阶段（第 4 阶段，07 §1）与 Plan-Execute-Observe） |
+| 检索服务三处挂载点：订阅雷达（浏览器内）+ 智能助理本地案例检索（浏览器内，聊天阈值 0.15，08 修订案 A12）+ 锚点追问（AI 接入层） | §1 | 03（流水线 subscription 阶段（第 4 阶段，07 §1）、智能助理共享问答管线与 Plan-Execute-Observe） |
 | 数据可见性对照表新增行（RAG 检索模块、MCP server 各看到什么） | §7.4、§8.4 | 02 |
 | 提示注入防护扩展：检索文本与工具输出按「数据不可信」处理 | §4.4、§8.5 | 02、03 |
 | 新增依赖与环境变量清单（`@modelcontextprotocol/sdk`、`onnxruntime-node`、`MCP_SERVER_URL`、`QWEATHER_API_KEY`、`EMBEDDING_PROVIDER`、`HF_ENDPOINT`） | §3.2、§9.2 | 01（技术总纲依赖与 env 模板） |
@@ -74,6 +77,8 @@
 | 金标 query | 人工标注正确答案（应命中的案例 ID）的评测问题 |
 | 补充评测集（student-golden-8） | 学生权益类别 8 题金标评测集（§5.6），与主集 20 题分开报告、独立断言（修订案 A4） |
 | 锚点追问 | 洞察卡元素点击/框选发起的追问（03 文档 Plan-Execute-Observe） |
+| 智能助理（全局） | 悬浮入口 + 聊天抽屉的全局问答入口（非登录页可用），与追问面板共用 `use-chat-pipeline` 管线（08 修订案 A12） |
+| 聊天案例路径 | 智能助理本地 TF-IDF 案例检索（`src/lib/assistant/local-cases.ts`），聊天阈值 0.15，页面引用 0.08 不变 |
 | 订阅雷达 | 流水线 subscription 阶段（第 4 阶段，07 §1 唯一序号）的订阅陷阱扫描（03 文档），确定性 SQL + RAG 引用 |
 | AI 接入层 | Next.js Route Handler（服务端），LLM 调用、检索、工具编排所在层 |
 | 个人化 RAG | 检索用户自己的往月异常事件（浏览器内，不上传） |
@@ -104,8 +109,10 @@
 │   │                                                                          │
 │   ├─▶ [检索模式A·浏览器内] 订阅雷达引用检索                                    │
 │   │      SQL 元数据过滤（DuckDB-WASM 参数化） + TF-IDF 排序（纯 TS，<10ms）     │
-│   └─▶ [个人化 RAG] 历史异常事件：DuckDB-WASM SQL 结构化召回 + TF-IDF 排序      │
+│   ├─▶ [个人化 RAG] 历史异常事件：DuckDB-WASM SQL 结构化召回 + TF-IDF 排序      │
 │         （全程浏览器内，用户数据零上传 —— 对齐 02 文档隐私架构）                │
+│   └─▶ [智能助理本地案例检索] 聊天攻略/常识：TF-IDF（local-cases.ts 阈值 0.15）  │
+│         （聊天阈值 0.15 严于页面引用 0.08，零命中转在线兜底，08 修订案 A12）   │
 └──────────────┬───────────────────────────────────────────────────────────────┘
                │ 锚点问题 + 聚合上下文（03 文档可见性对照表口径）
                ▼
@@ -129,11 +136,11 @@
 
 | 决策 | 内容 | 理由 | 被否决的替代方案 |
 |---|---|---|---|
-| D1 | 检索双层：订阅雷达引用在**浏览器内**（TF-IDF），锚点追问深度检索在**AI 接入层**（dense+reranker） | 订阅雷达引用场景零网络、用户明细零上传（隐私叙事）；bge-m3（约 568M 参数）量化后数百 MB，无法进浏览器首屏 | 全浏览器 Transformers.js（被 bge-m3 体积否决）；全服务端（订阅雷达引用需联网，隐私叙事变弱） |
+| D1 | 检索双层：订阅雷达引用与智能助理本地案例检索在**浏览器内**（TF-IDF；聊天路径阈值 `CASE_PATH_MIN_SCORE=0.15` 严于页面引用 0.08，08 修订案 A12），锚点追问深度检索在**AI 接入层**（dense+reranker） | 订阅雷达引用场景零网络、用户明细零上传（隐私叙事）；bge-m3（约 568M 参数）量化后数百 MB，无法进浏览器首屏 | 全浏览器 Transformers.js（被 bge-m3 体积否决）；全服务端（订阅雷达引用需联网，隐私叙事变弱） |
 | D2 | 运行时零嵌入 API 调用：文档嵌入离线预计算进 repo；查询嵌入用 **onnxruntime-node 本地推理**；模型不可用降级 TF-IDF | 满足②的硬约束；零费用、零限流（三重抗限流之一）；与文档嵌入严格同空间 | SiliconFlow bge-m3 API（有费用+限流风险，直接违反约束，否决） |
 | D3 | 级联顺序：SQL 过滤 → dense top-30 → rerank top-5 → 引用 ≤3；rerank logits 阈值 -2.0 | 便宜的先做；宁缺毋滥阈值哲学 | dense 与 TF-IDF 分数融合（RRF）——语料太小，无增益且增加调参面 |
 | D4 | 金标 20 条的查询嵌入也离线预计算进 repo，评测脚本零 API、零网络、可进 CI | 评测数字确定性、可复跑（评测数字写入技术文档，必须可复核） | 评测时实时调嵌入 API（费用、抖动、断网风险） |
-| D5 | 个人化 RAG 全程浏览器：异常事件摘要存浏览器，DuckDB-WASM 结构化 SQL + TF-IDF 语义排序 | 用户历史数据不出浏览器（02 文档硬约束；追问在线兜底的明细快照为唯一例外，07 修订案 A8） | 服务端存历史异常（违反隐私架构） |
+| D5 | 个人化 RAG 全程浏览器：异常事件摘要存浏览器，DuckDB-WASM 结构化 SQL + TF-IDF 语义排序 | 用户历史数据不出浏览器（02 文档硬约束；追问在线兜底的明细快照为唯一例外，08 修订案 A8） | 服务端存历史异常（违反隐私架构） |
 | D6 | MCP 传输选 **Streamable HTTP**（stdio 仅本地调试） | 容器部署可达、AI SDK 原生支持、演示可录制握手 | stdio（无法容器部署） |
 | D7 | DuckDB 元数据工具（MCP 协议演示）数据来源 = 浏览器随每次 `/api/followup` 请求体（`sessionSchema` 字段，07 §13）携带的**聚合级 schema+统计快照**（per-request，服务端零存储）；浏览器端真实路径 = `duckdb_meta` 直读 DuckDB-WASM（07 §18） | DuckDB 数据在浏览器，远程 MCP server 够不到；快照只含列名/类型/统计，不含明细，符合 02 可见性对照表 | 客户端假工具（失去 MCP 叙事）；schema 硬编码进 system prompt（列统计动态变化，不灵活） |
 | D8 | 工具故障一律返回结构化降级结果（不抛异常中断流）；同一工具连续 2 次失败即禁用并注入提示 | ⑩优雅降级的核心机制，演示稳定性第一 | 工具失败即中断整个回答（体验灾难，否决） |
@@ -175,8 +182,9 @@ export interface ToolInvocation {        // 05 文档 ToolBadge 组件渲染契�
   errorReason?: string;                  // skipped/error 时的文案，如「连接超时」
 }
 
-// 检索服务两处挂载点（03 文档调用）：
+// 检索服务三处挂载点（03 文档调用；第三处为 08 修订案 A12 新增）：
 //   浏览器内（订阅雷达/个人化）： src/lib/rag/browser-retrieve.ts  retrieveCasesInBrowser(query, filter)
+//   浏览器内（智能助理聊天）：   src/lib/assistant/local-cases.ts   TF-IDF 检索，阈值 CASE_PATH_MIN_SCORE=0.15（页面引用 0.08 不变）
 //   服务端（锚点追问）：        src/server/rag/retrieve.ts         retrieveCases(query, filter)
 ```
 
@@ -815,8 +823,8 @@ export async function retrieveCases(
 ### 6.1 定位（三层用途）
 
 1. **服务端 dense 兜底**：嵌入模型不可用（serverless/内存不足）时替代召回（§4.8）；
-2. **浏览器端主力**：订阅雷达引用检索 + 个人化 RAG 语义排序（§1 检索模式 A）——零网络、零模型下载；
-3. **完全离线模式**：断网时订阅雷达引用照常产出（演示稳定性）。
+2. **浏览器端主力**：订阅雷达引用检索 + 智能助理本地案例检索（聊天阈值 `CASE_PATH_MIN_SCORE=0.15` 严于页面引用 0.08——回答气泡直接展示案例引用，噪音案例比不引用更伤可信度，宁缺毋滥；08 修订案 A12）+ 个人化 RAG 语义排序（§1 检索模式 A）——零网络、零模型下载；
+3. **完全离线模式**：断网时订阅雷达引用照常产出（演示稳定性）；智能助理聊天离线仍可走本地规则问答与本地案例检索（两条本地路径零 API 调用，08 修订案 A12）。
 
 ### 6.2 实现要点
 
@@ -931,7 +939,7 @@ export interface PersonalContext {
 ### 8.0 架构总览
 
 ```
-浏览器 ──(每次锚点追问请求体携带)──▶ POST /api/followup（含 sessionSchema 聚合级 schema+统计快照，per-request）
+浏览器 ──(每次追问/智能助理聊天请求体携带，共享管线 use-chat-pipeline，08 修订案 A12)──▶ POST /api/followup（含 sessionSchema 聚合级 schema+统计快照，per-request；question+messages 模式，零新端点）
    │                                                        │
    │ 锚点问题 + 聚合上下文                                    ▼
    ▼                                              AI 接入层注入快照为工具参数（服务端零存储）
@@ -1025,7 +1033,7 @@ JSON 结构（节选）：
 | 描述（LLM 可见） | 返回当前用户账单表（DuckDB-WASM）的 schema 与列统计（行数/去重数/最小值/最大值/均值）。在需要写 SQL 查询账单数据前调用，以确认列名、类型与取值范围；本工具只返回聚合元数据，不返回任何交易明细。 |
 | 输入 schema（zod） | `{ table?: z.enum(["transactions","merchants"]).default("transactions"), sessionSchema?: z.record(z.string(), z.unknown()).optional(), includeStats?: z.boolean().default(true) }`（表枚举 07 §3：bills→transactions，#29） |
 | 输出 schema（TS） | `{ table, rowCount, datasetTxHash, schema: Array<{ column, type, nullable, description }>, stats?: Array<{ column, count, distinct, min, max, avg? }> }` |
-| 数据来源 | **per-request 快照（无服务端存储）**：浏览器随每次锚点追问请求体 `POST /api/followup` 的 `sessionSchema` 字段提交 `{ table, schema, stats, rowCount, datasetTxHash }`（只含列名/类型/统计，**无任何明细行、无商户明文清单**）；AI 接入层调用本工具时注入为工具参数（07 §13/§18，#54） |
+| 数据来源 | **per-request 快照（无服务端存储）**：浏览器随每次追问/智能助理聊天请求体（共享问答管线，08 修订案 A12）`POST /api/followup` 的 `sessionSchema` 字段提交 `{ table, schema, stats, rowCount, datasetTxHash }`（只含列名/类型/统计，**无任何明细行、无商户明文清单**）；AI 接入层调用本工具时注入为工具参数（07 §13/§18，#54） |
 | 实现要点 | ① 快照随请求传递，服务端不落盘、不写日志、无 TTL；② 快照 zod 校验（列统计必须是数值聚合，拒绝明细数组）；③ 输出被 LLM 消费，按 02 文档「数据不可信」声明处理；④ 备选实现（也用于砍法 L1，§10）：退为原生 AI SDK 工具，客户端读 DuckDB-WASM `DESCRIBE`/`SUMMARIZE` 后直接返回，schema 不变 |
 
 输出示例：
@@ -1230,7 +1238,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import { jsonSchema, tool } from "ai";
 ```
 
-**接入要点**：① MCP 客户端只存在于 AI 接入层，浏览器只与 Next.js 通信（隐私架构不变）；② 模型可调用的三工具（校历/天气/大促日历）经 `getMcpTools()` 装配，L1 连接 MCP 服务器 tools/list、L2 本地回退（`mcp-fallback.ts` 静态数据，与 MCP 侧过滤逻辑镜像）；`query_bill_db_metadata` 为协议演示工具，由 `/api/followup` 在会话开始时确定性调用（快照随请求体 `sessionSchema` 字段到达，per-request，无服务端存储），不进模型工具集；③ 工具徽章数据由 SSE `tool:start/tool:end` 事件推给前端（07 §18 A9），工具失败不中断流——`{ok:false}` 信封注入上下文，模型自行继续（§11）。
+**接入要点**：① MCP 客户端只存在于 AI 接入层，浏览器只与 Next.js 通信（隐私架构不变）；② 模型可调用的三工具（校历/天气/大促日历）经 `getMcpTools()` 装配，L1 连接 MCP 服务器 tools/list、L2 本地回退（`mcp-fallback.ts` 静态数据，与 MCP 侧过滤逻辑镜像）；`query_bill_db_metadata` 为协议演示工具，由 `/api/followup` 在会话开始时确定性调用（快照随请求体 `sessionSchema` 字段到达，per-request，无服务端存储），不进模型工具集；在线兜底 plan 事件（spendct协议@2 第 21 类，08 修订案 A12）的 `tool` 字段只填上述三个模型可调用工具名，用不到则省略；③ 工具徽章数据由 SSE `tool:start/tool:end` 事件推给前端（07 §18 A9），工具失败不中断流——`{ok:false}` 信封注入上下文，模型自行继续（§11）；④ `/api/followup` 在线兜底现服务智能助理与追问面板两条入口（共享问答管线 `use-chat-pipeline`，question+messages 模式，零新端点；08 修订案 A12）。
 
 ### 9.5 演示视频展示脚本（协议握手 + 结果注入归因）
 
@@ -1251,10 +1259,10 @@ MCP 工具链已完整上线，四条链路实测证据如下：
 |---|---|---|
 | MCP 服务器 | `mcp-server/`（@modelcontextprotocol/sdk@1.32.1 锁死小版本，Streamable HTTP 传输，express 挂 `/mcp` 与 `/healthz`） | 单测 31/31；构建 exit 0；smoke（initialize → tools/list 四工具 → tools/call 信封）通过 |
 | 主站接入层 | `src/server/ai/mcp.ts`（SDK Client 自建：5s 连接超时 / 30s 冷却 / 4s 工具超时 / 1s·2s·4s 退避 / 连续失败 2 次移除） | 单测 22/22：退避执行器五例、失败追踪、信封契约、L2 回退四工具 |
-| 在线兜底路由 | `POST /api/followup`（SSE 协议 §2 + tool 事件，07 §13/§18 A9） | e2e「大促关键词问题挂工具徽章与在线生成脚注」通过（26/26 全量）；live 模式 curl 实测事件直方图 run:start / tool:start / tool:end / stage:thinking×87 / run:complete 正确，degraded 机制工作 |
+| 在线兜底路由 | `POST /api/followup`（SSE 协议 §2 + tool 事件，07 §13/§18 A9；08 修订案 A12 起服务智能助理与追问面板双入口，question+messages 模式，零新端点） | e2e「大促关键词问题挂工具徽章与在线生成脚注」通过（26/26 全量）；live 模式 curl 实测事件直方图 run:start / plan / tool:start / tool:end / stage:thinking×87 / run:complete 正确（plan 为 spendct协议@2 第 21 类、run:start 后第 0 步发射，08 修订案 A12），degraded 机制工作 |
 | 本地回退（L2） | MCP 不可达时：校历/大促日历本地静态过滤、天气诚实降级（unavailable 信封，绝不编造）、元数据回执本地校验 | 单测覆盖（数据文件单一来源镜像断言） |
 
-与设计稿的三处实测修正：① ai@7.0.137 无 MCP 客户端（07 §19 A9）；② 在线兜底落位 `/api/followup` 而非 `/api/ai/chat`（07 §13 A9）；③ 快照指纹 `datasetTxHash` = 导入层 `hashCleanRows` 的 SHA-256 前 16 位十六进制（regex `^[0-9a-f]{16,64}$`），不是设计稿的 40-64 位——mcp-server / 本地回退 / 客户端 session-schema 三方镜像一致。
+与设计稿的四处实测修正：① ai@7.0.137 无 MCP 客户端（07 §19 A9）；② 在线兜底落位 `/api/followup` 而非 `/api/ai/chat`（07 §13 A9）；③ 快照指纹 `datasetTxHash` = 导入层 `hashCleanRows` 的 SHA-256 前 16 位十六进制（regex `^[0-9a-f]{16,64}$`），不是设计稿的 40-64 位——mcp-server / 本地回退 / 客户端 session-schema 三方镜像一致；④ 智能助理与追问面板共用问答管线 `use-chat-pipeline`，在线兜底 `/api/followup` 双入口（question+messages 模式），零新端点（08 修订案 A12）。
 
 ---
 

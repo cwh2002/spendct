@@ -303,7 +303,7 @@
   <h3><span class="tag">功能</span>功能总览</h3>
   <table>
     <tr><th style="width:20%">模块</th><th>说明</th></tr>
-    <tr><td><b>六阶段体检</b></td><td>清洗 → 画像 → 异常 → 订阅 → 归因 → 年度，流式事件实时可见（20 类协议事件），支持暂停 / 恢复 / 断点续跑</td></tr>
+    <tr><td><b>六阶段体检</b></td><td>清洗 → 画像 → 异常 → 订阅 → 归因 → 年度，流式事件实时可见（21 类协议事件），支持暂停 / 恢复 / 断点续跑</td></tr>
     <tr><td><b>洞察卡流</b></td><td>每条结论带置信度、图表证据、SQL / RAG 引用，可确认 / 质疑 / 收藏 / 深挖；低置信度结论自动挂起</td></tr>
     <tr><td><b>订阅雷达</b></td><td>确定性规则（同商户 ≥3 笔、间隔 25–40 天、金额 ±1% 容差）揪出连续扣费，附下次扣费倒计时与取消指引</td></tr>
     <tr><td><b>预算中心</b></td><td>12 类目预算环 + 超支贴士 + 下月预测 + 一句话快速记账</td></tr>
@@ -311,6 +311,7 @@
     <tr><td><b>知识课堂</b></td><td>60 条可核验案例（订阅陷阱 / 预付风险 / 消费维权 / 学生权益），附法条与官方来源</td></tr>
     <tr><td><b>本地账户</b></td><td>IndexedDB 账户体系（PBKDF2-SHA256 加盐哈希），注册 / 登录 / 个人中心 / 成就段位</td></tr>
     <tr><td><b>数据主权</b></td><td>账单 CSV / JSON 一键导出、一键删除；数据可见性对照表公开在 /privacy</td></tr>
+    <tr><td><b>智能助理</b></td><td>全局悬浮聊天抽屉（本地优先混合推理）：规则问答 + 案例检索零 API 兜底、在线兜底挂思考计划与工具徽章、语音输入（浏览器转写）</td></tr>
   </table>
 
   <h3><span class="tag">动线</span>用户旅程</h3>
@@ -370,7 +371,7 @@
       <div class="pill">⬇ 白名单 SQL 聚合（窄文法预检 + 行数复检 + 3s 超时）</div>
     </div>
     <div class="row">
-      <div class="box"><b>六阶段管线引擎</b><span>状态机 · 20 类事件流<br />断点续跑 · 暂停恢复</span></div>
+      <div class="box"><b>六阶段管线引擎</b><span>状态机 · 21 类事件流<br />断点续跑 · 暂停恢复</span></div>
       <div class="arrow">→</div>
       <div class="box"><b>洞察卡工厂 + reflect 闸门</b><span>模板卡 → 自检<br />置信度 ≥0.6 才发布</span></div>
       <div class="arrow">→</div>
@@ -442,12 +443,13 @@
   <h3><span class="tag">协议</span>状态机与事件流（spendct协议@2）</h3>
   <p>管线是一台严格的状态机：每阶段 <b>pending → running → succeeded / skipped / failed</b>，阶段失败发 error 事件并降级继续（不中断整次体检）；运行可暂停（中止保留已产出卡）与断点续跑（从最近断点阶段重跑，阶段结果确定性保证产出一致）。</p>
   <table>
-    <tr><th style="width:22%">事件组</th><th>事件（共 20 类）</th></tr>
+    <tr><th style="width:22%">事件组</th><th>事件（共 21 类）</th></tr>
     <tr><td><b>运行边界（4）</b></td><td>run:start · run:complete · abort · checkpoint:saved</td></tr>
     <tr><td><b>阶段（5）</b></td><td>stage:start · stage:thinking · stage:evidence · stage:complete · stage:skipped</td></tr>
     <tr><td><b>洞察卡（3）</b></td><td>card:delta · card:complete · card:withheld</td></tr>
     <tr><td><b>LLM（2）</b></td><td>llm:degraded · llm:repair</td></tr>
     <tr><td><b>RAG / 工具 / 反思 / 缓存（6）</b></td><td>rag:retrieved · tool:start · tool:end · reflect:result · cache:hit · error（8 错误码判别联合）</td></tr>
+    <tr><td><b>思考计划（1）</b></td><td>plan（goal + steps 1-4 步，在线兜底回答前的思考计划块，08 修订案 A12）</td></tr>
   </table>
 
   <h3><span class="tag">闸门</span>SQL 白名单与发布闸门</h3>
@@ -595,7 +597,7 @@
     <tr><td><b>端到端（Playwright）</b></td><td class="good">23 用例</td><td>13 页冒烟（0 console error）+ 示例账单全动线（上传 → 真实管线 → 洞察真实卡，32.2s）+ 账户登录</td></tr>
     <tr><td><b>静态质量</b></td><td class="good">0 错误</td><td>tsgo 全量类型检查、ESLint、生产构建 17 路由（14 静态 + 2 API）</td></tr>
   </table>
-  <p>关键设计验证：订阅规则在真实 DuckDB 引擎上命中 / 排除断言通过（demo 数据集含 3 个订阅商户周期扣费）；引擎单测用 fake conn 驱动全部 20 类事件与 8 错误码路径，不依赖 wasm 环境。</p>
+  <p>关键设计验证：订阅规则在真实 DuckDB 引擎上命中 / 排除断言通过（demo 数据集含 3 个订阅商户周期扣费）；引擎单测用 fake conn 驱动全部 21 类事件与 8 错误码路径，不依赖 wasm 环境。</p>
 </section>
 
 <!-- ════════════════════ 10 工程规范 ════════════════════ -->

@@ -1,23 +1,25 @@
 # 03 AI体检流水线与Agent设计
 
-> 文档编号：03/06 · 版本 v1.1 · 2026-10-13 · 状态：设计规格
-> 变更记录：v1.1（2026-10-13）按 08 功能扩展方案修订（对应 08 §⑨ 本文件改动清单与修订案 A2/A5/A6 落点）——§1.3 annual 输出增加 AnnualStorySchema 年度故事分段（08 ⑥.5，预计算清单不变）；§2.6 提示词增加故事分段要点与「答案图表仍限七类、不得引用四大静态图」（08 §④）；§2.8 同步七类图表约束；§7 新增 T5 四条扩展任务降级条目（quick-entry→手动表单，其余→模板兜底）；§10 路由表 +5 行新任务（A5，与 07 §12 同步）；§4.1/§11 标注 A2 白名单增补、§11 端点清单标注 A6；§12 补扩展任务评审落点。v1.0（2026-10-13）初版。
+> 文档编号：03/06 · 版本 v1.2 · 2026-10-15 · 状态：设计规格
+> 变更记录：v1.2（2026-10-15）按 08 修订案 A12 全局智能助理修订——追问面板与全局智能助理聊天共用共享问答管线 `use-chat-pipeline`（唯一实现 `src/lib/assistant/use-chat-pipeline.ts`；锚点追问 PEO 协议不变，仅在线兜底路径共享）；聊天输入闸门 `input-guard`（注入防护第四层）与 Web Speech 语音转写均为前端行为（本项目服务器与 LLM 不接收音频）；§9 协议事件 20 类 → 21 类（新增 plan 思考计划事件）；§10 新增 assistant-plan 任务（deepseek 主，承载于 `/api/followup` SSE 流，零新端点、不加入 `/api/ai/task` 判别联合）；本地案例检索双阈值（聊天 0.15 / 页面引用 0.08）与 sanitizeResult 改 async（WebCrypto 异步哈希，调用方一律 await）。v1.1（2026-10-13）按 08 功能扩展方案修订（对应 08 §⑨ 本文件改动清单与修订案 A2/A5/A6 落点）——§1.3 annual 输出增加 AnnualStorySchema 年度故事分段（08 ⑥.5，预计算清单不变）；§2.6 提示词增加故事分段要点与「答案图表仍限七类、不得引用四大静态图」（08 §④）；§2.8 同步七类图表约束；§7 新增 T5 四条扩展任务降级条目（quick-entry→手动表单，其余→模板兜底）；§10 路由表 +5 行新任务（A5，与 07 §12 同步）；§4.1/§11 标注 A2 白名单增补、§11 端点清单标注 A6；§12 补扩展任务评审落点。v1.0（2026-10-13）初版。
 > 对应评审得分核心：AI 深度 35% 中的「Agent·工作流 8%」与「大模型集成质量 8%」（并支撑 AI 安全 4%、AI 交互体验 3%、性能优化 3% 子项；评分细则唯一口径表见 06 §6.3，#26）
 >
-> **实现收口（2026-10-14）**：追问实际交付为三路问答面板（闲聊分流 / 本地规则 / 在线兜底——本地答不了时发送汇总统计 + 最近 150 笔明细快照，07 修订案 A8）；PEO 循环、Plan DAG 与 MCP 工具（AI SDK tools）为设计态（04 收口注记）。状态机、事件协议、reflect 发布闸门已按本文档落地。
+> **实现收口（2026-10-14）**：追问实际交付为三路问答面板（闲聊分流 / 本地规则 / 在线兜底——本地答不了时发送汇总统计 + 最近 150 笔明细快照，08 修订案 A8）；PEO 循环、Plan DAG 与 MCP 工具（AI SDK tools）为设计态（04 收口注记）。状态机、事件协议、reflect 发布闸门已按本文档落地。
+>
+> **实现收口（2026-10-15，08 修订案 A12）**：追问面板重构为共享问答管线 `src/lib/assistant/use-chat-pipeline.ts`（全局智能助理与追问面板共用，唯一实现；锚点追问 PEO 协议不变，仅在线兜底路径共享）。聊天输入闸门 `src/lib/assistant/input-guard.ts`（注入防护第四层：控制字符 → 超长 >500 字 → 四类注入特征，命中即拦、不进任何本地/在线路径）；语音输入 = Web Speech 浏览器转写（本项目服务器与 LLM 不接收音频）。新增 assistant-plan 结构化规划任务（归 deepseek，承载于 `/api/followup` SSE 流，8s 超时/失败静默跳过）与 plan 流事件（协议第 21 类思考计划）。本地案例检索 TF-IDF 聊天阈值 0.15（页面引用仍 0.08，最多 3 条，脚注「本地案例库 · 零 API 调用」，零命中转在线兜底）。sanitizeResult 改 async（WebCrypto 异步哈希，调用方一律 await）。
 
 ## 0. 文档说明
 
 **本文档负责的范围**（边界）：
 
-- 六阶段体检流水线的状态机定义：阶段枚举、转移条件、每阶段输入/输出、确定性 SQL 预计算清单、LLM 叙事任务、失败与重试语义、IndexedDB 序列化与断点续跑协议；
+- 六阶段体检流水线的状态机定义：阶段枚举、转移条件、每阶段输入/输出、确定性 SQL 预计算清单、LLM 叙事任务、失败与重试语义、IndexedDB 序列化与断点续跑协议；全局智能助理（08 修订案 A12）为六阶段流水线之外的独立入口，与锚点追问共用共享问答管线（仅在线兜底路径共享，见 §5）；
 - 六个阶段 + 反思自检 + 锚点追问 + 修复循环的全部提示词模板（中文、完整、可直接抄入代码）；
 - 洞察卡 JSON Schema（zod 定义：结论/证据/置信度/来源引用/操作按钮/图表配置引用）；
 - 「生成→校验→修复」三层闭环规范（SQL / 图表配置 / 洞察卡各自的校验规则与修复提示词）；
-- 锚点追问 Plan-Execute-Observe 循环（选择上下文协议、计划步骤树数据结构、观察与下一步决策、每答必落图规则与兜底拒绝话术）；
+- 锚点追问 Plan-Execute-Observe 循环（选择上下文协议、计划步骤树数据结构、观察与下一步决策、每答必落图规则与兜底拒绝话术）；实现层已重构为共享问答管线 `use-chat-pipeline`（08 修订案 A12），与全局智能助理聊天共用——追问面板不开启本地案例检索路径、PEO 协议不变；
 - 反思自检阶段（自检问题清单、不达标打回重做语义）；
 - 降级链完整决策表、datasetTxHash + prompt 版本缓存策略、流式事件协议（引用 07 §2）、三模型分工路由表（07 §12）；
-- 扩展 LLM 任务规格（08 功能扩展 ⑥，修订案 A5）：quick-entry 快速记账解析 / budget-advice 预算建议 / forecast-narrative 预测叙事 / tip-personalize 贴士个性化 / annual-story 年度故事分段的输入输出 zod、提示词要点、路由与降级（任务规格全文见 08 ⑥.1–⑥.5，承载端点裁决见 08 §⑦；本文 §7 T5 / §10 为其路由与降级落点）。
+- 扩展 LLM 任务规格（08 功能扩展 ⑥，修订案 A5）：quick-entry 快速记账解析 / budget-advice 预算建议 / forecast-narrative 预测叙事 / tip-personalize 贴士个性化 / annual-story 年度故事分段的输入输出 zod、提示词要点、路由与降级（任务规格全文见 08 ⑥.1–⑥.5，承载端点裁决见 08 §⑦；本文 §7 T5 / §10 为其路由与降级落点）；assistant-plan 全局智能助理结构化规划任务（08 修订案 A12，归 deepseek，承载于 `/api/followup` SSE 流而非 `/api/ai/task`；路由见 §10、降级见 §7 T5）。
 
 **本文档不负责**（见对应文档）：整体架构与部署（01 技术总纲）、数据清洗实现细节与隐私/安全机制（02 数据与隐私）、RAG 与 MCP 的实现（04 RAG与MCP）、UI 组件实现（05 界面交互）、排期与砍法（06 路线图）。
 
@@ -102,7 +104,7 @@ stateDiagram-v2
 统一约定：
 
 - **确定性 SQL 预计算**：全部由开发者手写在 `src/lib/pipeline/stages/<stage>.ts` 的 `QuerySpec[]` 里，不经过 LLM 生成，因此不走 §4.1 的 LLM-SQL 校验（该校验仅针对锚点追问）。预计算 SQL 异常按 §7 T2 处理。SQL 一律对 `transactions` 表编写（`amount_cents` 分、`ts`、`direction='expense'|'income'`，07 §3）。
-- **LLM 叙事任务**：输入 = 预计算结果经 02 §7 脱敏器（`sanitizeResult(rows, columns, opts)`，07 §5 唯一签名）处理后的聚合 JSON + §2 阶段提示词；输出 = InsightCardDraft[]（07 §4）。
+- **LLM 叙事任务**：输入 = 预计算结果经 02 §7 脱敏器（`sanitizeResult(rows, columns, opts)`，07 §5 唯一签名；08 修订案 A12 起返回 Promise——S2 改 WebCrypto 异步哈希，调用处一律 `await sanitizeResult(rows, columns, opts)`）处理后的聚合 JSON + §2 阶段提示词；输出 = InsightCardDraft[]（07 §4）。
 - **报告精度约定**（与 02 脱敏器对齐）：进入 LLM 的金额一律为 02 脱敏器输出——明细金额按 07 §5 S1 分箱标签（≤5元…>500元），聚合值保留 2 位小数；LLM 只允许引用传入的数值；卡片渲染时前端用证据表精确值展示，LLM 文字中的数字必须等于证据表某单元格数值或其取整值（§4.3 C2 一致性校验）。
 
 #### 第 1 阶段 clean 清洗（浏览器内完成，正常路径零 LLM 调用）
@@ -368,7 +370,7 @@ export interface DataTableMeta {    // 全表统计元数据（§5.1 追问上�
 
 ## 2. 阶段提示词模板
 
-提示词文件组织：`src/lib/ai/prompts/{base,clean,profile,anomaly,subscription,attribution,annual,reflect,followup,repair}.ts`，全部为 TS 模板常量（`export const PROMPT_X = \`...\``），供运行时与 `scripts/warm-cache.ts` 共用；promptVersion = `sha256(promptText).slice(0,8)` 自动计算（§8）。
+提示词文件组织：`src/lib/ai/prompts/{base,clean,profile,anomaly,subscription,attribution,annual,reflect,followup,assistant-plan,repair}.ts`，全部为 TS 模板常量（`export const PROMPT_X = \`...\``），供运行时与 `scripts/warm-cache.ts` 共用；promptVersion = `sha256(promptText).slice(0,8)` 自动计算（§8）。`assistant-plan` = 08 修订案 A12 全局智能助理结构化规划（思考计划）提示词，live 路径经 `generateLlmObject`（deepseek）调用。（实现收口：提示词常量实际集中于 `src/lib/llm/client.ts` 的 `LLM_TASKS` 对象，设计态的 `src/lib/ai/prompts/` 目录未落地；assistant-plan 提示词同在该对象。）
 
 ### 2.0 共享底座（所有阶段共用）
 
@@ -398,7 +400,7 @@ export interface DataTableMeta {    // 全表统计元数据（§5.1 追问上�
    并在 significance 里说明原因。
 ```
 
-**消息组装规范**（提示注入防护第一层，与 02 对齐：账单数据单独消息 + 分隔符隔离 + 系统声明数据不可信 + 输出 schema 作最终闸门）：
+**消息组装规范**（提示注入防护第一层，与 02 对齐：账单数据单独消息 + 分隔符隔离 + 系统声明数据不可信 + 输出 schema 作最终闸门）。全局智能助理聊天输入另有前置闸门 `src/lib/assistant/input-guard.ts`（08 修订案 A12，注入防护第四层：判定顺序 = 控制字符 → 超长 >500 字 → 四类注入特征（指令覆盖/角色劫持/泄露诱导/SQL 痕迹），命中即拦——固定拒绝话术 + 脚注「已拦截 · 未进入任何模型」，不进任何本地/在线路径；细则归 02，与本三层防护叠加）：
 
 ```ts
 // src/lib/ai/prompts/base.ts
@@ -717,7 +719,7 @@ pass=true 时 revisedConfidence = 复核后的数值置信度（07 §4：数值 
 不要放水，你放过的错卡会被用户看见。
 ```
 
-### 2.8 followup —— 锚点追问计划生成（§5 详述）
+### 2.8 followup —— 锚点追问计划生成（§5 详述；08 修订案 A12：追问面板与全局智能助理聊天共用共享问答管线 `use-chat-pipeline`——本节 PEO 计划生成协议不变，仅在线兜底路径与智能助理共享）
 
 SYSTEM 追加段：
 
@@ -793,7 +795,7 @@ SQL：{sql}
 
 ## 4. 「生成→校验→修复」闭环
 
-通用实现（包裹所有 LLM 生成点：六阶段叙事、追问计划、反思 judge）：
+通用实现（包裹所有 LLM 生成点：六阶段叙事、追问计划、反思 judge、assistant-plan 全局智能助理结构化规划（08 修订案 A12））：
 
 ```ts
 // src/lib/ai/repair.ts
@@ -881,6 +883,8 @@ zod 之外的业务校验规则：
 
 ## 5. 锚点追问 Plan-Execute-Observe 循环
 
+本章协议仍为设计态（见文档头收口注记）；实现层已重构为共享问答管线 `src/lib/assistant/use-chat-pipeline.ts`（08 修订案 A12）——锚点追问与全局智能助理聊天共用该管线：追问面板不开启本地案例检索路径、PEO 协议不变，仅在线兜底路径共享；消息脚注三态（本地计算 / 本地案例库 / 在线生成）按路径如实标注。
+
 ### 5.1 选择上下文协议（SelectionContext）
 
 用户点击/框选图表元素 → 前端组装 SelectionContext（05 负责捕获，本文定义协议）：
@@ -896,7 +900,7 @@ export interface SelectionContext {
     metric: string;             // 度量列名
     dataIndex?: number;         // point 选中行索引；brush（框选）= 渲染端给出索引集合（#65）
   };
-  slice: Record<string, unknown>[];   // 选中行切片，脱敏后 ≤50 行（sanitizeResult，02/07 §5）
+  slice: Record<string, unknown>[];   // 选中行切片，脱敏后 ≤50 行（sanitizeResult，02/07 §5；08 修订案 A12 起 async，捕获处 await）
   tableMeta: DataTableMeta;           // { tableId, columns } 全表统计元数据（§1.4）
   chartType: ChartType;
   question: string;                   // 用户自然语言问题（原文）
@@ -1009,7 +1013,7 @@ export async function runFollowUp(ctx: SelectionContext): Promise<FollowUpResult
 
 ### 5.4 每答必落图规则与兜底拒绝话术
 
-规则：一次追问的最终答复 = 新图表（ChartSpec + 新 tableId）或结构化制品（表格/清单卡/「数据不足说明卡」），二者必居其一；纯文字聊天式答复被禁止——这是与聊天窗产品的核心差异，交互范式翻转的落地约束。
+规则：一次追问的最终答复 = 新图表（ChartSpec + 新 tableId）或结构化制品（表格/清单卡/「数据不足说明卡」），二者必居其一；纯文字聊天式答复被禁止——这是与聊天窗产品的核心差异，交互范式翻转的落地约束。**适用范围注（08 修订案 A12）**：本「每答必落图」三选一约束仅限锚点追问路径；全局智能助理聊天路径为文本回答 + 「思考计划」块（PlanBlock，§9 plan 事件），不适用落图三选一。
 
 兜底拒绝话术（前端直接渲染，不经 LLM，可抄用）：
 
@@ -1032,7 +1036,7 @@ export const DRILL_TEMPLATES = {
                    FROM transactions WHERE direction='expense' AND {filters} GROUP BY 1 ORDER BY 2 DESC LIMIT 20`,
   merchant_rank:  `SELECT merchant AS dim, SUM(amount_cents) AS amt_cents, COUNT(*) AS cnt
                    FROM transactions WHERE direction='expense' AND {filters} GROUP BY 1 ORDER BY 2 DESC LIMIT 10
-                   -- 结果经 sanitizeResult 脱敏（merchant → m_xxx）后展示`,
+                   -- 结果经 sanitizeResult 脱敏（merchant → m_xxx；async，调用处 await，08 修订案 A12）后展示`,
   amount_hist:    `SELECT width_bucket(amount_cents, 0, 100000, 10) AS bin, COUNT(*) AS cnt
                    FROM transactions WHERE direction='expense' AND {filters} GROUP BY 1 ORDER BY 1 LIMIT 20`,
 } as const;
@@ -1077,6 +1081,7 @@ export const DRILL_TEMPLATES = {
 | 工具 | 不可用时动作 | 对制品影响 |
 |---|---|---|
 | RAG 检索（04） | TF-IDF 本地兜底检索 → 仍 0 命中则无引用直出 | 卡片无 citation，通用建议文案，confidence ≤ 0.6 |
+| 智能助理本地案例检索（08 修订案 A12，`src/lib/assistant/local-cases.ts`；与上行为两条独立路径，仅智能助理开启） | TF-IDF 聊天路径阈值 `CASE_PATH_MIN_SCORE=0.15`（严于页面引用 0.08，最多 3 条，脚注「本地案例库 · 零 API 调用」）→ 零命中转在线兜底 | 无引用，回答走在线兜底脚注（「在线生成 · 已发送明细与统计」，A8 口径） |
 | MCP 三工具 + 浏览器两工具（07 §18 注册表） | 跳过该工具继续执行计划其余步骤（wrapTool 4s 超时、退避 1s/2s/4s、ok:false 封套） | 答复不提及该工具事实；不阻塞追问 |
 | DuckDB 预计算 SQL | 单查询重试 1 次 → 跳过该查询 | 该证据图表缺失，卡片仅覆盖成功项；全部失败 → 阶段 skipped |
 | Transformers.js 本地模型 | 跳过（分类归「其他」） | 类目粒度变粗，不影响流水线 |
@@ -1085,7 +1090,7 @@ export const DRILL_TEMPLATES = {
 
 **T4 流式中断链**：SSE 断流 → 前端 3s 重连（指数退避；**无轮询端点**——07 §13 已删除 `GET /api/run/{runId}/events`，事件一律 SSE 推送，断线期间事件由服务端缓冲、重连补发）；LLM 流中途断 → 该卡片整段重生成（缓存未命中则重跑，幂等）。
 
-**T5 扩展任务降级链（08 功能扩展 ⑥.1–⑥.4，修订案 A5 新增 4 任务；全部落到确定性兜底，演示稳定优先）**：
+**T5 扩展任务降级链（08 功能扩展 ⑥.1–⑥.4，修订案 A5 新增 4 任务；全部落到确定性兜底，演示稳定优先；assistant-plan（08 修订案 A12）见末行，降级语义为静默跳过）**：
 
 | 任务 | 检测 | 降级动作 | 最终兜底 |
 |---|---|---|---|
@@ -1093,6 +1098,7 @@ export const DRILL_TEMPLATES = {
 | budget-advice 预算建议 | 模型不可用/输出校验失败 | 退避重试 1 次 → 不切备选 | 阈值规则句模板：severity 由 ratio 直接判定（<80% ok / 80-100% warn / ≥100% over），headline/advice 固定句式填充；图表与预计算不受影响 |
 | forecast-narrative 预测叙事 | 模型不可用/输出校验失败 | 退避重试 1 次 → 不切备选 | 固定句式「下月 {类别} 预计 {±X}%，基于近三月朴素外推」；预测数字由确定性 SQL 恒产出，不依赖 LLM |
 | tip-personalize 贴士个性化 | 模型不可用/输出校验失败 | 退避重试 1 次 → 不切备选 | top-3 检索结果直出 + 通用句「这条贴士与你的人群画像匹配」；级联检索层独立不受影响 |
+| assistant-plan 全局智能助理规划（08 修订案 A12） | 8s 超时/生成失败 | 静默跳过（不重试、不切备选） | 不阻塞在线兜底回答——仅不展示思考计划块（plan 事件不发） |
 
 （annual-story 年度故事分段的降级已并入 annual 阶段链：段级回退固定 6 段模板，见 §1.3。）
 
@@ -1128,7 +1134,7 @@ stage:v1:${datasetTxHash}:${stageId}                                       // �
 
 | 层 | 键 | 命中后跳过什么 |
 |---|---|---|
-| LLM 输出 | `llmCacheKey`（上式） | API 调用（阶段叙事/追问计划/自检 judge） |
+| LLM 输出 | `llmCacheKey`（上式） | API 调用（阶段叙事/追问计划/自检 judge/assistant-plan 结构化规划（08 修订案 A12）） |
 | 阶段产物 | `stageCacheKey`（上式） | 阶段整体重算 |
 | 预计算结果表 | `spendct:table:${runId}:${tableId}` | DuckDB 重算（断点续跑） |
 | 商户分类 | `merchant_category` 映射（按商户主名） | qwen 批量分类 |
@@ -1139,14 +1145,15 @@ stage:v1:${datasetTxHash}:${stageId}                                       // �
 
 ## 9. 流式事件协议
 
-**唯一来源 = 07 §2 spendct协议@2（`src/lib/protocol/events.ts`，20 类事件，SSE 单类型源）**。本文删除自拟 PipelineEvent（#3/#28），只保留本文旧语义 → 协议事件的映射与 UI 语义：
+**唯一来源 = 07 §2 spendct协议@2（`src/lib/protocol/events.ts`，21 类事件，SSE 单类型源）**。本文删除自拟 PipelineEvent（#3/#28），只保留本文旧语义 → 协议事件的映射与 UI 语义：
 
 ```ts
 // src/lib/protocol/events.ts 只 import（07 §0.4 唯一常量文件）
-export type ProtocolEvent = import('../protocol/events').SpendctEvent;   // 20 类事件：run:start / run:complete /
+export type ProtocolEvent = import('../protocol/events').SpendctEvent;   // 21 类事件：run:start / run:complete /
 // error / abort / stage:start / stage:thinking / stage:evidence / stage:complete / stage:skipped /
 // card:delta / card:complete / card:withheld / llm:degraded / llm:repair / rag:retrieved /
-// tool:start / tool:end / reflect:result / cache:hit / checkpoint:saved
+// tool:start / tool:end / reflect:result / cache:hit / checkpoint:saved /
+// plan（08 修订案 A12 增补：智能助理/追问面板在线兜底的思考计划）
 // 公共字段 { t, ts, runId }；错误码 = 07 §2 ErrorCode 枚举（全项目唯一）。
 export type ModelId = 'deepseek' | 'qwen' | 'glm4v' | 'local-tfjs';      // 07 §12 枚举
 export type ToolName = 'calendar' | 'weather' | 'promo' | 'duckdb_meta' | 'sql';  // 07 §18 注册表
@@ -1163,12 +1170,13 @@ export type ToolName = 'calendar' | 'weather' | 'promo' | 'duckdb_meta' | 'sql';
 | card:withheld | card.rejected | 人工复核区折叠条目（不展示为正式卡片） |
 | llm:degraded | model.degraded | 全局 toast：「AI 服务繁忙，已切换备用引擎」（可关闭，不打断） |
 | llm:repair | llm.repair | 思考气泡内一行小字「第 N 次自检修正」 |
-| rag:retrieved | rag.retrieved | 卡片侧「参考案例」badge 渐入（mode dense\|tfidf） |
+| rag:retrieved | rag.retrieved | 卡片侧「参考案例」badge 渐入（mode dense\|tfidf；页面引用路径 TF-IDF 阈值 0.08——智能助理聊天路径本地案例检索阈值 0.15，见 §7 T2，08 修订案 A12） |
 | tool:end | tool.called | ToolBadge 徽章（04 §8.5 ToolInvocation 数据源） |
 | reflect:result | reflect.verdict | 自检通过/打回提示 |
 | run:complete（degraded） | pipeline.done(degraded) | 页脚提示「部分结果由模板模式生成」 |
 | error | pipeline.error / stage.failed | ErrorBoundary 全屏错误态：错误码 + 「重试 / 重新导入」按钮（错误边界是评审项） |
 | checkpoint:saved | —（断点续跑） | 无 UI（事件日志可见） |
+| plan（08 修订案 A12） | —（新增） | 智能助理/追问面板「思考计划」块（PlanBlock：目标 + 步骤树，tool 与工具徽章联动；生成失败静默跳过） |
 
 事件经 Zustand slice（07 §14 六 slice：pipeline/cards/anchor/dataset/ui/session）收口后驱动 UI；事件序列同时追加到 `RunStateV1.eventLog`（容量 200）。
 
@@ -1180,7 +1188,7 @@ export type ToolName = 'calendar' | 'weather' | 'promo' | 'duckdb_meta' | 'sql';
 |---|---|---|---|---|
 | 六阶段叙事/卡片生成 | deepseek | qwen → 确定性模板叙事 + `llm:degraded`（07 §12 降级链终点） | 输出 >200 字、跨表综合、卡片叙事 | 消费画像卡、归因卡 |
 | 反思自检 L2 judge | qwen | deepseek → 跳过 L2（仅 L1 规则自检） | 需要严格评分 | §2.7 |
-| 追问计划生成 + 总结 | deepseek | qwen → 内置模板（§5.5） | 计划树 + 叙事 | §2.8 |
+| 追问计划生成 + 总结 | deepseek | qwen → 内置模板（§5.5） | 计划树 + 叙事 | §2.8；追问面板已并入共享问答管线 use-chat-pipeline（08 修订案 A12），PEO 协议不变 |
 | 字段映射兜底 | qwen | 规则映射 → AI 兜底（07 §9）；本地无 LLM（用户手选） | 输入 <300 tokens、枚举选择 | §2.1 |
 | 商户分类（批量） | qwen | local-tfjs（断网，P2 可选）→ 归「其他」 | 输出 <80 tokens/条、高批量；batch key = 原始商户名（#68） | §2.1 |
 | CSV AI 兜底解析 | qwen | 无（失败即报 PARSE_FAILED） | 编码链失败后 ≤6KB 兜底（07 §9） | 02 §8 |
@@ -1191,8 +1199,11 @@ export type ToolName = 'calendar' | 'weather' | 'promo' | 'duckdb_meta' | 'sql';
 | 预测叙事 forecast-narrative | deepseek | 模板兜底（固定句式，08 ⑥.3） | 叙事文字、数字一律来自输入 | 08 ⑥.3；`/api/ai/task` |
 | 贴士个性化 tip-personalize | qwen | 模板兜底（top-3 直出，08 ⑥.4） | caseId 只可从输入中出现过的 ID 选择 | 08 ⑥.4；`/api/ai/task` |
 | 年度故事叙事 annual-story | deepseek | qwen → 模板段（并入 annual 阶段任务行，08 ⑥.5） | 4-8 段叙事 + 七类 chartSpec | §2.6；复用 `/api/pipeline/stage`（零新端点） |
+| 全局智能助理规划 assistant-plan | deepseek | 无备选模型——8s 超时/生成失败静默跳过（08 修订案 A12） | 思考计划（goal 非空 + steps 1-4 步；tool 只填 get_school_calendar / get_weather / get_promo_calendar） | 08 修订案 A12；承载于 `/api/followup` SSE 流（在线兜底 run:start 后第 0 步发射 plan 事件，零新端点） |
 
 （08 修订案 A5 同步说明：以上 5 行新任务与 07 §12 路由表一致；env 清单零新增——全部复用既有模型供应商与密钥。承载端点：4 个新任务走新端点 `/api/ai/task`（POST JSON，taskId 判别联合，08 §⑦），annual-story 并入 annual 阶段既有 `/api/pipeline/stage` 路由（08 修订案 A6 后端点清单共 7 条）。5 个新任务全部复用 §4「生成→校验→修复」闭环（zod 修复 ≤2 次）与 §8 `llmCacheKey` 缓存键；任务 zod 规格与提示词要点全文见 08 ⑥.1–⑥.5。）
+
+（08 修订案 A12 同步说明：assistant-plan 与 07 §12 路由表一致（归 deepseek）；复用 §4 闭环与 §8 `llmCacheKey`；承载于既有 `/api/followup` 的 SSE 流（在线兜底 question+messages 模式），零新端点、零新 env 键，**不加入** `/api/ai/task` 的 taskId 判别联合；8s 超时/失败静默跳过——回答不受影响，仅不展示思考计划块；聊天输入闸门 input-guard 与语音输入（Web Speech 转写）均为前端行为，本项目服务器与 LLM 不接收音频。）
 
 路由实现：
 
@@ -1212,14 +1223,15 @@ export type LlmTask =
   | { kind: 'budget-advice' }        // 预算建议（/api/ai/task）
   | { kind: 'forecast-narrative' }   // 预测叙事（/api/ai/task）
   | { kind: 'tip-personalize' }      // 贴士个性化（/api/ai/task）
-  | { kind: 'annual-story' };        // 年度故事叙事（并入 annual 阶段，复用 /api/pipeline/stage）
+  | { kind: 'annual-story' }         // 年度故事叙事（并入 annual 阶段，复用 /api/pipeline/stage）
+  | { kind: 'assistant-plan' };      // 全局智能助理结构化规划（08 修订案 A12，归 deepseek；承载于 /api/followup SSE 流，非 /api/ai/task）
 
 export function resolveModel(task: LlmTask, ctx: { offline: boolean }): ModelId {
   if (ctx.offline) return task.kind === 'merchant-classify' ? 'local-tfjs' : 'deepseek';
   // 离线时叙事任务实际上不走 API：deepseek 不可达后按 §7 T1 落到模板直出；
   // A5 扩展任务离线时同样落到各自确定性兜底（quick-entry→手动表单，其余→模板，§7 T5）
   switch (task.kind) {
-    case 'stage-narrative': case 'followup-plan': case 'forecast-narrative': case 'annual-story': return 'deepseek';
+    case 'stage-narrative': case 'followup-plan': case 'forecast-narrative': case 'annual-story': case 'assistant-plan': return 'deepseek';
     case 'reflect-judge': return 'qwen';                    // 07 §12：L2 judge qwen 主、deepseek 降级
     case 'field-mapping': case 'merchant-classify': case 'title-polish': case 'csv-ai-fallback':
     case 'quick-entry': case 'budget-advice': case 'tip-personalize': return 'qwen';
@@ -1245,19 +1257,19 @@ export function resolveModel(task: LlmTask, ctx: { offline: boolean }): ModelId 
 
 ## 11. 与其他文档的接口约定
 
-本文对外提供（下游 05 消费）：`StageId`（import 自 `src/lib/pipeline/stage.ts`）、`InsightCardSchema` / `InsightCardDraftSchema` / `ChartSpecSchema`（import 自 `src/lib/schema/insight-card.ts`，07 §4）、`ChartType` / `CHART_TYPES`（§4.2）、`SelectionContext` / `FollowUpPlan`（§5，07 §18）、`RunStateV1` / `DataTableMeta`（§1.4）、`resolveModel`（§10，含 08 A5 新增 5 任务）、`AnnualStorySchema`（import 自 `src/lib/schema/annual-story.ts`，§2.6，08 ⑥.5）、全部提示词常量（§2）。事件协议（原 PipelineEvent）已删除，引用 07 §2（#3/#28）。
+本文对外提供（下游 05 消费）：`StageId`（import 自 `src/lib/pipeline/stage.ts`）、`InsightCardSchema` / `InsightCardDraftSchema` / `ChartSpecSchema`（import 自 `src/lib/schema/insight-card.ts`，07 §4）、`ChartType` / `CHART_TYPES`（§4.2）、`SelectionContext` / `FollowUpPlan`（§5，07 §18）、`RunStateV1` / `DataTableMeta`（§1.4）、`resolveModel`（§10，含 08 A5 新增 5 任务 + 08 修订案 A12 assistant-plan）、`AnnualStorySchema`（import 自 `src/lib/schema/annual-story.ts`，§2.6，08 ⑥.5）、全部提示词常量（§2）。事件协议（原 PipelineEvent）已删除，引用 07 §2（#3/#28）。
 
 本文引用上游签名（以对应文档正文为准）：
 
 | 来自 | 签名 | 本文使用点 |
 |---|---|---|
 | 02 数据与隐私 | `precheckAggregateSql(rawSql, policy?)` / `runWhitelistedAggregate(conn, sql, policy?)`（07 §6 唯一 API，R1–R10） | §4.1 |
-| 02 | `sanitizeResult(rows, columns, opts): { rows, columns, applied, warnings }`（07 §5 唯一签名；金额分箱/商户加盐哈希/禁列剥离/数值舍入/行截断 S1–S5） | §2 数据准备、§5 切片 |
+| 02 | `sanitizeResult(rows, columns, opts): Promise<{ rows, columns, applied, warnings }>`（07 §5 唯一签名；金额分箱/商户加盐哈希/禁列剥离/数值舍入/行截断 S1–S5；08 修订案 A12：S2 改 WebCrypto 异步哈希，全部调用点一律 await） | §2 数据准备、§5 切片 |
 | 02 | `ALLOWED_RELATIONS`（transactions + 13 视图 + 9 预计算表；08 修订案 A2 增补 budgets / budget_vs_actual / forecast_monthly）、`AggregatePolicy` | §4.1 |
-| 04 RAG与MCP | `retrieveCases(query, filter, { topK: 3 })`（浏览器端 `retrieveCasesInBrowser`） | §2.4、§5.2 kind=rag |
+| 04 RAG与MCP | `retrieveCases(query, filter, { topK: 3 })`（浏览器端 `retrieveCasesInBrowser`）；08 修订案 A12 新增 `src/lib/assistant/local-cases.ts` 本地案例检索（TF-IDF，聊天阈值 `CASE_PATH_MIN_SCORE=0.15`、页面引用仍 0.08，最多 3 条、零 API 调用，零命中转在线兜底） | §2.4、§5.2 kind=rag、全局智能助理聊天路径 |
 | 04 | 工具注册表（07 §18）：服务端 MCP 三工具 calendar/weather/promo + 浏览器端 duckdb_meta/sql | §5.2 kind=tool、§7 T2 |
-| 01 技术总纲 | 07 §13 端点清单（/api/pipeline/stage、/api/followup、/api/ai/task——08 修订案 A6 后共 7 端点；LLM 调用唯一出口 `src/server/ai/*`）、Vercel AI SDK 配置、环境变量与密钥边界 | §9、§10 |
-| 05 界面交互 | 07 §14 组件注册表 19 组件（13 既有 + A7 新增 6）：PipelineStepper / ThinkingBubble / SqlCodeBlock / TypingCard / DegradeToast / EvidenceTable / InsightCard 等 | §9 映射表 |
+| 01 技术总纲 | 07 §13 端点清单（/api/pipeline/stage、/api/followup、/api/ai/task——08 修订案 A6 后共 7 端点；LLM 调用唯一出口 `src/server/ai/*`）、Vercel AI SDK 配置、环境变量与密钥边界。08 修订案 A12 零新端点——全局智能助理在线兜底复用 `/api/followup`（question+messages 模式）；语音输入为 Web Speech 浏览器转写，本项目服务器与 LLM 不接收音频 | §9、§10 |
+| 05 界面交互 | 07 §14 组件注册表 19 组件（13 既有 + A7 新增 6）：PipelineStepper / ThinkingBubble / SqlCodeBlock / TypingCard / DegradeToast / EvidenceTable / InsightCard 等；08 修订案 A12 全局智能助理组件（AssistantDrawer 悬浮入口+聊天抽屉、ChatBubbles、PlanBlock 思考计划块）按 §14 两级注册口径在 05 §2.2 组件总表单列，不占可复用注册组件名额 | §9 映射表 |
 | 06 路线图 | W2 最小闭环闸门：clean→profile→anomaly + 3 张流式卡（即 §1.3 前三阶段）；未达成则砍 MCP/OCR/框选 | §1 |
 
 错误码 = 07 §2 `ErrorCode` 枚举（唯一来源 `src/lib/protocol/events.ts`）：`EMPTY_DATASET | PARSE_FAILED | LLM_EXHAUSTED | DUCKDB_LOAD_FAILED | QUOTA_EXCEEDED | NETWORK_OFFLINE | WHITELIST_REJECTED | TIMEOUT`。UI 处置映射：
@@ -1281,7 +1293,7 @@ export function resolveModel(task: LlmTask, ctx: { offline: boolean }): ModelId 
 |---|---|
 | AI 深度 · 大模型集成质量 8% | §2 完整提示词工程（角色/门槛/注入防护/schema 闸门）、§4 三层生成→校验→修复闭环、§9 结构化流式输出（07 §2 协议） |
 | AI 深度 · 大模型集成质量 8% · 扩展任务证据（08 ① 表 F05/F07/F08/F09 评分落点） | §1.3/§2.6 年度故事分段（AnnualStorySchema + 逐段 L1/L2 自检与模板段回退）、§7 T5 四任务确定性兜底、§10 A5 五任务路由（quick-entry 的 QuickEntrySchema 为「结构化输出」直接评分证据） |
-| AI 深度 · Agent·工作流 8% | §1 六阶段状态机 + 断点续跑、§5 Plan-Execute-Observe、§6 反思自检、§7 降级链 |
+| AI 深度 · Agent·工作流 8% | §1 六阶段状态机 + 断点续跑、§5 Plan-Execute-Observe、§6 反思自检、§7 降级链、全局智能助理（assistant-plan 结构化规划 + plan 思考计划事件 + 聊天输入闸门四类注入特征拦截，08 修订案 A12） |
 | AI 深度 · AI 安全与可控性 4% | §4.1 白名单 SQL 校验（实现 02 §6/07 §6）、§2.0 注入防护三层、§4.3 C3 占位符校验 |
 | AI 深度 · MCP·工具集成 4% | §5.2 kind=tool 调用点与 §7 T2 降级（实现归 04，本文定义集成协议） |
 | 前端工程 · UX · AI 交互体验 3% | §9 事件协议（真实思考状态/流式渲染/错误边界）、洞察卡流非聊天窗（§5.4 每答必落图） |
