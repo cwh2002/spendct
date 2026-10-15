@@ -162,11 +162,21 @@ function contractEventFixtures(): SpendctEvent[] {
       cacheKey: "stage:v1:9f2c1a4b8d3e5076:clean",
     },
     { t: "checkpoint:saved", ts: ts(19), runId: RUN_ID, stage: "profile" },
+    {
+      t: "plan",
+      ts: ts(20),
+      runId: RUN_ID,
+      goal: "围绕大促问题给出消费规划",
+      steps: [
+        { title: "查询大促日历确认档期与平台", tool: "get_promo_calendar" },
+        { title: "对照账单统计评估购物节奏" },
+      ],
+    },
   ];
 }
 
 describe("事件名全集", () => {
-  it("与契约 §2 清单一致（20 个名字，顺序固定）", () => {
+  it("与契约 §2 清单一致（21 个名字，plan 为修订案 A12 新增，顺序固定）", () => {
     expect(EVENT_NAMES).toEqual([
       "run:start",
       "run:complete",
@@ -188,6 +198,7 @@ describe("事件名全集", () => {
       "reflect:result",
       "cache:hit",
       "checkpoint:saved",
+      "plan",
     ]);
   });
 });
@@ -256,6 +267,25 @@ describe("断流与非法输入", () => {
     expect(() => parseEvent(JSON.stringify({ t: "stage:start", ts: BASE_TS }))).toThrow();
     // 缺 t 与 ts
     expect(() => parseEvent(JSON.stringify({ runId: RUN_ID }))).toThrow();
+  });
+
+  it("plan 事件越界拒绝（步骤超过 4 步或 goal 为空）", () => {
+    const manySteps = JSON.stringify({
+      t: "plan",
+      ts: BASE_TS,
+      runId: RUN_ID,
+      goal: "目标",
+      steps: [1, 2, 3, 4, 5].map((n) => ({ title: `步骤${n}` })),
+    });
+    expect(() => parseEvent(manySteps)).toThrow();
+    const emptyGoal = JSON.stringify({
+      t: "plan",
+      ts: BASE_TS,
+      runId: RUN_ID,
+      goal: "",
+      steps: [{ title: "步骤1" }],
+    });
+    expect(() => parseEvent(emptyGoal)).toThrow();
   });
 
   it("isSpendctEvent 对垃圾值返回 false", () => {

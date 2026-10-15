@@ -13,8 +13,8 @@ import { z } from "zod";
 import { SIX_STAGES } from "@/lib/pipeline/stage";
 
 /**
- * 协议事件名全集（07 §2 清单逐条对应）。
- * 07 等文档章节标题口径为「21 类」，清单实际列出 20 个事件名；
+ * 协议事件名全集（07 §2 清单逐条对应，共 21 类）。
+ * plan（思考计划）由 08 修订案 A12 新增，补齐文档「21 类」口径；
  * 协议禁止自造事件名，本文件以清单为准。
  */
 export const EVENT_NAMES = [
@@ -38,6 +38,7 @@ export const EVENT_NAMES = [
   "reflect:result",
   "cache:hit",
   "checkpoint:saved",
+  "plan",
 ] as const;
 
 export type EventName = (typeof EVENT_NAMES)[number];
@@ -270,6 +271,28 @@ export const CheckpointSavedEventSchema = z.object({
 });
 export type CheckpointSavedEvent = z.infer<typeof CheckpointSavedEventSchema>;
 
+// —— Agent 思考计划（08 修订案 A12，第 21 类事件）——
+// /api/followup 在生成回答前发射：把模型的规划拆解成目标 + 最多 4 步，
+// 面板与智能助理据此渲染「思考计划」折叠块。tool 字段与工具徽章联动
+// （必须是已知工具名；无工具步骤省略），purpose 为可选用途说明。
+export const PlanEventSchema = z.object({
+  t: z.literal("plan"),
+  ts: tsField,
+  runId: runIdField,
+  goal: z.string().min(1),
+  steps: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        tool: z.string().min(1).optional(),
+        purpose: z.string().optional(),
+      }),
+    )
+    .min(1)
+    .max(4),
+});
+export type PlanEvent = z.infer<typeof PlanEventSchema>;
+
 /** 事件判别联合：以 t 为判别键的协议事件全集 */
 export const SpendctEventSchema = z.discriminatedUnion("t", [
   RunStartEventSchema,
@@ -292,6 +315,7 @@ export const SpendctEventSchema = z.discriminatedUnion("t", [
   ReflectResultEventSchema,
   CacheHitEventSchema,
   CheckpointSavedEventSchema,
+  PlanEventSchema,
 ]);
 
 export type SpendctEvent = z.infer<typeof SpendctEventSchema>;

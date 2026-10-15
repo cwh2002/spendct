@@ -1,6 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
+import { AssistantDrawer } from "@/components/assistant/assistant-drawer";
 import { DemoConsole } from "@/components/demo/demo-console";
 import { TopNav } from "./top-nav";
 import { BottomTabBar } from "./bottom-tab-bar";
@@ -32,6 +33,8 @@ export function ShellClient({ footer, children }: ShellClientProps) {
       <BottomTabBar />
       {/* 演示控制台：? 键呼出（05 §7.3，评委提问时的应急武器） */}
       <DemoConsole />
+      {/* 全局智能助理：悬浮入口 + 聊天抽屉（08 修订案 A12，本地优先问答） */}
+      <AssistantDrawer />
     </>
   );
 }

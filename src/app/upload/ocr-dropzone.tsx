@@ -21,9 +21,9 @@ import { compressBillImage } from "@/lib/ocr/compress-image";
 import type { OcrTransactionRow } from "@/lib/schema/ocr";
 import { useMounted } from "@/lib/use-mounted";
 
-/** 02 §12.4 合规声明定稿文案（逐字使用） */
+/** 02 §12.4 合规声明定稿文案（逐字使用；07 §11 A11 起主模型为 DeepSeek V4.1 Flash） */
 export const OCR_COMPLIANCE_TEXT =
-  "账单截图将仅发送至 GLM-4V-Flash 视觉模型用于本次文字识别（低置信度字段会截取局部二次复核），服务端不保存图片、不用于任何训练，识别完成后立即丢弃。";
+  "账单截图将仅发送至视觉大模型 DeepSeek V4.1 Flash 用于本次文字识别（识别效果不佳时自动降级至 GLM-4V-Flash；低置信度字段会截取局部二次复核），服务端不保存图片、不用于任何训练，识别完成后立即丢弃。";
 
 export interface OcrRecognizedResult {
   rows: OcrTransactionRow[];

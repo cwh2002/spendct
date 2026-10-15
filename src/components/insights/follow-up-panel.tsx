@@ -1,11 +1,7 @@
 "use client";
 
 import {
-  BookOpen,
   ChevronLeft,
-  CircleAlert,
-  CircleCheck,
-  LoaderCircle,
   MessageSquare,
   MousePointerClick,
   PanelRightClose,
@@ -15,37 +11,17 @@ import {
 } from "lucide-react";
 import { useEffect, useImperativeHandle, useRef, useState } from "react";
 
-import {
-  analyzeQuestion,
-  answerLocalQuestion,
-  buildAggregateContext,
-  buildDetailContext,
-  createDuckDbDetailSnapshot,
-  createDuckDbRunner,
-  createDuckDbSchemaSnapshot,
-  DATASET_EMPTY_TEXT,
-  EXAMPLE_QUESTIONS,
-  type QaIntent,
-} from "@/lib/chat/qa-engine";
-import { classifySmallTalk, SMALL_TALK_ANSWER } from "@/lib/llm/small-talk";
-import { usePipeline } from "@/lib/pipeline/store";
-import type { SessionSchema } from "@/lib/schema/session-schema";
-import { getToolLabel } from "@/lib/tools/registry";
+import { ChatBubbles, ThinkingBubbles } from "@/components/assistant/chat-bubbles";
+import { useChatPipeline } from "@/lib/assistant/use-chat-pipeline";
+import { EXAMPLE_QUESTIONS } from "@/lib/chat/qa-engine";
 
 /**
  * 追问面板：洞察页右侧的账单问答区。
  *
- * 一次提问按顺序尝试三条路径，命中即停：
- * 1. 闲聊分流（classifySmallTalk）——「你好」「你是谁」等非账单问题直接回定稿文案；
- * 2. 本地规则（qa-engine）——意图解析 + 白名单聚合 SQL 直接读取账单数据回答，
- *    数字全部来自查询结果，答案气泡挂「已按你的账单数据计算」脚注；
- * 3. 在线兜底——本地答不了的问题，拼「汇总统计 + 最近明细快照 + 案例参考」
- *    上下文与最近对话 POST /api/followup（SSE，07 修订案 A9），气泡挂
- *    「在线生成 · 已发送明细与统计」脚注；请求内随带 sessionSchema 聚合快照
- *    （协议演示工具回执），服务端工具调用（MCP 校历/天气/大促日历）经
- *    tool:start/tool:end 事件回传，渲染为回答气泡下的工具徽章；
- *    案例参考由 POST /api/rag 检索得到，单独挂「案例参考」脚注（数据来自
- *    检索响应，非模型文本）；没有账单数据时不进这一环，直接回「先导入账单」。
+ * 问答管线已抽取到 use-chat-pipeline（08 修订案 A12），本组件只保留
+ * 面板外壳：锚点确认条、空态示例问题、输入框与快捷键。三条路径
+ * （闲聊分流 → 本地规则 → 在线兜底）与工具徽章/思考计划渲染均来自
+ * 共享管线与 ChatBubbles 气泡层，与全局智能助理同一套口径。
  *
  * 与页面的协作方式保持既有契约：锚点来自洞察卡「深挖」或账本图表数据点点击，
  * 页面通过 ref 触发「/」快捷键聚焦输入框；折叠窄轨、锚点确认条、快捷键均不变。
@@ -62,47 +38,6 @@ export interface FollowUpPanelHandle {
   focusInput(): void;
 }
 
-/** 追问会话的一轮气泡 */
-interface FollowUpTurn {
-  id: number;
-  role: "user" | "assistant";
-  text: string;
-  /** 回答来源脚注：local＝本地规则按账单数据计算；live＝在线服务返回 */
-  note?: "local" | "live";
-  /** 闲聊定稿回答（打招呼/询问身份）：不挂任何来源脚注 */
-  smallTalk?: boolean;
-  /** 在线回答挂的案例参考（来自 /api/rag 检索响应，非模型生成文本） */
-  ragRefs?: { caseId: string; title: string; snippet: string }[];
-  /** 在线回答挂的工具徽章（来自 /api/followup 的 tool:start/tool:end 事件） */
-  toolBadges?: ToolBadge[];
-}
-
-/** 工具徽章：tool:start 生成（待定态），tool:end 补齐 ok/ms/errorReason */
-interface ToolBadge {
-  id: string;
-  tool: string;
-  label: string;
-  argsDigest?: string;
-  ok?: boolean;
-  ms?: number;
-  errorReason?: string;
-}
-
-/** 思考态：data＝读取本地账单数据；live＝等待在线服务返回 */
-type ThinkingState = "data" | "live";
-
-/** 在线兜底时夹在对话开头的账单数据说明（汇总统计 + 最近明细快照，07 修订案 A8） */
-const ONLINE_CONTEXT_PREFIX = "以下是我的账单数据（汇总统计与最近明细）：\n";
-
-/** 在线接口的消息总长上限（与 /api/followup 的参数校验同口径） */
-const MESSAGE_BUDGET = 8000;
-
-/** 在线请求超时（毫秒）：超时即中止并落本地提示，避免思考态卡死面板 */
-const ONLINE_TIMEOUT_MS = 30_000;
-
-/** 在线兜底携带的最近对话轮数上限 */
-const HISTORY_TURNS = 10;
-
 interface FollowUpPanelProps {
   ref?: React.Ref<FollowUpPanelHandle>;
   /** 移动端抽屉开合；桌面恒为可见列 */
@@ -115,12 +50,6 @@ interface FollowUpPanelProps {
   onCancelAnchor(): void;
 }
 
-/** 在线兜底失败时的本地提示：说明需要在线服务，并列出 3 个本地可回答的问题建议 */
-function onlineFallbackTipText(): string {
-  const lines = EXAMPLE_QUESTIONS.slice(0, 3).map((question) => `· ${question}`);
-  return `这个问题需要连接在线服务才能回答。可以先试试下面这些问题：\n${lines.join("\n")}`;
-}
-
 export function FollowUpPanel({
   ref,
   open,
@@ -130,17 +59,10 @@ export function FollowUpPanel({
   onToggleCollapsed,
   onCancelAnchor,
 }: FollowUpPanelProps) {
-  const [turns, setTurns] = useState<FollowUpTurn[]>([]);
   const [input, setInput] = useState("");
-  const [thinking, setThinking] = useState<ThinkingState | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const seqRef = useRef(0);
-  // 本地 SQL 执行器惰性创建：首次提问才接线，渲染路径不触碰存储与时钟
-  const runnerRef = useRef<ReturnType<typeof createDuckDbRunner> | null>(null);
-  // 在线请求的中止句柄与组件存活标记：卸载后不再触碰任何状态
-  const abortRef = useRef<AbortController | null>(null);
-  const aliveRef = useRef(true);
+  const { turns, thinking, submit } = useChatPipeline({ enableCasePath: false });
 
   const hasSession = turns.length > 0;
 
@@ -154,414 +76,25 @@ export function FollowUpPanel({
     if (el) el.scrollTop = el.scrollHeight;
   }, [turns, thinking]);
 
-  // 挂载时置存活标记、卸载时中止在线请求：流式回填与兜底提示不再触碰已卸载组件的状态。
-  // 注意 StrictMode 下 effect 会「挂载→清理→再挂载」，清理会把 aliveRef 置 false，
-  // 因此必须在这里（而非仅 useRef 初始值）重新置 true，否则存活标记会永久卡在 false。
-  useEffect(() => {
-    aliveRef.current = true;
-    return () => {
-      aliveRef.current = false;
-      abortRef.current?.abort();
-    };
-  }, []);
-
-  /** 惰性取得本地 SQL 执行器（首次提问时创建，之后复用同一条接线） */
-  function getRunner() {
-    if (!runnerRef.current) runnerRef.current = createDuckDbRunner();
-    return runnerRef.current;
-  }
-
-  function appendTurn(turn: Omit<FollowUpTurn, "id">) {
-    seqRef.current += 1;
-    // 必须先把序号固化到局部变量再进 updater：updater 是函数式更新，
-    // 若直接读 seqRef.current，同一批同步提交里的多次 appendTurn 会在
-    // updater 真正执行时都读到最终序号，导致重复 key（如用户提问与闲聊
-    // 回答在同一同步批内追加时塌成同一个 id）。
-    const id = seqRef.current;
-    setTurns((prev) => [...prev, { ...turn, id }]);
-  }
-
-  /** 流式分片累积：只更新目标 id 气泡的文本，其他轮次保持原样 */
-  function updateTurnText(turnId: number, text: string) {
-    setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, text } : turn)));
-  }
-
-  /** 整段流结束后挂上在线来源脚注 */
-  function markTurnLive(turnId: number) {
-    setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, note: "live" } : turn)));
-  }
-
-  /**
-   * 最近对话映射为在线消息数组：历史气泡 + 本轮用户问题，取最近若干轮，
-   * 从最旧一条开始裁剪，保证消息总长不超过接口预算（预算已扣除上下文长度）。
-   */
-  function buildHistoryMessages(
-    currentText: string,
-    budget: number,
-  ): { role: "user" | "assistant"; content: string }[] {
-    const current: { role: "user" | "assistant"; content: string } = {
-      role: "user",
-      content: currentText,
-    };
-    const mapped = turns
-      .map((turn) => ({ role: turn.role, content: turn.text }))
-      .concat([current])
-      .slice(-HISTORY_TURNS);
-    const kept: { role: "user" | "assistant"; content: string }[] = [];
-    let used = 0;
-    for (let i = mapped.length - 1; i >= 0; i -= 1) {
-      const message = mapped[i];
-      if (!message || message.content.length === 0) continue;
-      if (used + message.content.length > budget) break;
-      kept.push(message);
-      used += message.content.length;
-    }
-    return kept.reverse();
-  }
-
-  /**
-   * 在线兜底：拼汇总上下文（非空才拼）、最近对话与 sessionSchema 聚合快照，
-   * POST /api/followup（SSE，07 修订案 A9），按空行分帧解析协议 §2 事件：
-   *   - tool:start / tool:end：维护工具徽章（待定 / 成功 / 失败三态）；
-   *   - stage:thinking：回答文本增量，累积回填到最后一条回答气泡；
-   *   - run:complete：挂「在线生成」脚注与案例参考；
-   *   - error：无内容撤占位气泡补本地提示，有内容保留已收文本；
-   * 请求失败 / 流异常时落到本地提示气泡；组件卸载触发的中止直接静默返回。
-   */
-  async function runOnlineFallback(question: string) {
-    setThinking("live");
-    const controller = new AbortController();
-    abortRef.current = controller;
-    // 超时保险：接口或上游长时间不响应时主动中止，防止思考态卡死面板
-    let timedOut = false;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, ONLINE_TIMEOUT_MS);
-
-    // 中止原因分流：组件卸载 → 静默返回；超时中止 → 补一条本地提示
-    function bailIfStopped(): boolean {
-      if (!aliveRef.current) return true;
-      if (controller.signal.aborted) {
-        if (timedOut) appendTurn({ role: "assistant", text: onlineFallbackTipText() });
-        return true;
-      }
-      return false;
-    }
-
-    try {
-      // 汇总上下文：任何一组统计查不到就由引擎省略该组，空串表示没有任何可发送的统计
-      let context = "";
-      try {
-        context = await buildAggregateContext(getRunner());
-      } catch {
-        context = "";
-      }
-      // 明细快照：最近 150 笔收支明细（07 修订案 A8），读不到则省略该段；
-      // 明细预算 = 接口单条消息上限 4000 减去前缀与汇总段，兜底不小于 0
-      let details = "";
-      try {
-        const detailBudget = Math.max(0, 3900 - context.length);
-        details = await buildDetailContext(createDuckDbDetailSnapshot(), detailBudget);
-      } catch {
-        details = "";
-      }
-      if (bailIfStopped()) return;
-      const combined = [context, details].filter(Boolean).join("\n");
-      // 统计与明细都拿不到（未导入账单或引擎读不到数据）：不空手转在线，
-      // 直接本地回答「先导入账单」，避免模型因拿不到数据而答非所问
-      if (!combined) {
-        setThinking(null);
-        appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
-        return;
-      }
-
-      // RAG 检索：从本地案例库取与问题相关的案例参考（04 §4.6 引用元数据由
-      // 检索层产出，不依赖模型生成，从根上防幻觉引用）；失败/超时静默跳过，
-      // 不阻断在线兜底主链路。mock/公网轻量模式下接口内部自动降 TF-IDF
-      let ragCases: { caseId: string; title: string; snippet: string }[] = [];
-      try {
-        const ragResponse = await fetch("/api/rag", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query: question, topK: 3 }),
-          signal: controller.signal,
-        });
-        if (ragResponse.ok) {
-          const envelope = (await ragResponse.json()) as {
-            ok: boolean;
-            data?: { cases?: { caseId: string; title: string; snippet: string }[] };
-          };
-          if (envelope.ok) {
-            ragCases = (envelope.data?.cases ?? []).map((c) => ({
-              caseId: c.caseId,
-              title: c.title,
-              snippet: c.snippet,
-            }));
-          }
-        }
-      } catch {
-        ragCases = [];
-      }
-      if (bailIfStopped()) return;
-
-      // sessionSchema 聚合快照（07 §18 协议演示工具回执）：只含列元数据与
-      // 统计，不含明细行；构建失败回 null，服务端跳过该工具直接进入回答
-      const txHash = usePipeline.getState().datasetTxHash;
-      let sessionSchema: SessionSchema | null = null;
-      if (txHash) {
-        try {
-          sessionSchema = await createDuckDbSchemaSnapshot(txHash)();
-        } catch {
-          sessionSchema = null;
-        }
-      }
-      if (bailIfStopped()) return;
-
-      const messages: { role: "user" | "assistant"; content: string }[] = [];
-      if (combined) {
-        messages.push({ role: "user", content: `${ONLINE_CONTEXT_PREFIX}${combined}` });
-      }
-      if (ragCases.length > 0) {
-        const refs = ragCases.map((c) => `案例参考（${c.title}：${c.snippet}）`).join("\n");
-        messages.push({ role: "user", content: refs });
-      }
-      const budget = MESSAGE_BUDGET - messages.reduce((sum, m) => sum + m.content.length, 0);
-      messages.push(...buildHistoryMessages(question, budget));
-
-      const response = await fetch("/api/followup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question,
-          messages,
-          ...(sessionSchema ? { sessionSchema } : {}),
-          datasetSource: usePipeline.getState().source ?? undefined,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        // 503（服务不可用）/ 502（上游异常）/ 400（参数校验）→ 本地提示气泡
-        appendTurn({ role: "assistant", text: onlineFallbackTipText() });
-        return;
-      }
-      if (!response.body) throw new Error("响应没有可读取的数据流");
-
-      // 先追加一条空的回答气泡，随分片累积更新文本，流结束后再挂在线来源脚注
-      seqRef.current += 1;
-      const turnId = seqRef.current;
-      setTurns((prev) => [...prev, { id: turnId, role: "assistant", text: "" }]);
-
-      // 工具徽章：badges 为已完结调用，pending 为进行中（tool:start 后未收到
-      // tool:end）；同名工具按后进先出配对，与流的顺序一致
-      const badges: ToolBadge[] = [];
-      const pending: ToolBadge[] = [];
-      let badgeSeq = 0;
-      const flushBadges = () => {
-        setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, toolBadges: [...badges, ...pending] } : turn)));
-      };
-
-      /** 单帧事件分发：返回 true 表示流已收尾（complete/error/abort），停止读取 */
-      const handleEvent = (event: Record<string, unknown>): boolean => {
-        const type = event.t;
-        if (type === "tool:start") {
-          badgeSeq += 1;
-          pending.push({
-            id: `tool-${badgeSeq}`,
-            tool: String(event.tool ?? ""),
-            label: getToolLabel(String(event.tool ?? "")),
-            argsDigest: typeof event.argsDigest === "string" ? event.argsDigest : undefined,
-          });
-          flushBadges();
-        } else if (type === "tool:end") {
-          const tool = String(event.tool ?? "");
-          const index = pending.findLastIndex((badge) => badge.tool === tool);
-          if (index !== -1) {
-            const finished = pending[index];
-            if (finished) {
-              finished.ok = Boolean(event.ok);
-              finished.ms = typeof event.ms === "number" ? event.ms : undefined;
-              if (typeof event.errorReason === "string") finished.errorReason = event.errorReason;
-              badges.push(finished);
-            }
-            pending.splice(index, 1);
-            flushBadges();
-          }
-        } else if (type === "stage:thinking" && typeof event.text === "string") {
-          accumulated += event.text;
-          updateTurnText(turnId, accumulated);
-        } else if (type === "run:complete") {
-          outcome = "complete";
-          return true;
-        } else if (type === "error") {
-          outcome = "error";
-          return true;
-        } else if (type === "abort") {
-          outcome = "abort";
-          return true;
-        }
-        return false;
-      };
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let buffer = "";
-      let accumulated = "";
-      let outcome: "complete" | "error" | "abort" | null = null;
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (bailIfStopped()) return;
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        // SSE 按空行分帧；最后一帧可能还没收到空行，留待下一片或流结束处理
-        let boundary = buffer.indexOf("\n\n");
-        while (boundary !== -1) {
-          const frame = buffer.slice(0, boundary);
-          buffer = buffer.slice(boundary + 2);
-          boundary = buffer.indexOf("\n\n");
-          const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
-          if (dataLine) {
-            try {
-              if (handleEvent(JSON.parse(dataLine.slice(6)) as Record<string, unknown>)) break;
-            } catch {
-              // 非法帧静默跳过：不阻断后续事件
-            }
-          }
-        }
-        if (outcome) break;
-      }
-
-      if (outcome === "abort") return; // 服务端已感知中止：静默返回
-      if (outcome === "complete") {
-        // 流正常收尾：最终文本与徽章落定，挂在线来源脚注与案例参考
-        updateTurnText(turnId, accumulated);
-        flushBadges();
-        markTurnLive(turnId);
-        if (ragCases.length > 0) {
-          setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)));
-        }
-        return;
-      }
-      if (outcome === "error") {
-        // 服务端显式报错：无内容撤掉占位气泡补本地提示；已有内容保留不挂脚注
-        if (accumulated.trim() === "") {
-          setTurns((prev) => prev.filter((turn) => turn.id !== turnId));
-          appendTurn({ role: "assistant", text: onlineFallbackTipText() });
-        }
-        return;
-      }
-      // 流干净收尾但没等到 run:complete：按已收内容兜底；零内容则撤占位气泡
-      if (accumulated.trim() === "") {
-        setTurns((prev) => prev.filter((turn) => turn.id !== turnId));
-        appendTurn({ role: "assistant", text: onlineFallbackTipText() });
-        return;
-      }
-      updateTurnText(turnId, accumulated);
-      flushBadges();
-      markTurnLive(turnId);
-      if (ragCases.length > 0) {
-        setTurns((prev) => prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)));
-      }
-    } catch {
-      // 组件卸载触发的中止 → 静默返回（不触碰已卸载组件的状态）；
-      // 超时中止 → 补一条本地提示气泡（提示只补一次）；
-      // 其余网络异常 / 流中断 → 同样补本地提示；占位气泡若还没收到内容就撤掉
-      if (!aliveRef.current) return;
-      if (controller.signal.aborted && !timedOut) return;
-      setTurns((prev) =>
-        prev.filter((turn) => !(turn.role === "assistant" && turn.text === "" && !turn.note)),
-      );
-      appendTurn({ role: "assistant", text: onlineFallbackTipText() });
-    } finally {
-      clearTimeout(timeoutId);
-      if (aliveRef.current) setThinking(null);
-    }
-  }
-
-  /**
-   * 转在线兜底前的最后一道本地闸门：没有账单数据时直接回「先导入账单」，
-   * 不空手转在线（模型拿不到统计只会把问题挡回来）。
-   */
-  async function fallToOnline(text: string) {
-    if (usePipeline.getState().datasetTxHash === null) {
-      setThinking(null);
-      appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
-      return;
-    }
-    await runOnlineFallback(text);
-  }
-
-  /**
-   * 回答问题的主管线（手输与锚点追问共用），按顺序尝试三条路径：
-   * ① 闲聊分流 → 定稿文案；② 本地规则读账单数据回答；③ 在线兜底。
-   * 锚点随问题一起交给引擎，用于补全类目 / 时间窗等槽位。
-   */
-  async function submitQuestion(text: string, anchorAtAsk: FollowUpAnchor | null) {
-    const smallTalkKind = classifySmallTalk(text);
-    if (smallTalkKind) {
-      appendTurn({ role: "assistant", text: SMALL_TALK_ANSWER[smallTalkKind], smallTalk: true });
-      return;
-    }
-
-    setThinking("data");
-    let intent: QaIntent | null = null;
-    try {
-      intent = analyzeQuestion(text, anchorAtAsk);
-    } catch {
-      intent = null; // 解析异常按未识别处理，转在线兜底
-    }
-    if (intent) {
-      // 数据未导入时直接答「还没有账单数据」，不必为探空初始化 DuckDB-WASM：
-      // datasetTxHash 为空 ⟺ transactions 表尚未建出（导入即 setDataset），
-      // 空态回答应当即时返回，冷启动下的 WASM 加载不该拖慢这条路径。
-      if (usePipeline.getState().datasetTxHash === null) {
-        setThinking(null);
-        appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
-        return;
-      }
-      try {
-        const answer = await answerLocalQuestion(getRunner(), intent, anchorAtAsk);
-        if (!aliveRef.current) return;
-        if (answer.kind === "unhandled") {
-          await fallToOnline(text);
-        } else {
-          setThinking(null);
-          appendTurn({ role: "assistant", text: answer.text, note: "local" });
-        }
-        return;
-      } catch {
-        // 本地查询失败（数据库接线 / 白名单拒绝等）→ 转在线兜底
-        await fallToOnline(text);
-        return;
-      }
-    }
-    await fallToOnline(text);
-  }
-
   function handleSubmit() {
     const text = input.trim();
     if (!text || thinking) return;
-    appendTurn({ role: "user", text });
     setInput("");
-    void submitQuestion(text, anchor);
+    void submit(text, anchor);
   }
 
-  /** 空态问题建议 chips：点击即填入输入框并直接提交 */
+  /** 空态问题建议 chips：点击即提交（用户气泡由管线统一追加） */
   function handleChipClick(question: string) {
     if (thinking) return;
-    setInput(question);
-    appendTurn({ role: "user", text: question });
-    void submitQuestion(question, anchor);
+    void submit(question, anchor);
   }
 
   function askFromAnchor() {
     if (!anchor || thinking) return;
     const anchorAtAsk = anchor;
     const text = `围绕「${anchorAtAsk.label}」展开追问`;
-    appendTurn({ role: "user", text });
     onCancelAnchor();
-    void submitQuestion(text, anchorAtAsk);
+    void submit(text, anchorAtAsk);
   }
 
   // 桌面折叠轨：会话徽标挂在图标上，展开按钮在顶部
@@ -691,95 +224,10 @@ export function FollowUpPanel({
             </div>
           </div>
         ) : (
-          turns.map((turn) => (
-            <div key={turn.id} className={`flex ${turn.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-[85%] whitespace-pre-line rounded-2xl px-3 py-2 text-sm leading-relaxed ${
-                  turn.role === "user"
-                    ? "rounded-br-sm bg-(--color-primary) text-white"
-                    : "rounded-bl-sm bg-(--color-surface-2) text-(--color-ink)"
-                }`}
-              >
-                {turn.text}
-                {turn.note === "local" ? (
-                  <span className="mt-2 flex w-fit items-center gap-1.5 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-2 py-1 text-[11px] leading-relaxed text-(--color-ink-muted)">
-                    <CircleCheck className="size-3 shrink-0 text-(--color-good-ink)" aria-hidden />
-                    已按你的账单数据计算
-                  </span>
-                ) : null}
-                {turn.note === "live" ? (
-                  <span className="mt-2 flex w-fit items-center gap-1.5 rounded-(--radius-sm) bg-(--color-primary-soft) px-2 py-1 text-[11px] leading-relaxed text-(--color-brand-600)">
-                    <Sparkles className="size-3 shrink-0" aria-hidden />
-                    在线生成 · 已发送明细与统计
-                  </span>
-                ) : null}
-                {turn.ragRefs && turn.ragRefs.length > 0 ? (
-                  <div className="mt-2 space-y-1.5">
-                    {turn.ragRefs.map((c) => (
-                      <p
-                        key={c.caseId}
-                        className="flex items-start gap-1.5 rounded-(--radius-sm) border border-(--color-border) bg-(--color-surface) px-2 py-1 text-[11px] leading-relaxed text-(--color-ink-muted)"
-                      >
-                        <BookOpen className="mt-0.5 size-3 shrink-0 text-(--color-ink-muted)" aria-hidden />
-                        <span>
-                          案例参考 · <span className="font-medium text-(--color-ink-secondary)">{c.title}</span>
-                          <span className="text-(--color-ink-muted)">：{c.snippet}</span>
-                        </span>
-                      </p>
-                    ))}
-                  </div>
-                ) : null}
-                {turn.toolBadges && turn.toolBadges.length > 0 ? (
-                  /* 工具徽章（07 §18）：待定 / 成功 / 失败三态，title 展示入参摘要 */
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {turn.toolBadges.map((badge) => (
-                      <span
-                        key={badge.id}
-                        title={badge.argsDigest}
-                        className={`inline-flex items-center gap-1 rounded-(--radius-sm) border px-2 py-1 text-[11px] leading-relaxed ${
-                          badge.ok === undefined
-                            ? "border-(--color-border) bg-(--color-surface) text-(--color-ink-muted)"
-                            : badge.ok
-                              ? "border-(--color-good)/20 bg-(--color-good)/10 text-(--color-good-ink)"
-                              : "border-(--color-warn)/40 bg-(--color-warn-soft)/60 text-(--color-warning-ink)"
-                        }`}
-                      >
-                        {badge.ok === undefined ? (
-                          <LoaderCircle className="size-3 shrink-0 animate-spin text-(--color-ink-muted)" aria-hidden />
-                        ) : badge.ok ? (
-                          <CircleCheck className="size-3 shrink-0" aria-hidden />
-                        ) : (
-                          <CircleAlert className="size-3 shrink-0" aria-hidden />
-                        )}
-                        <span>{badge.label}</span>
-                        {badge.ok === undefined ? (
-                          <span className="text-(--color-ink-muted)">调用中…</span>
-                        ) : badge.ok ? (
-                          badge.ms !== undefined ? <span className="tabular-nums">· {badge.ms}ms</span> : null
-                        ) : (
-                          <span>· 调用失败</span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-          ))
+          <ChatBubbles turns={turns} />
         )}
 
-        {thinking ? (
-          <div className="flex justify-start" aria-live="polite" aria-label="正在生成回答">
-            <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-sm bg-(--color-surface-2) px-3.5 py-3">
-              <span className="size-1.5 animate-bounce rounded-full bg-(--color-ink-muted)" />
-              <span className="size-1.5 animate-bounce rounded-full bg-(--color-ink-muted) [animation-delay:120ms]" />
-              <span className="size-1.5 animate-bounce rounded-full bg-(--color-ink-muted) [animation-delay:240ms]" />
-              <span className="ml-1.5 text-xs text-(--color-ink-muted)">
-                {thinking === "data" ? "正在读取你的账单数据…" : "正在连接在线服务生成回答…"}
-              </span>
-            </div>
-          </div>
-        ) : null}
+        {thinking ? <ThinkingBubbles state={thinking} /> : null}
       </div>
 
       <form

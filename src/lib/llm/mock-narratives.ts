@@ -8,7 +8,8 @@
  * - 本文件是纯函数 + 数据，无任何服务端依赖，可在单测与客户端安全引用。
  */
 
-/** LLM 任务枚举（08 修订案 A5 的 5 个扩展任务 + 六阶段叙事 + 追问对话 chat，全项目唯一来源） */
+/** LLM 任务枚举（08 修订案 A5 的 5 个扩展任务 + 六阶段叙事 + 追问对话 chat +
+ *  思考计划 assistant-plan（08 修订案 A12），全项目唯一来源） */
 export const LLM_TASKS = [
   "narrative",
   "budget-advice",
@@ -17,6 +18,7 @@ export const LLM_TASKS = [
   "annual-story",
   "tip-personalize",
   "chat",
+  "assistant-plan",
 ] as const;
 
 export type LlmTask = (typeof LLM_TASKS)[number];
@@ -133,6 +135,27 @@ export const MOCK_NARRATIVES: Record<LlmTask, Record<string, string[]>> = {
       "对照你的账单，购物类消费集中在月初和大促前后，数码和日百是双11 的主力品类。建议 10 月 20 号预热期先加购比价，正式期再下单；返场期力度会打折，适合补漏，不适合囤货。",
     ],
   },
+  /**
+   * assistant-plan（思考计划，08 修订案 A12）档位口径：
+   * 数组固定为 [目标, 步骤1, 步骤2, ...]——首元素是 goal，其余是步骤标题。
+   * 本任务不走 pickMockText（结构化计划由 mockAssistantPlan 读取本表组装，
+   * 再经 /api/followup 发射 plan 事件）；表项只为保持 Record<LlmTask, …>
+   * 完整与文案单一来源。promo 档与大促演示流联动，第一步的工具名与
+   * get_promo_calendar 徽章同名。
+   */
+  "assistant-plan": {
+    default: [
+      "基于账单数据回答消费问题",
+      "汇总账单统计与最近明细",
+      "按问题口径组织回答",
+    ],
+    promo: [
+      "围绕大促问题给出消费规划",
+      "查询大促日历确认档期与平台",
+      "对照账单统计评估购物节奏",
+      "结合预算给出比价与囤货建议",
+    ],
+  },
 };
 
 /** 各任务 mock 默认数字（与 src/lib/demo-data.ts 的内置账单口径一致，录制可复现） */
@@ -227,6 +250,8 @@ export const DEFAULT_MOCK_VARS: Record<LlmTask, Record<string, string | number>>
   },
   // chat 兜底文案不含占位符，变量表留空即可（pickMockText 对空表按原文输出）
   chat: {},
+  // assistant-plan 为结构化计划（mockAssistantPlan 直接读叙事表），无变量
+  "assistant-plan": {},
 };
 
 /** forecast 三档各自的气象数字（涨/跌/平的幅度与区间不能共用一套） */
@@ -305,6 +330,28 @@ export function pickMockText(task: LlmTask, stage?: string): string {
   const segments = entries[key] ?? [];
   const vars = DEFAULT_MOCK_VARS[task] ?? {};
   return segments.map((segment) => fillTemplate(segment, vars)).join("\n\n");
+}
+
+export interface MockPlan {
+  goal: string;
+  steps: Array<{ title: string; tool?: string }>;
+}
+
+/**
+ * 思考计划 mock（08 修订案 A12）：读取叙事表 assistant-plan 档
+ * （[目标, 步骤1, …] 布局）组装结构化计划；promo 档第一步挂
+ * get_promo_calendar 工具名，与工具徽章联动演示「计划 → 调用」闭环。
+ */
+export function mockAssistantPlan(promo: boolean): MockPlan {
+  const rows = MOCK_NARRATIVES["assistant-plan"][promo ? "promo" : "default"] ?? [];
+  const [goal = "", ...stepTitles] = rows;
+  return {
+    goal,
+    steps: stepTitles.map((title, index) => ({
+      title,
+      ...(promo && index === 0 ? { tool: "get_promo_calendar" } : {}),
+    })),
+  };
 }
 
 export interface MockBudgetAdvice {

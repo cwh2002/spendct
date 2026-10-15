@@ -22,8 +22,10 @@ export type { LlmTask } from "./mock-narratives";
 
 /** 叙事类 + 追问对话任务走 DeepSeek 主脑；其余为轻任务走 Qwen（07 §12）。
  *  chat 归入 DeepSeek：追问兜底需要强阅读理解与中文口语表达，且仅配置 DeepSeek key
- *  的部署也能直接跑通（否则 chat 走 Qwen 分支会在无 Qwen key 时 503）。 */
-const DEEPSEEK_TASKS: readonly LlmTask[] = ["narrative", "annual-story", "chat"];
+ *  的部署也能直接跑通（否则 chat 走 Qwen 分支会在无 Qwen key 时 503）。
+ *  assistant-plan（08 修订案 A12）同归 DeepSeek：与 chat 同属追问体验，
+ *  仅配置 DeepSeek key 的部署也要能发射思考计划。 */
+const DEEPSEEK_TASKS: readonly LlmTask[] = ["narrative", "annual-story", "chat", "assistant-plan"];
 
 /** DeepSeek 官方 chat 模型名（01 §1 锁表：deepseek → DeepSeek-V3 系） */
 const DEEPSEEK_MODEL_ID = "deepseek-chat";
@@ -84,8 +86,12 @@ const TASK_INSTRUCTIONS: Record<LlmTask, string> = {
   "tip-personalize":
     "你是省钱贴士适配器。只为输入里出现过的案例写适配理由，不引用输入里没有的案例编号。",
   // chat 是追问面板的对话任务：输入由「汇总统计 + 最近 150 笔明细快照」与最近对话
-  // 组成（07 修订案 A8），据此限定回答边界。路由口径：已归入 DEEPSEEK_TASKS，走 DeepSeek 主脑。
+  // 组成（08 修订案 A8），据此限定回答边界。路由口径：已归入 DEEPSEEK_TASKS，走 DeepSeek 主脑。
   chat: "你是账单助手。只能依据用户消息里提供的账单数据（汇总统计与最近明细）回答，绝不编造数据里没有的数字，没有把握就直接说不清楚。回答用简体中文，口语化、直接，一般不超过三句。",
+  // assistant-plan（08 修订案 A12）：回答前的思考计划，结构化输出。计划只用于向用户
+  // 展示思考过程（plan 事件），回答内容由后续 chat 任务生成，两任务分工不要混淆。
+  "assistant-plan":
+    "你是账单助手的工作规划器。把用户问题拆成最多 4 步执行计划：需要查证的先查证（账单数据或可用工具），再组织回答。goal 用一句中文概括目标；每个步骤 title 用一句中文动作描述，步骤要用到工具时才填 tool 字段（只能填可用工具清单里的名字），其余说明放 purpose。只输出计划本身，不要写回答内容。",
 };
 
 /** 按路由表取模型；对应 key 缺失抛 LlmExhaustedError */

@@ -11,6 +11,7 @@
  *   reportStory  年度报告数据故事布局（关闭回退旧版报告布局）
  *   achievements 成就段位
  *   learn        知识课堂 /learn（关闭时首页对应卡灰显「即将上线」）
+ *   voice        智能助理语音输入（关闭后隐藏麦克风入口，仅保留文本输入）
  */
 /* 键集合保持 as const 得到字面量联合（供 Capability.flag 引用），
    值类型放宽为 boolean：开关关闭时切 false，消费方 `=== false` 判断才不触发 TS2367 */
@@ -23,6 +24,7 @@ const FLAG_DEFAULTS = {
   reportStory: true,
   achievements: true,
   learn: true,
+  voice: true,
 } as const;
 
 export const featureFlags: Record<keyof typeof FLAG_DEFAULTS, boolean> = FLAG_DEFAULTS;

@@ -5,12 +5,15 @@
  * 「在线兜底」并叠加 MCP 工具层——回答以协议 §2 事件流返回：
  *   - run:start / run:complete：会话边界（cards 恒为空数组，追问不落洞察卡；
  *     degraded 数组记录 MCP 降级原因）；
+ *   - plan：回答前的思考计划（协议第 21 类事件，08 修订案 A12；live 由
+ *     assistant-plan 结构化生成、mock 脚本化两档，面板渲染「思考计划」块）；
  *   - tool:start / tool:end：每次工具调用的起止（面板工具徽章数据源）；
  *   - stage:thinking（stage="followup"）：回答文本增量（复用思考文案事件，
- *     协议 20 事件封版，不新增事件类型）；
+ *     宽松发射，不经过协议校验）；
  *   - error / abort：异常与客户端中止。
  *
  * 流程：
+ *   0. 发射 plan 事件（mock 两档脚本 / live 结构化生成，失败静默跳过）；
  *   1. 若 body 带 sessionSchema 快照（07 §18 协议演示工具），先确定性调用
  *      query_bill_db_metadata 回执（不进模型工具集，与模型决策解耦）；
  *   2. DEMO_MODE=mock：问题命中大促关键词 → 脚本化演示流（get_promo_calendar
@@ -19,14 +22,16 @@
  *   3. live：装配 MCP 三工具（连接失败整体降级并记入 degraded）→
  *      streamChatWithTools 逐 part 映射事件。
  *
- * 隐私口径（07 修订案 A8 延伸）：消息里的汇总统计与最近明细快照只转发给
+ * 隐私口径（08 修订案 A8 延伸）：消息里的汇总统计与最近明细快照只转发给
  * LLM 与 MCP（账单库元数据回执只含聚合元数据），服务端零存储、不记日志。
  */
 import { randomUUID } from "node:crypto";
 
 import { z } from "zod";
 
-import { LlmExhaustedError, mockTextStream, resolveLlmMode, streamChatWithTools } from "@/lib/llm/client";
+import { generateLlmObject, LlmExhaustedError, mockTextStream, resolveLlmMode, streamChatWithTools } from "@/lib/llm/client";
+import { mockAssistantPlan } from "@/lib/llm/mock-narratives";
+import { PlanEventSchema } from "@/lib/protocol/events";
 import { sessionSchemaSchema } from "@/lib/schema/session-schema";
 import { getFallbackTool } from "@/server/ai/mcp-fallback";
 import {
@@ -69,6 +74,12 @@ const PROMO_KEYWORDS = ["双11", "双十一", "双12", "双十二", "大促", "�
 function isPromoQuestion(question: string): boolean {
   return PROMO_KEYWORDS.some((word) => question.includes(word));
 }
+
+/** live 思考计划生成超时（毫秒）：计划是展示层增强，超时即放弃、不拖慢主回答流 */
+const PLAN_GENERATE_TIMEOUT_MS = 8_000;
+
+/** 计划步骤可引用的工具名（模型可调用的 MCP 三工具；与 mcp.ts MCP_TOOL_NAMES 同源） */
+const PLAN_TOOL_HINT = "get_school_calendar（校历）、get_weather（城市天气）、get_promo_calendar（大促日历）";
 
 /** 工具入参摘要：截断的 JSON 串，供工具徽章展示调用意图（不含敏感字段） */
 function argsDigest(args: unknown): string {
@@ -140,6 +151,38 @@ export async function POST(request: Request) {
           stageOrder: [],
         });
 
+        // —— 第 0 步：思考计划（plan 事件，08 修订案 A12）——
+        // mock：脚本化两档（promo 档第一步挂日历工具名，与徽章联动）；
+        // live：assistant-plan 结构化生成，失败/超时静默跳过——计划是
+        // 展示层增强，任何异常都不阻断主回答流
+        const mode = resolveLlmMode();
+        if (mode === "mock") {
+          const plan = mockAssistantPlan(isPromoQuestion(question));
+          send({ t: "plan", ts: now(), runId, goal: plan.goal, steps: plan.steps });
+        } else if (!request.signal.aborted) {
+          try {
+            const plan = await Promise.race([
+              generateLlmObject(
+                "assistant-plan",
+                PlanEventSchema.pick({ goal: true, steps: true }),
+                `用户问题：${question}\n可用工具：${PLAN_TOOL_HINT}\n步骤里的 tool 字段只能填上述工具名，用不到工具就不填。`,
+              ),
+              // 计划生成超时兜底：放弃计划，让主回答流尽快开始
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("plan generation timeout")), PLAN_GENERATE_TIMEOUT_MS),
+              ),
+            ]);
+            if (request.signal.aborted) {
+              send({ t: "abort", ts: now(), runId, reason: "client-aborted" });
+              controller.close();
+              return;
+            }
+            send({ t: "plan", ts: now(), runId, goal: plan.goal, steps: plan.steps });
+          } catch {
+            // 密钥缺失 / 上游异常 / 超时：不发射 plan 事件，主回答流照常
+          }
+        }
+
         // —— 第 1 步：协议演示工具（确定性回执，与模型决策解耦）——
         if (sessionSchema) {
           sendToolStart("bill-meta", "query_bill_db_metadata", argsDigest(sessionSchema));
@@ -160,8 +203,7 @@ export async function POST(request: Request) {
           if (!envelope.ok) degraded.push("mcp:query_bill_db_metadata");
         }
 
-        // —— 第 2 步：回答生成（mock 演示流 / live 工具流）——
-        const mode = resolveLlmMode();
+        // —— 第 2 步：回答生成（mock 演示流 / live 工具流，mode 已在第 0 步判定）——
         if (mode === "mock") {
           if (isPromoQuestion(question)) {
             // 脚本化演示：先模拟 get_promo_calendar 调用（演示口径与数据文件一致），

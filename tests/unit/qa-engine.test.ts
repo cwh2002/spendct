@@ -11,7 +11,7 @@
  *    两种无数据文案（数据集为空 / 有数据但维度为空）与 unhandled 组合；
  * 4. buildAggregateContext：固定夹具下的内容与长度断言（≤2000 字、每条以「·」开头、
  *    空数据返回空串、单组查不到即省略）；
- * 5. buildDetailContext / DETAIL_SNAPSHOT_SQL（07 修订案 A8）：假行驱动的内容与
+ * 5. buildDetailContext / DETAIL_SNAPSHOT_SQL（08 修订案 A8）：假行驱动的内容与
  *    截断断言、异常与空数据返回空串，以及固定 SQL 的静态口径断言（LIMIT 150、
  *    零动态拼接、不进聚合白名单的直连语句）；
  * 6. EXAMPLE_QUESTIONS：6 个示例问题非空且全部可被本地意图识别；
@@ -732,7 +732,7 @@ describe("buildAggregateContext 汇总上下文", () => {
   });
 });
 
-// ─────────────────────────── 明细快照（07 修订案 A8） ───────────────────────────
+// ─────────────────────────── 明细快照（08 修订案 A8） ───────────────────────────
 
 describe("buildDetailContext / DETAIL_SNAPSHOT_SQL", () => {
   /** 假快照行：列序与 DETAIL_SNAPSHOT_SQL 的 SELECT 顺序一致 */

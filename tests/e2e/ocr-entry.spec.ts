@@ -23,7 +23,7 @@ test("OCR 截图识别走通 入口 → 合规确认 → 识别 → 二次复核
 
   // 2) 合规弹窗：02 §12.4 文案逐字锚点 + 截图来源选择
   await expect(
-    page.getByText("账单截图将仅发送至 GLM-4V-Flash 视觉模型用于本次文字识别"),
+    page.getByText("账单截图将仅发送至视觉大模型 DeepSeek V4.1 Flash 用于本次文字识别"),
   ).toBeVisible();
   await page.getByRole("button", { name: "确认并选择截图" }).click();
 
@@ -60,12 +60,12 @@ test("OCR 合规弹窗可取消：回到空态且不发起识别", async ({ page
   await page.goto("/upload");
   await page.getByRole("button", { name: /账单截图识别/ }).click();
   await expect(
-    page.getByText("账单截图将仅发送至 GLM-4V-Flash 视觉模型用于本次文字识别"),
+    page.getByText("账单截图将仅发送至视觉大模型 DeepSeek V4.1 Flash 用于本次文字识别"),
   ).toBeVisible();
   await page.getByRole("button", { name: "取消" }).click();
   // 弹窗关闭，右栏回到空态提示
   await expect(
-    page.getByText("账单截图将仅发送至 GLM-4V-Flash 视觉模型用于本次文字识别"),
+    page.getByText("账单截图将仅发送至视觉大模型 DeepSeek V4.1 Flash 用于本次文字识别"),
   ).toBeHidden();
   await expect(page.getByText("还没有账单——从左侧选择一个入口开始")).toBeVisible();
 });

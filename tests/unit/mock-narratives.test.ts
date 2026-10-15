@@ -12,6 +12,7 @@ import {
   fillTemplate,
   LLM_TASKS,
   MOCK_NARRATIVES,
+  mockAssistantPlan,
   mockBudgetAdvice,
   mockForecastNarrative,
   mockTips,
@@ -20,8 +21,10 @@ import {
 
 const BANNED_PHRASES = ["综上所述", "值得注意的是", "首先", "其次"];
 
-/** quick-entry 档是示例句（不受叙事字数约束），其余任务段长 80-200 */
-const NARRATIVE_TASKS = LLM_TASKS.filter((task) => task !== "quick-entry");
+/** quick-entry 档是示例句、assistant-plan 档是结构化计划短句，均不受叙事段长约束 */
+const NARRATIVE_TASKS = LLM_TASKS.filter(
+  (task) => task !== "quick-entry" && task !== "assistant-plan",
+);
 
 function allTemplateStrings(): string[] {
   return LLM_TASKS.flatMap((task) => Object.values(MOCK_NARRATIVES[task]).flat());
@@ -148,5 +151,33 @@ describe("chat 任务（追问对话兜底档）", () => {
     expect(text).not.toContain("演示");
     expect(text).not.toContain("内置");
     expect(text).toContain("来自你导入的账单");
+  });
+});
+
+describe("assistant-plan 任务（思考计划，08 修订案 A12）", () => {
+  it("assistant-plan 在任务枚举内，两档均为 [目标, 步骤…] 布局", () => {
+    expect(LLM_TASKS).toContain("assistant-plan");
+    for (const key of ["default", "promo"] as const) {
+      const rows = MOCK_NARRATIVES["assistant-plan"][key] ?? [];
+      expect(rows.length, `${key} 档至少 1 个目标 + 1 个步骤`).toBeGreaterThanOrEqual(2);
+      for (const row of rows) {
+        expect(row, "计划短句不应含占位符").not.toMatch(/\{\w+\}/);
+      }
+    }
+  });
+
+  it("mockAssistantPlan 组装 goal 与步骤；promo 档第一步挂日历工具名", () => {
+    const normal = mockAssistantPlan(false);
+    expect(normal.goal.length).toBeGreaterThan(0);
+    expect(normal.steps.length).toBeGreaterThanOrEqual(2);
+    expect(normal.steps.every((step) => step.tool === undefined)).toBe(true);
+
+    const promo = mockAssistantPlan(true);
+    expect(promo.steps[0]?.tool).toBe("get_promo_calendar");
+    // 计划步数上限与协议 PlanEventSchema 一致（≤4）
+    expect(promo.steps.length).toBeLessThanOrEqual(4);
+    // 两档确定性：同参数两次调用结果一致
+    expect(mockAssistantPlan(true)).toEqual(promo);
+    expect(mockAssistantPlan(false)).toEqual(normal);
   });
 });

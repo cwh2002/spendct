@@ -15,9 +15,9 @@ export interface VisibilityRow {
    */
   browser: "local-only" | "computed" | "-";
   /**
-   * LLM（DeepSeek-V3 / Qwen / GLM-4V-Flash）看到什么：
+   * LLM（DeepSeek / Qwen / 视觉模型 deepseek-flash·GLM）看到什么：
    * aggregated = 仅聚合摘要；hashed = 仅哈希占位（@{m:hash}）；never = 永不；
-   * detail = 追问在线兜底时可见汇总统计 + 最近 150 笔明细快照（07 修订案 A8）；
+   * detail = 追问在线兜底时可见汇总统计 + 最近 150 笔明细快照（08 修订案 A8）；
    * "-" = 不适用（如发出方自身产物，见 note）
    */
   llm: "aggregated" | "hashed" | "never" | "detail" | "-";
@@ -220,5 +220,12 @@ export const VISIBILITY_ROWS: VisibilityRow[] = [
     llm: "detail",
     server: "relay",
     note: "只有本地答不了、转在线分析时才会发送：汇总统计 + 最近 150 笔明细（日期/类目/商户/金额/方向），回答气泡会标注「已发送明细与统计」；服务器只转发，不留存",
+  },
+  {
+    item: "语音输入（可选）",
+    browser: "computed",
+    llm: "never",
+    server: "never",
+    note: "音频由浏览器语音服务转写，本项目服务器与 LLM 都不接收音频；转写出的文字与手打内容同等对待（见「用户追问文本」行）",
   },
 ];
