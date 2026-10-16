@@ -377,7 +377,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 
 ---
 
-## ⑧ 契约修订案清单（A1-A7；A12/A13/A14/A15/A17 追加登记）
+## ⑧ 契约修订案清单（A1-A7；A12-A15/A17/A18 追加登记）
 
 > 每案格式：修订条款 / 新裁决 / 理由。全部为对 07 的增量修订，不推翻 07 §0.1 地位；执行时同步到 07 §21 改动索引。
 
@@ -456,6 +456,14 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - **零新端点、零新事件、零新 env**；无新增网络请求，海报 canvas 全程浏览器本地绘制合成 PNG。
 理由：用户反馈④要求两个特色实用功能点（实用、可用），多选三项「省钱挑战打卡/年度海报分享/攒钱目标中心」全部落地，放导航「报告」之后；三页均为本地计算+可持久化状态，复用既有 SQL 白名单与演示兜底纪律，隐私出口零新增，把得分点落在「实用性」与「社会价值」上。
 
+**A18 · 修订 07 §12/§13/§17（问答时间窗修复 + 会话持久化，2026-10-16 裁决）**
+新裁决（用户三条 bug 报告逐条回应）：
+- **时间窗八类化（§12 本地规则问答）**：`qa-engine` TimeWindow 扩为八类——this_month / last_month / two_months_ago / this_year / last_7d / last_30d / last_90d / specific_month；`WINDOW_WORDS` 顺序敏感匹配补「上上个月/前两个月」（长词先于「上个月」）、「整年/全年/全期/整个账单/全部账单/所有账单」归 this_year；新增 `detectSpecificMonth`（中文 `${word}月` 与阿拉伯 `1-12 月`，十二/十一先于十/一/二）与 `resolveMonthYear`（去年→last、YYYY年→数字、否则 current），specific_month 优先于窗口词；锚点标签继承窗口——追问「占所选时间范围 X%」按锚点口径而非默认本月。修复「整年账单的交通→本月」「1月份交通→本月」「上上个月交通→上个月」错乱。
+- **追问链路四层配套（§12/§13）**：deep-analysis 固定查询 10 → 11 组（新增类目起止日期查询），类目排行行并入各自最早/最晚支出日期（`「交通」¥963.38 元（89 笔，2026-05-30 至 2026-10-07）`）；targeted-detail 识别显式日期范围 `YYYY-MM-DD 到 YYYY-MM-DD`（双端点校验 + 闭区间，命中时年月槽位让位，日期范围优先于月份检测）；live chat 指令重写——「你正在分析的就是这些数据，只能依据这些数据回答」，删除「我无法访问账单/无法读取文件」式否认措辞，无数据诚实文案保留。修复「2026-01-01 到 2026-05-30 没有交通费用吗→不能确定」「你读取到我的账单记录了吗→没有」两问的根因。
+- **刷新会话恢复（§17 允许项唯一例外）**：IndexedDB 账户库 `spendct` 新建 `datasets` store（bookId 主键 + by-txHash 索引，DB_VERSION 2）存最近一次导入的行数据副本；恢复走 importedAt 最大、`restorePromise` 单例防并发、只持久化 upload 源（sample 维持内存态）、lastRun 经 zustand 订阅增量同步；恢复绝不覆盖本会话新导入、失败静默降级、账本删除联动清除（`discardDatasetForBook`）。与 OPFS 同属浏览器内持久层、零新网络出口、零新 LLM 可见数据面——02 §1.1 生命周期不变量改三位置、§5.5 红线加 A18 例外注，逐阶段中间产物仍不落库。
+- **零新端点、零新事件、零新 env**；路由与组件注册表零新增（`persistence/pipeline-persistence.ts` 与 `layout/pipeline-restore.tsx` 为既有管线挂载，不立新组件名）。
+理由：三条用户反馈指向同一类缺口——①窗口词覆盖不全 + 「上上个月」子串碰撞导致时间范围解析错乱；②追问与深度分析的上下文/指令链没有把「数据就在上下文里、按日期范围作答」钉死，模型便推诿「不能确定/读不到」；③DuckDB 纯内存 + store 内存态使刷新即丢。全部修复落在既有管线内：解析修复零成本，上下文修复不扩大发送面（同白名单纪律），持久化副本严格限定 upload 源且与 OPFS 同侧——隐私出口与可见性对照表零变化。
+
 ## ⑨ 各文档改动索引（逐份列出要改的章节）
 
 | 文档 | 改动章节 | 改动内容 |
@@ -510,6 +518,14 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 | 06-roadmap.md | §6.1/§6.3 | 能力总览「12 大能力」、成就「13 枚」；评分口径落点补三新功能（实用性/社会价值证据） |
 | | §7 测试与验收 | 测试基线更新：单测 600（46 文件）；e2e 47 → 54（+3 新页 spec、+3 游客页、+1 顶栏跳转，最终以全量回归实测为准） |
 | 07-canonical-contract.md | §21 改动索引 | 增补「08 修订案 A17」条目（→§14 路由、§17 两新键、§21 各文档条目）并指向本文档；§17 允许项补 `spendct:challenge:v1` / `spendct:goals:v1`；文末版本行升 v1.10 |
+| 01-architecture.md | §3 仓库目录树 | 新增 `src/lib/persistence/pipeline-persistence.ts` 会话恢复模块与 `src/components/layout/pipeline-restore.tsx` 壳层挂载组件（A18） |
+| | §4 env 规范 | 零新增键（A18 声明） |
+| 02-data-privacy.md | §1.1 生命周期不变量 / §5.5 持久化红线 | 明细数据三位置：内存、DuckDB OPFS、IndexedDB datasets store（会话恢复副本，A18）；§5.5 红线补 A18 唯一例外注（只存 upload 源、账本删除联动、恢复不覆盖新导入、失败静默降级）；文末版本行升 v1.8 |
+| 03-agent-pipeline.md | （零改动） | A18 与 Agent 管线零交集：live chat 指令措辞修订属代码层（07 §13 口径），03 无提示词文本镜像 |
+| 04-rag-mcp.md | （零改动） | A18 与 RAG/MCP 零交集 |
+| 05-uiux.md | §2.10 全局智能助理 | 问答时间窗口径补八类时间窗（本月/上月/上上个月/今年/最近7天/最近30天/最近90天/指定月份）+ 锚点标签继承口径（A18） |
+| 06-roadmap.md | §6.1/§6.3/§7 | README 功能清单智能助理条目补 A18 注；AI 深度逐条落点表智能助理/追问深度分析两行补 A18 落点（qa-engine 时间窗、deep-analysis 11 组、targeted-detail 显式日期范围、pipeline-persistence 模块）；PDF §4.9 深度分析口径 10 → 11 组；测试基线更新：单测 618、e2e 54 |
+| 07-canonical-contract.md | §21 改动索引 | 增补「08 修订案 A18」条目（→§12 时间窗八类、§13 深度上下文/定向明细/指令、§17 datasets store 允许项唯一例外、§21 各文档条目）并指向本文档；§17 允许项/禁止项补 A18 增补；文末版本行升 v1.11 |
 
 ---
 
