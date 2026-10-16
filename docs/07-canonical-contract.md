@@ -3,9 +3,9 @@
 | 项目 | 内容 |
 | --- | --- |
 | 文档编号 | 07（docs/07-canonical-contract.md） |
-| 版本 | v1.8（并入 08《功能扩展方案》修订案 A1-A14；A14 于 2026-10-16 裁决） |
+| 版本 | v1.9（并入 08《功能扩展方案》修订案 A1-A15；A15 于 2026-10-16 裁决） |
 | 日期 | 2026-10-16 |
-| 状态 | 最终裁决：本文档取代 01-06 全部冲突表述，是后续一切编码的唯一权威；v1.1 起并入 08《功能扩展方案》修订案 A1-A7，v1.2 起并入修订案 A8（追问在线兜底明细出口，§18），v1.3 起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4 起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5 起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6 起并入修订案 A12（全局智能助理上线收口，§2/§5/§12/§13/§18），v1.7 起并入修订案 A13（商户统计视图上线收口，§14），v1.8 起并入修订案 A14（追问深度分析上线收口，§12/§13）（均为增量修订，不推翻既有裁决），08 其余内容与本文档冲突时以本文档为准；v1.8 同日收口审查修正（2026-10-16）：A13 两条商户 SQL 补 `status = 'paid'`（§14）、A14 深析 SQL 同口径修正与深夜占比「近50个月」标签（§13）、A14 气泡脚注按实际发送组合标注（§13）、本地端点主机白名单校验（§12） |
+| 状态 | 最终裁决：本文档取代 01-06 全部冲突表述，是后续一切编码的唯一权威；v1.1 起并入 08《功能扩展方案》修订案 A1-A7，v1.2 起并入修订案 A8（追问在线兜底明细出口，§18），v1.3 起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4 起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5 起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6 起并入修订案 A12（全局智能助理上线收口，§2/§5/§12/§13/§18），v1.7 起并入修订案 A13（商户统计视图上线收口，§14），v1.8 起并入修订案 A14（追问深度分析上线收口，§12/§13），v1.9 起并入修订案 A15（追问定向明细检索 + 明细快照升级 + 消费日历路由互换 + 订阅雷达降级 + 报告通俗化，§13/§14/§18）（均为增量修订，不推翻既有裁决），08 其余内容与本文档冲突时以本文档为准；v1.8 同日收口审查修正（2026-10-16）：A13 两条商户 SQL 补 `status = 'paid'`（§14）、A14 深析 SQL 同口径修正与深夜占比「近50个月」标签（§13）、A14 气泡脚注按实际发送组合标注（§13）、本地端点主机白名单校验（§12） |
 | 维护 | 总仲裁人；任何一方修改契约字段必须同步更新本文档并重跑对应回归 |
 
 ---
@@ -650,7 +650,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 **新裁决**：追问面板新增「深度分析」开关，开启后本轮提问走深度分析路径——**跳过闲聊分流/本地规则/本地案例**直连在线兜底 `/api/followup`，body 带 `analysisMode: "deep"`（§13 请求体字段，zod 枚举校验）；**零新端点、零新路由、零新事件**（协议仍 21 类）。每问一次显式同意，延续 A8 同意模式；关闭态保持 A12 本地优先混合推理不变。
 
 - **深度上下文（唯一实现 `src/lib/chat/deep-analysis.ts`）**：`buildDeepAnalysisQueries()` 10 组代码常量白名单 SQL（数据范围 / 全期支出类目 / 全期商户 Top10 / 逐月收支 LIMIT 50 / 单笔金额分布 COUNT+MIN+MAX+ROUND(AVG,1)+ROUND(MEDIAN,1) / 收入类目 / 深夜逐月 / 冲动消费按类目 / 订阅候选 / direction 分组总额；支出类查询全部带 `status = 'paid'`，退款不计入——2026-10-16 收口审查口径修正），`buildDeepAnalysisContext` 逐组 try/catch 容错组装（深夜/冲动占比分母 = 第 9 组 expense 行；深夜逐月查询带 50 个月上限，达到上限时占比标签诚实标注「近50个月」；冲动按类目聚合 ≤12 行、全期不截断；超长从末尾整行丢弃）≤`DEEP_CONTEXT_MAX_LENGTH`(2400 字)；**全部 SQL 零动态拼接**，经白名单文法预检（单测持久回归，与 §6 口径一致）；全失败返回空串（面板不空手转在线）。
-- **消息组装（§13 A9 预算不变）**：深度上下文 + 最近 150 笔明细快照（§18 A8 口径）**分两条消息**发送（各自 ≤4000 字、总长 ≤8000、≤20 条），比 A8 的「统计 + 明细合一」多一条——深度统计全期化后单条放不下，两条各自在预算内。
+- **消息组装（§13 A9 预算不变）**：深度上下文 + 最近 150 笔明细快照（§18 A8 口径）**分两条消息**发送（各自 ≤4000 字、总长 ≤8000、≤20 条），比 A8 的「统计 + 明细合一」多一条——深度统计全期化后单条放不下，两条各自在预算内。**A15 起为三条消息**（定向明细命中问题时）：深度统计 + 定向明细 + 明细快照，各自 ≤4000 字、总长 ≤8000；定向段预算 = 明细段预算 − 定向段长度 − 60（明细段上限随定向段压缩，见 A15 修订案）。
 - **live 指令**：`streamChatWithTools(deep: true)` 追加深度分析指令（放开「三句以内」限制、要求结构化展开、数字必须来自输入上下文）；chat 任务优先查本地端点（§12 A14 env）——配置了 `LLM_BASE_URL`+`LLM_MODEL` 则深度分析与在线兜底上下文发本地端点，账单数据不出本机。
 - **mock 档**：`analysisMode="deep"` 走 mockTextStream chat 任务 deep 档脚本化演示流（文案不虚构账单数字；**deep 档优先于 promo 演示档**）；思考计划用通用档（deep 档文案不涉及大促工具，避免计划与徽章脱节）。
 - **前端**：开关 chip（aria-pressed 两态 + 开启/关闭提示文案，`FollowUpPanel` 内部扩展，不新增注册组件）；管线 `submit({deep})` / `runOnlineFallback(deep)` / `fallToOnline(deep)` 贯穿（`use-chat-pipeline`，ChatTurn.note 增 `"deep"`）；气泡脚注「深度分析 · 已发送账单统计与明细」（与「在线生成 · 已发送明细与统计」同样式）。**脚注按实际发送组合标注（2026-10-16 收口审查修正）**：ChatTurn 增 `sentStats`/`sentDetails` 字段，统计与明细都发送时才显示合称，缺一段只说发了的那段（「已发送账单统计」/「已发送账单明细」），live 档同机制。
@@ -658,6 +658,18 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - **测试**：单测 `tests/unit/deep-analysis.test.ts`（10 条 SQL 逐条白名单预检 + 上下文组装/省略/空串/超长丢弃/深夜占比「近50个月」标签）、`tests/unit/endpoint-config.test.ts`（双必填/带 key/缺失/空白/远端与非法 URL 拒绝）；e2e `tests/e2e/deep-analysis.spec.ts`（开关两态、deep 档脚注与演示文案、deep 优先于 promo）。
 
 **理由**：用户要求「用 DeepSeek API / 本地大模型直接分析上传账单」——落成追问面板的显式同意开关而非常开，既满足深读需求又保留 A12 本地优先哲学；全期聚合上下文全部出自白名单 SQL（零动态拼接），隐私出口与 A8 完全一致；本地端点把「数据不出本机」做成配置级能力，双向覆盖 DeepSeek 云端与本地部署两种诉求。
+
+### 08 修订案 A15（2026-10-16）：追问定向明细检索 + 明细快照升级（deep 档第三段上下文）
+
+**新裁决**：deep 档消息组装从「两条」扩为「**至多三条**」——深度统计段与明细快照段之间插入**定向明细段**，按问题意图检索与提问直接相关的明细行，让追问真正读到账单原始数据；明细快照投影升级为**七列**（补时分秒文本与深夜标记）。零新端点、零新路由、零新事件（协议仍 21 类）。
+
+- **定向检索（唯一实现 `src/lib/chat/targeted-detail.ts`）**：`buildTargetedDetailPlan(question, merchantNames)` 纯函数解析问题意图，支持四类条件——月份（相对词「上月/这个月」优先于阿拉伯数字 `1-12 月`、再中文数字月；月份匹配用 `SUBSTR(date_iso,6,2)`，跨年账单不串年）、年份（四位数字正则）、商户（只在 `fetchTopMerchantNames` 取回的 DB 商户 Top50 名单里做最长匹配，杜绝自由词注入）、类目（只接受 `CATEGORY_CODES` 常量枚举）、深夜（「深夜/半夜/凌晨/夜宵/熬夜」等词命中 → 23:00-05:00 过滤）。任一条件校验失败整体忽略该条件，全空返回 null 不查询。
+- **定向 SQL（同一文件 `buildTargetedDetailSql`）**：month `/^\d{2}$/`、year `/^\d{4}$/` 纯数字正则校验；商户名单引号双写（`''`）+ 60 字上限；类目枚举白名单；`LIMIT 200`；文本上下文 ≤`TARGETED_CONTEXT_MAX_LENGTH`(2500 字)。**结果为空如实说明**：「本地账单里没有查到与问题直接相关的明细（范围说明）」——不虚构、不硬凑。
+- **明细快照升级（§18 A8 口径修订）**：`DETAIL_SNAPSHOT_SQL` 七列投影（`date_iso` + `strftime('%Y-%m-%d %H:%M:%S', ts) AS ts_text` + `category` + `merchant` + `amount_cents` + `direction` + 深夜 `night_flag` 标记列），行格式「YYYY-MM-DD HH:MM:SS 类目 商户 支出/收入¥X.XX 元」+ 深夜行加「（深夜）」后缀——修复快照「只有日期、无时分秒、深夜不可辨」的盲区；LIMIT 150 与直连出口口径不变（§18 A8）。
+- **消息组装（A14 修订）**：deep 档三条消息顺序 = 深度统计（`DEEP_CONTEXT_PREFIX`，≤2400 字）→ 定向明细（`TARGETED_CONTEXT_PREFIX`，≤2500 字）→ 明细快照（`DETAIL_CONTEXT_PREFIX`，预算 = min(4000−100, 8000−统计段−定向段−60)）；定向段失败静默省略，回退两条消息；脚注 `sentDetails` 含定向段（发送组合标注口径不变）。
+- **测试**：单测 `tests/unit/targeted-detail.test.ts`（月份相对词/阿拉伯/中文数字、年份、商户名单最长匹配、类目枚举、深夜词、SQL 转义与长度上限、空计划 null）；e2e `tests/e2e/deep-analysis.spec.ts` 与既有 deep 用例一并回归。
+
+**理由**：用户反馈①「追问深度分析读不到五月明细、月份标签是垃圾数字、无深夜标记」——根因两层（A14 深析统计的月份标签格式化 bug + 快照只有最近 150 笔且无时分秒），修复后追问可按月/年/商户/类目/深夜定向读取原始账单，满足「追问小程序能读取账单原始数据」的诉求；定向段全部参数来自可信来源（DB 名单、常量枚举、纯数字正则），注入面为零，隐私出口仍只有 A8 一条。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -677,8 +689,9 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 | `/` | 落地页（上传入口 + 「加载示例账单」一键演示） |
 | `/upload` | 上传与解析预览（含 OCR 入口、映射确认、去重提示） |
 | `/checkup` | 六阶段体检 + 洞察卡流 + 锚点追问面板 |
-| `/insights` | 历史洞察 / 账本汇总 / 商户统计（视图内切换，吸收原 /ledger） |
-| `/subscriptions` | 订阅刺客雷达（P1） |
+| `/insights` | 历史洞察 / 账本汇总 / 商户统计 / 订阅管理（视图内切换，吸收原 /ledger 与 /subscriptions，A15） |
+| `/calendar` | 消费日历：日历热力图 + 时间轴流水（A15，替代原 /subscriptions 独立页） |
+| `/subscriptions` | 静态重定向 → `/insights?view=subscriptions`（A15，独立页降级为洞察页第 5 视图） |
 | `/report` | 年度报告 |
 | `/privacy` | 隐私说明 + 数据可见性对照表（吸收原 /about） |
 | `/budget` | 预算中心：预算环进度 / 预算 vs 实际 / 超支 AI 贴士 / 下月预测 / 快速记账入口（P1，A7） |
@@ -716,6 +729,17 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - **重构登记**：账本汇总的演示行生成器与 ChartCard 外壳提取为共享模块（`src/lib/insights/ledger-demo.ts`、`src/components/insights/chart-card.tsx`），ledger-view 行为与演示口径不变；商户聚合映射纯函数在 `src/lib/insights/merchant-aggregate.ts`（aggregateMerchants / merchantsFromQuery / expenseTotalFromDirection）。
 - **隐私与端点**：视图全程浏览器内计算（DuckDB-WASM 白名单聚合）；**零新端点、零新 env 键、无新增网络请求**。
 - **测试**：单测 `tests/unit/merchant-aggregate.test.ts`（聚合数学、占比分母为 0、bigint 兜底、空商户过滤、总额行查找）；e2e `tests/e2e/merchant-view.spec.ts`（视图切换、排名图、数据表、搜索过滤、切回卡片流）。
+
+### 08 修订案 A15（2026-10-16）：/subscriptions 降级为洞察页第 5 视图、新路由 /calendar 消费日历（路由总数不变）
+
+- **路由互换**：原 `/subscriptions` 独立页**降级为洞察页第 5 视图**（`?view=subscriptions`，内容全保留：订阅候选列表、每笔可点开核对、下次扣费倒计时——06 §6.3 评分口径中订阅雷达是「实用性 + 社会价值」得分证据，功能点一个不少）；`/subscriptions` 路由改为**静态重定向**到该视图；腾出的独立页位置给**新路由 `/calendar` 消费日历**（日历热力图 + 时间轴流水）。日历热力图原为 08 方案 F03「账本汇总两大图」的省赛窗口规划组件（T42·W3D2-4，规划落在 /insights 账本汇总视图），A15 提前于排期以独立页形态落地，且可复用于 F03 的账本汇总图表位——排期前置 + 独立页面形态，是加分项。
+- **消费日历口径**：热力图走白名单聚合 `CALENDAR_DAILY_SQL`（`SELECT date_iso, SUM(amount_cents) ... WHERE direction = 'expense' AND status = 'paid' GROUP BY date_iso ORDER BY date_iso`，零动态拼接；行数上限放宽至 2000 行覆盖多年账单）；流水走直连常量 SQL（`buildCalendarTimelineSql`，LIMIT 200 分页）；深夜口径与快照一致（23:00-05:00）；演示动线（无体检记录）走确定性生成器 `src/lib/insights/calendar-demo.ts`（每 9 笔 1 收入、深夜约 1/4），全程浏览器内计算，零新端点、零新 env、无新增网络请求。
+- **模块登记**：`src/lib/insights/calendar-aggregate.ts`（聚合映射纯函数）、`src/lib/insights/calendar-demo.ts`（演示行生成器）、`src/components/calendar/`（calendar-view / calendar-heatmap / calendar-timeline，页面级组件按 §14 A7 两级注册口径登记进 05 §2.2 组件总表）；`src/components/insights/subscription-view.tsx`（订阅视图主体自原页面迁入）；ECharts 包装器注册 HeatmapChart/CalendarComponent/VisualMapComponent + `buildCalendarHeatmapOption`（option-builders.ts）。
+- **商户统计视图升级（用户反馈②）**：A13 的商户统计视图（§14 A13）从单页排名升级为双页签——「去向排名」（原有排名横向条形图 + 数据表）与「逐笔明细」（明细表：时间到秒 + 深夜徽标 + 类目/商户/方向/金额，300 行/页加载更多、上限 3000 行，搜索 + 三种空态 + 数据来源脚注）——「每个去向总额排名 + 逐笔去向」完整闭环。行映射/深夜口径/方向文案为纯函数 `src/lib/insights/merchant-detail.ts`；明细直连分页 SQL 常量（零动态拼接）。
+- **年度报告通俗化（用户反馈③）**：健康指数、四段数据故事、段位与成就的百分比此前「难看懂」——A15 起展示层通俗化（底层计算口径不动）：健康指数附大白话总评与「六维健康明细」区块（每维「每 100 元消费里约 X 元用于…」+ 百分比小字 + 状态标签）；四段故事改叙事文案；段位与成就改口语化表述。唯一实现 `src/lib/report/labels.ts`（RatioKey 六维阈值 + buildHealthComment/buildHealthDims/healthRatingLabel）+ report 页展示层；示例账单报告数据（`src/lib/demo-data.ts` 的 DEMO_REPORT）同步新字段与文案。
+- **测试**：单测 `tests/unit/calendar-aggregate.test.ts`、`tests/unit/calendar-demo.test.ts`；e2e `tests/e2e/calendar.spec.ts`（页面加载、热力图、搜索过滤、方向筛选、数据表视图）、`tests/e2e/smoke.spec.ts`（/calendar 入游客清单 + /subscriptions 重定向断言）。
+
+**理由**：用户反馈④「订阅服务基本很少人做，页面可以做其他更容易服务用户的功能」——订阅功能内容整体保留（评分证据不丢）但降格为视图，独立页位置让给消费日历（用户拍板新页面），热力图原属路线图规划提前落地。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -851,11 +875,11 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 
 **明细快照口径（唯一实现 `src/lib/chat/qa-engine.ts`）**：
 
-- `DETAIL_SNAPSHOT_SQL` 固定语句：`SELECT date_iso, category, merchant, amount_cents, direction FROM transactions WHERE direction <> 'neutral' AND status <> 'refunded' ORDER BY date_iso DESC LIMIT 150`——**零动态拼接**（无时间参数、无用户输入、无模板插值），体积恒有上界（≤150 行），不随数据集规模增长；
+- `DETAIL_SNAPSHOT_SQL` 固定语句（**A15 起七列投影**）：`SELECT date_iso, strftime('%Y-%m-%d %H:%M:%S', ts) AS ts_text, category, merchant, amount_cents, direction, CASE WHEN EXTRACT(HOUR FROM ts) >= 23 OR EXTRACT(HOUR FROM ts) < 5 THEN 1 ELSE 0 END AS night_flag FROM transactions WHERE direction <> 'neutral' AND status <> 'refunded' ORDER BY ts DESC LIMIT 150`——**零动态拼接**（无时间参数、无用户输入、无模板插值），体积恒有上界（≤150 行），不随数据集规模增长；
 - 执行方式：`createDuckDbDetailSnapshot()` 经浏览器内 DuckDB 单例直连执行，**不经 `runWhitelistedAggregate`**（§6 的「明细列禁投影」继续约束一切 LLM 生成 / 提示词内拼装的 SQL；本语句是固定内部常量，非聚合、非注入面，§6 A8 边界）；
-- 文本化：`buildDetailContext(runDetail, maxChars)` 拼「日期 类目 商户 方向金额」行（原始商户名、真实金额，**不走脱敏器**，§5 A8 边界），总长 ≤3000 字；面板按路由单条消息上限让出预算（detailBudget = 3900 − 汇总段长度，§13 A8）；
+- 文本化：`formatDetailLine(row)`（A15 起与定向明细共用）按 SELECT 位置取值，拼「YYYY-MM-DD HH:MM:SS 类目 商户 支出/收入¥X.XX 元」行，night_flag 为 1 的行末尾加「（深夜）」；`buildDetailContext(runDetail, maxChars)` 逐行截断（原始商户名、真实金额，**不走脱敏器**，§5 A8 边界），总长 ≤3000 字；面板按路由单条消息上限让出预算（detailBudget = 3900 − 汇总段长度，§13 A8；deep 档 A15 起再减定向段）；
 - 发送路径：与汇总统计、最近对话合并为首条消息 POST `/api/ai/chat`；统计与明细都拿不到时不转在线、本地回「先导入账单」；
-- 面板如实标注：气泡脚注「在线生成 · 已发送明细与统计」；身份罐头文案（small-talk.ts）同步如实说明「本地答不了的问题会把最近 150 笔明细与汇总统计一起发给在线大模型」。
+- 面板如实标注：气泡脚注「在线生成 · 已发送明细与统计」；身份罐头文案（small-talk.ts）同步如实说明「本地答不了的问题会把最近 150 笔明细与汇总统计一起发给在线大模型」。（A15：快照明细精确到秒并带深夜标记；deep 档在统计与快照之间可追加「定向明细」段——与问题直接相关的 ≤200 笔明细，见 §13 A15。）
 
 **与旧口径的关系**：本修订案推翻「在线兜底只发送汇总统计、不发送逐笔明细」的旧承诺（02 §8 可见性对照表、README 隐私节、PDF 第 5 章、各页信任文案、06 视频脚本 S1 记忆点同步改写）；「服务端零持久化、只转发」不变；「解析 / 聚合 / 体检默认全在浏览器」不变——明细只在**用户主动追问且本地答不了**时随请求发送，仍不落盘。
 
@@ -959,6 +983,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 15. §3 目录树/模块清单登记 `src/lib/assistant` 模块（use-chat-pipeline / input-guard / local-cases / use-speech-input）与全局智能助理组件（悬浮入口 + 聊天抽屉，按 §14 两级注册口径在 05 §2.2 组件总表单列）。
 16. §3 目录树/模块清单登记 `src/lib/insights`（ledger-demo / merchant-aggregate）与 `src/components/insights`（merchant-view / chart-card，§14 A13）；/insights 视图数写「4 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计）」。
 17. 附录 A 环境变量补 `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`（本地大模型端点，§12 A14；双必填才生效、仅接管 chat 任务）；§3 目录树登记 `src/lib/chat/deep-analysis.ts`（深度分析查询与上下文组装）、`src/lib/llm/endpoint-config.ts`（本地端点解析）。
+18. §3 目录树/模块清单登记 A15 新模块：`src/lib/chat/targeted-detail.ts`（追问定向明细检索）、`src/lib/insights/calendar-aggregate.ts` + `calendar-demo.ts`（消费日历聚合/演示行）、`src/components/calendar/`（页面级日历组件）、`src/components/insights/subscription-view.tsx`（订阅视图迁入）；路由树按 §14 A15 更新（`/subscriptions` → 静态重定向、新增 `/calendar`）；/insights 视图数写「5 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计 / 订阅管理）」。
 
 ### 02-data-privacy.md
 
@@ -979,6 +1004,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 15. §8 可见性对照表新增「语音输入（可选）」行（音频浏览器转写、服务器与 LLM 零接收，转写文字与手打内容同等对待）；§11 三层注入防护补第四层「输入闸门」（智能助理与追问面板共用，控制字符/超长 + 指令覆盖、角色劫持、泄露诱导、SQL 痕迹四类注入特征命中即拦、不进入任何模型，§18 A12）。
 16. §8 可见性对照表**表头注记**补商户统计视图口径：全程浏览器内 DuckDB-WASM 白名单聚合（§14 A13），不新增任何网络出口，故不新增可见性行。
 17. §8 可见性对照表「追问在线兜底」行（第 24 行）口径扩深度分析：开启「深度分析」开关后同出口发送「全期白名单聚合统计（≤2400 字）+ 最近 150 笔明细」两条消息（§13 A14），**不新增可见性行**；§8 表头注记补 A14 句；§12 补本地大模型端点说明（`LLM_BASE_URL`+`LLM_MODEL` 同时配置时 chat 任务改发本地端点，账单数据不出本机，其余任务路由不变）；版本行升 v1.5。
+18. §8 可见性对照表「追问在线兜底」行口径再扩 A15：deep 档在统计与快照之间可追加「定向明细」段（与问题直接相关的 ≤200 笔明细、≤2500 字，§13 A15）——仍同一出口、同一行，**不新增可见性行**；明细快照口径句更新为「精确到秒 + 深夜标记」；版本行升 v1.6。
 
 ### 03-agent-pipeline.md
 
@@ -996,6 +1022,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 12. 在线兜底（/api/followup）事件序列补第 0 步 plan 事件（§2 第 21 类，8s 超时静默跳过）与 assistant-plan 任务路由（§12 A12）。
 13. §11 组件引用补 `MerchantView`（页面级，§14 A13 口径）；/insights 视图枚举处补商户统计（4 视图）。
 14. 在线兜底路径补深度分析模式（§13 A14）：`analysisMode="deep"` 跳过闲聊分流/本地规则/本地案例直连在线兜底，上下文换成「全期白名单聚合统计 + 最近 150 笔明细」两条消息；use-chat-pipeline 的 submit/fallToOnline/runOnlineFallback 贯穿 deep 参数，ChatTurn.note 增 `"deep"`。
+15. deep 路径补定向明细段（§13 A15）：消息组装至多三条（统计 / 定向明细 / 明细快照），定向段由 `buildTargetedDetailPlan` + `buildTargetedDetailSql` + `buildTargetedDetailContext` 组成（商户名单来自 DB Top50、类目枚举白名单、月份/年份纯数字正则），失败静默省略；明细预算三扣（MESSAGE_BUDGET − 统计 − 定向 − 60）。
 
 ### 04-rag-mcp.md
 
@@ -1015,6 +1042,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 14. §8.5 信封 `meta` 增加 `generatedAt` 时间戳字段（回退与 MCP 两侧实现一致），错误码集合不变。
 15. 商户统计视图（§14 A13）与 RAG/MCP 零交集：不新增检索、工具调用与端点；若有「洞察页数据来源」类图补商户统计为本地白名单聚合。
 16. 追问深度分析（§13 A14）与 RAG/MCP 零交集：不新增检索、工具调用与端点（analysisMode 仅是 /api/followup 既有请求体的新字段）；本地端点接管仅发生在 chat 任务路由层（§12）。
+17. 定向明细检索（§13 A15）与 RAG/MCP 零交集：定向段是浏览器内 DuckDB 直连查询（常量 SQL + 可信参数），不是 RAG 检索，不新增工具与端点；消费日历（§14 A15）同为本地计算，零交集。
 
 ### 05-uiux.md
 
@@ -1034,6 +1062,8 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 14. 新增「智能助理」全局组件章节：悬浮入口（右下固定、任何非登录页可用）、聊天抽屉（桌面 400×600 面板 / 移动端全屏）、空态示例问题与「新对话」、语音麦克风入口（feature-flag `voice`）、思考计划块（PlanBlock）、三态来源脚注（本地计算 / 本地案例库 / 在线生成）、工具徽章复用 §18 A9 展示规格；全局组件按 §14 两级注册口径登记于 §2.2 组件总表。
 15. §1.6 /insights 视图切换器补第 4 视图「商户统计」（?view=merchants）；§2.2 组件总表登记页面级组件 `MerchantView` 与共享 `ChartCard`（提取自账本汇总，§14 A13）；交互规范：排名图前 10 + 数据表全量（50 行上限与截断脚注）、商户搜索、点击柱子 → 追问锚点 merchant-view。
 16. 追问面板章节补「深度分析」开关交互规范（§13 A14）：输入框上方 chip（aria-pressed 两态；开启提示「直接交给大模型分析，并发送账单统计与明细」、关闭提示「本地规则优先，答不了才转在线」）；开启后回答气泡脚注「深度分析 · 已发送账单统计与明细」（三态来源脚注 + 深度分析档；脚注按实际发送组合标注，缺一段只说发了的那段）。
+17. §1.6 /insights 视图切换器补第 5 视图「订阅管理」（?view=subscriptions，§14 A15）；§2.2 组件总表登记页面级组件 `CalendarView` / `CalendarHeatmap` / `CalendarTimeline`（/calendar 页）与 `SubscriptionView`（自原 /subscriptions 页迁入，行为不变）；路由交互规范补 /calendar 页（热力图 + 时间轴流水 + 搜索/方向筛选 + 数据表切换）与 /subscriptions 静态重定向；商户统计视图章节补「去向排名 / 逐笔明细」双页签交互规范（§14 A15）。
+18. 年度报告章节补「通俗化」交互口径（§14 A15，落点 `src/lib/report/labels.ts` + report 页六维健康明细）：健康指数附大白话总评（「每 100 元消费里约 X 元用于…」）+ 六维状态标签；段位与成就百分比改口语化表述（保留数字小字）；四段数据故事改叙事文案。
 
 ### 06-roadmap.md
 
@@ -1055,7 +1085,8 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 16. §6.3 按 A11 更新：OCR 主供应商 deepseek-flash（V4.1 Flash 原生多模态）。
 17. §6.3 功能落点表补智能助理行（AI 深度：Agent 工作流 = 共享问答管线本地优先混合推理、大模型集成 = assistant-plan、RAG = 聊天案例路径、多模态 = 语音输入、AI 安全 = 输入闸门、MCP = 在线兜底工具层与计划联动）；§6.4 竞品对照表「锚点追问（非聊天窗）」行改写为「本地优先智能助理（非直连 API 聊天窗）」；PDF 大纲功能点清单同步。
 18. §6.1 README 大纲功能总览补「商户统计」视图（前端工程/可视化深度落点：全账单商户聚合排名图 + 数据表 + 追问联动，§14 A13）；PDF 大纲与分镜若有 /insights 视图枚举同步 4 视图。
-19. §6.1 README 大纲功能总览补「追问深度分析」行（大模型集成/隐私工程落点：面板开关 + 全期白名单聚合上下文 + 明细两条消息 + 本地端点 env，零新端点/零新路由，§13 A14）；测试数按最新全量更新（**单测 458 / e2e 38**，2026-10-16 实测）；§6.3 评分口径功能点清单与 PDF 大纲同步。
+19. §6.1 README 大纲功能总览补「追问深度分析」行（大模型集成/隐私工程落点：面板开关 + 全期白名单聚合上下文 + 明细两条消息 + 本地端点 env，零新端点/零新路由，§13 A14）；测试数按最新全量更新（**单测 540 / e2e 45**，2026-10-16 实测）；§6.3 评分口径功能点清单与 PDF 大纲同步。
+20. §6.3 功能落点表补「消费日历」行（前端工程/可视化深度落点：日历热力图 + 时间轴流水，§14 A15；日历热力图原为 F03 省赛规划组件，提前于 T42 排期以独立页形态落地，可复用至账本汇总图表位）；订阅雷达落点改写为「洞察页第 5 视图」（内容全保留、评分证据不丢，独立页降级，§14 A15）；「追问深度分析」行口径扩「定向明细检索」（deep 档第三段上下文，§13 A15）；年度报告行补「通俗化」说明（§14 A15）；视图枚举同步 5 视图；PDF 大纲同步。
 
 ### 08-feature-expansion.md（修订案 A1-A7，2026-10-13，v1.1）
 
@@ -1077,10 +1108,11 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 | A12 | §2/§5/§12/§13/§18 | 全局智能助理：plan 事件第 21 类（goal 非空 + 1-4 步）；assistant-plan 任务（deepseek，8s 静默跳过）；sanitizeResult 改 async（S2 WebCrypto 哈希）；输入闸门第四层（控制字符/超长 + 指令覆盖、角色劫持、泄露诱导、SQL 痕迹四类注入特征）；语音输入（浏览器转写，音频不出浏览器）；聊天案例路径阈值 0.15（页面引用 0.08 不变）；追问面板重构为共享管线 use-chat-pipeline；零新端点（复用 /api/followup）、零新 env 键 |
 | A13 | §14 | 商户统计视图：/insights 第 4 视图 tab（?view=merchants，路由数不变）；全账单商户聚合（两条白名单 SQL 常量、按位取值、LIMIT 50 + 截断如实标注）；占比分母 = direction 分组 expense 总额；追问锚点 merchant-view（无新工具）；共享演示行生成器与 ChartCard 提取；零新端点、零新 env |
 | A14 | §12/§13 | 追问深度分析：面板「深度分析」开关（显式同意，开启跳过本地三路直连在线兜底）；全期 10 组白名单聚合上下文（≤2400 字）+ 最近 150 笔明细两条消息；analysisMode 字段（zod 枚举）；deep 指令与 deep 脚注；mock deep 档（优先于 promo 档）；env +3（LLM_BASE_URL/LLM_MODEL 双必填才生效、仅接管 chat 任务，LLM_API_KEY 可选）；零新端点、零新路由、零新事件 |
+| A15 | §13/§14/§18 | 追问定向明细检索 + 明细快照升级：deep 档第三段「定向明细」上下文（月份/年份/商户 Top50 名单/类目枚举/深夜五类可信条件，LIMIT 200、≤2500 字）；明细快照七列投影（时分秒 + 深夜标记）；/subscriptions 降级为洞察页第 5 视图（内容全保留）+ 新路由 /calendar 消费日历（热力图 + 流水）；年度报告展示层通俗化（六维健康明细 + 大白话总评）；零新端点、零新路由、零新事件 |
 | — | §4 | ChartSpec 枚举不扩展；四大静态图表组件裁决（08 §④ 补记） |
 
-- **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）；修订案清单登记 A12（全局智能助理，2026-10-15），§11.2 工作量口径按 A12 补智能助理组件与语音输入；修订案清单登记 A13（商户统计视图，2026-10-15），§11.2 工作量口径按 A13 补 MerchantView 页面级组件；修订案清单登记 A14（追问深度分析，2026-10-16），§11.2 工作量口径按 A14 补面板开关 + 全期聚合上下文 + 本地端点 env（零新端点/零新路由）。
+- **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）；修订案清单登记 A12（全局智能助理，2026-10-15），§11.2 工作量口径按 A12 补智能助理组件与语音输入；修订案清单登记 A13（商户统计视图，2026-10-15），§11.2 工作量口径按 A13 补 MerchantView 页面级组件；修订案清单登记 A14（追问深度分析，2026-10-16），§11.2 工作量口径按 A14 补面板开关 + 全期聚合上下文 + 本地端点 env（零新端点/零新路由）；修订案清单登记 A15（定向明细检索 + 消费日历 + 订阅降级 + 报告通俗化，2026-10-16），§11.2 工作量口径按 A15 补日历页组件（CalendarView/CalendarHeatmap/CalendarTimeline）、订阅视图迁入组件（SubscriptionView）、定向检索模块（targeted-detail.ts）与报告通俗化模块（report/labels.ts）。
 
 ---
 
-*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6（2026-10-15）起并入修订案 A12（全局智能助理上线收口：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18），v1.7（2026-10-15）起并入修订案 A13（商户统计视图上线收口：/insights 第 4 视图 tab、全账单商户聚合、追问锚点 merchant-view，§14），v1.8（2026-10-16）起并入修订案 A14（追问深度分析上线收口：面板显式同意开关、全期白名单聚合上下文 + 明细两条消息、analysisMode 字段、本地大模型端点 env、气泡深度分析脚注，§12/§13）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
+*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6（2026-10-15）起并入修订案 A12（全局智能助理上线收口：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18），v1.7（2026-10-15）起并入修订案 A13（商户统计视图上线收口：/insights 第 4 视图 tab、全账单商户聚合、追问锚点 merchant-view，§14），v1.8（2026-10-16）起并入修订案 A14（追问深度分析上线收口：面板显式同意开关、全期白名单聚合上下文 + 明细两条消息、analysisMode 字段、本地大模型端点 env、气泡深度分析脚注，§12/§13），v1.9（2026-10-16）起并入修订案 A15（追问定向明细检索 + 明细快照升级 + /subscriptions 降级为洞察页第 5 视图 + 新路由 /calendar 消费日历 + 年度报告通俗化，§13/§14/§18）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*

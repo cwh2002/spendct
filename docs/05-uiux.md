@@ -3,7 +3,7 @@
 | 项目 | 内容 |
 |---|---|
 | 文档编号 | 05 / 06（本文件负责界面交互，06 负责路线图） |
-| 版本 | 1.4（v1.0 随 07 契约冻结；v1.1 落实 08 功能扩展增量 A1-A7；v1.2 落实 08 修订案 A12 全局智能助理；v1.3 落实 08 修订案 A13 商户统计视图；v1.4 落实 08 修订案 A14 追问深度分析；schema/事件/路由/组件名以 07 为准、扩展以 08 §⑨ 索引为准） |
+| 版本 | 1.5（v1.0 随 07 契约冻结；v1.1 落实 08 功能扩展增量 A1-A7；v1.2 落实 08 修订案 A12 全局智能助理；v1.3 落实 08 修订案 A13 商户统计视图；v1.4 落实 08 修订案 A14 追问深度分析；v1.5 落实 08 修订案 A15 订阅管理视图 + 消费日历 + 年度报告通俗化；schema/事件/路由/组件名以 07 为准、扩展以 08 §⑨ 索引为准） |
 | 日期 | 2026-10-16 |
 | 负责人 | 前端交互成员 |
 | 上游决策 | 产品定义（2026-10-13 已确认，本文档不推翻、只落地） |
@@ -16,7 +16,7 @@
 
 本文档负责 SpendCT 的**全部界面、组件、交互协议与设计系统**，覆盖七件事：
 
-1. 页面清单与信息架构（10 条路由：目的 / 布局分区 / 核心组件 / 状态 / 路由；既有 7 条 = 07 §14 唯一清单（原 /ledger 并入 /insights 账本汇总、/about 更名 /privacy，#46），新增 3 条 = 08 修订案 A7（/budget /learn /settings，08 §②））；
+1. 页面清单与信息架构（页面 10 个 / 路由条目 11 条：目的 / 布局分区 / 核心组件 / 状态 / 路由；既有 7 条 = 07 §14 唯一清单（原 /ledger 并入 /insights 账本汇总、/about 更名 /privacy，#46），新增 3 条 = 08 修订案 A7（/budget /learn /settings，08 §②），08 修订案 A15 新增 /calendar、/subscriptions 改静态重定向（订阅管理降级为 /insights 第 5 视图））；
 2. 组件树与可复用组件清单（组件名 / Props 概要 / 状态 / 用到的其他组件，含 TS 类型与 zod schema）；
 3. 设计系统（配色、字体、间距、圆角阴影、图标、ECharts 主题与图表配色规范）；
 4. 关键交互规范（锚点追问协议、打标反馈动画、流式节流与性能约束、加载/骨架屏/降级、移动端）；
@@ -62,8 +62,8 @@
 
 ```
 首页 /  ──┬── 上传页 /upload ── 体检运行页 /checkup ── 洞察流 /insights
-          │                                            （含账本汇总与商户统计视图，原 /ledger 并入）
-          ├── 订阅雷达页 /subscriptions（订阅管理墙）
+          │                                            （含账本汇总/商户统计/订阅管理视图，原 /ledger 与 /subscriptions 并入）
+          ├── 消费日历页 /calendar（日历热力图 + 时间轴流水）★08 修订案 A15
           ├── 年度报告页 /report（滚动数据故事 + 年度海报 + 段位成就）
           ├── 预算中心 /budget（预算环 / 快速记账 / 下月预测）★08 修订案 A7
           ├── 消费知识小课堂 /learn（案例库浏览 / 知识卡 / 防坑手册）★08 修订案 A7
@@ -71,22 +71,23 @@
           └── 隐私说明页 /privacy
 ```
 
-路由与 chunk 预算（Next.js App Router，版本以 01 锁表 16.4.0 为准；路由清单 = 07 §14 既有 7 条（#46）+ 08 修订案 A7 新增 3 条，共 10 条为 A7 设计目标口径；**分档口径（08 §1.2）：省赛提交版本 = 9 条路由（/learn 国赛窗口补齐）+ 3 个 P2「即将上线」角标**。每路由配套 `loading.tsx` + `error.tsx`）：
+路由与 chunk 预算（Next.js App Router，版本以 01 锁表 16.4.0 为准；路由清单 = 07 §14 既有 7 条（#46）+ 08 修订案 A7 新增 3 条，共 10 条为 A7 设计目标口径；08 修订案 A15 新增 /calendar、/subscriptions 改静态重定向（页面总数仍 10、路由条目 11）；**分档口径（08 §1.2）：省赛提交版本 = 9 条路由（/learn 国赛窗口补齐）+ 3 个 P2「即将上线」角标**。每路由配套 `loading.tsx` + `error.tsx`）：
 
 | 路由 | 页面 | 懒加载 | 首屏 chunk 预算（gzip） | 守卫 |
 |---|---|---|---|---|
 | `/` | 首页 | `dynamic()` | < 60 KB（不引 ECharts / DuckDB） | 无 |
 | `/upload` | 上传页 | `dynamic()` | 含 DuckDB-WASM 加载器，按需注入 | 无 |
 | `/checkup` | 体检运行页 | `dynamic()` | 同上 | 无账单数据 → redirect `/upload?next=/checkup` |
-| `/insights` | 洞察流主页面（历史洞察 / 账本汇总 / 商户统计，视图内切换，吸收原 /ledger） | `dynamic()` | 含 ECharts core < 300 KB | 无体检结果 → redirect `/upload` |
-| `/subscriptions` | 订阅雷达页 | `dynamic()` | 同上 | 同上 |
+| `/insights` | 洞察流主页面（历史洞察 / 账本汇总 / 商户统计 / 订阅管理，视图内切换，吸收原 /ledger 与 /subscriptions） | `dynamic()` | 含 ECharts core < 300 KB | 无体检结果 → redirect `/upload` |
+| `/calendar` | 消费日历页（日历热力图 + 时间轴流水，全程浏览器内计算零 API，08 修订案 A15） | `dynamic()` | 含 ECharts core < 300 KB（HeatmapChart / CalendarComponent / VisualMapComponent） | 无（游客可访问；无体检结果 → 确定性演示行兜底） |
+| `/subscriptions` | 静态重定向 → `/insights?view=subscriptions`（原订阅雷达页降级为洞察第 5 视图，08 修订案 A15） | 静态 | 无 | 无 |
 | `/report` | 年度报告页 | `dynamic()` | 同上 | 需体检完成且 ≥ 3 个月数据，否则 redirect `/insights` |
 | `/privacy` | 隐私说明页（原 /about 更名） | 静态 | < 40 KB | 无 |
 | `/budget` | 预算中心（预算环 / 预算 vs 实际 / 下月预测 / 超支贴士 / 快速记账入口） | `dynamic()` | 含 ECharts core < 300 KB（同 /insights 口径） | 无账单数据 → redirect `/upload?next=/budget` |
 | `/learn` | 消费知识小课堂（案例库浏览 / 知识卡 / 防坑手册；国赛窗口补齐，省赛版本以首页 P2「即将上线」角标呈现） | `dynamic()` | < 60 KB（静态案例数据，不引 ECharts/DuckDB） | 无 |
 | `/settings` | 数据管理与导出（数据集管理 / CSV-JSON 导出 / 通知开关 / 主题入口） | `dynamic()` | < 60 KB | 无 |
 
-- `/budget` 若被砍（08 §⑩ 第 10 刀），路由一并下线，快速记账入口随之隐藏（FeatureFlag `budget`，见下）；`/learn` 随 FeatureFlag `learn` 关闭下线（08 §⑩ 第 6 刀）。
+- `/budget` 若被砍（08 §⑩ 第 10 刀），路由一并下线，快速记账入口随之隐藏（FeatureFlag `budget`，见下）；`/learn` 随 FeatureFlag `learn` 关闭下线（08 §⑩ 第 6 刀）；`/subscriptions` 自 08 修订案 A15 起为静态重定向，任何旧链接直达 `/insights?view=subscriptions`（订阅管理内容全保留，见 §1.8）。
 
 关键实现约定：
 
@@ -111,7 +112,7 @@ export function RouteGuard({ require, children }: {
 }
 ```
 
-**全局 Shell**：顶部导航（Logo「消费CT」、分段导航 体检/账本/订阅/报告（账本 = /insights 内账本汇总视图）、右侧 PrivacyBadge、NotificationBell 通知铃（F13 落地后）、主题切换、演示模式 badge）；移动端（< 640px）顶部只留 Logo + PrivacyBadge + 主题切换，导航收进底部 tab bar（首页/体检/账本/订阅/我的）；**「我的」指向 `/settings`**（08 修订案 A7）；`/budget` 与 `/learn` 不新增 tab 项，从首页「10 大能力」卡墙与 `/settings` 链接进入（08 §2.1）。全局右下悬浮「智能助理」入口（AssistantDrawer：悬浮入口 + 聊天抽屉，任何非登录页可用；聊天抽屉桌面 400×600 面板、移动端全屏，08 修订案 A12，详见 §2.10）；移动端悬浮按钮与底部 tab bar 共存，同为 44×44 触控目标。
+**全局 Shell**：顶部导航（Logo「消费CT」、分段导航 体检/账本/日历/报告（账本 = /insights 内账本汇总视图，订阅管理 = /insights 第 5 视图、不占导航项，「订阅」→「日历」/calendar，08 修订案 A15）、右侧 PrivacyBadge、NotificationBell 通知铃（F13 落地后）、主题切换、演示模式 badge）；移动端（< 640px）顶部只留 Logo + PrivacyBadge + 主题切换，导航收进底部 tab bar（首页/体检/账本/日历/我的）；**「我的」指向 `/settings`**（08 修订案 A7）；`/budget` 与 `/learn` 不新增 tab 项，从首页「10 大能力」卡墙与 `/settings` 链接进入（08 §2.1）。全局右下悬浮「智能助理」入口（AssistantDrawer：悬浮入口 + 聊天抽屉，任何非登录页可用；聊天抽屉桌面 400×600 面板、移动端全屏，08 修订案 A12，详见 §2.10）；移动端悬浮按钮与底部 tab bar 共存，同为 44×44 触控目标。
 
 **FeatureFlag（砍法落点，与 06 联动）**：
 
@@ -124,7 +125,7 @@ export const featureFlags = {
   brush: true,   // 框选追问：未完成 → 图表仅点选锚定
   dark: true,    // 暗色主题：未完成 → 仅亮色
   budget: true,       // F07/F08：砍预算中心时关，快速记账入口随 /budget 隐藏（08 §⑩ 第 10 刀）
-  reportStory: true,  // F05：砍数据故事时关，回退旧版报告布局（§1.9 旧布局即兜底，08 §⑩ 第 9 刀）
+  reportStory: true,  // F05：砍数据故事时关，回退旧版报告布局（§1.10 旧布局即兜底，08 §⑩ 第 9 刀）
   achievements: true, // F10：砍成就段位时关（08 §⑩ 第 9 刀）
   learn: true,        // F11：砍知识课堂时关（/learn 路由下线，08 §⑩ 第 6 刀）
   voice: true,        // A12 智能助理语音输入（Web Speech 浏览器转写）：关闭或浏览器不支持时隐藏麦克风入口
@@ -174,7 +175,7 @@ export const featureFlags = {
   │ 六阶段预览（横向 mini stepper，静态，保留）      │
   └────────────────────────────────────────────┘
   ```
-- **核心组件**：`HeroCta`、`PromiseStrip`、`CapabilityCardWall`（10 卡，与 /privacy 静态版同数据源；滚动动效转国赛，08 §11.2 决议 ①）、`TechArchStrip`（纯静态图标化管线，无新依赖）、`MiniPipelinePreview`（复用 PipelineStepper 的只读形态）。
+- **核心组件**：`HeroCta`、`PromiseStrip`、`CapabilityCardWall`（10 卡，与 /privacy 静态版同数据源；订阅雷达卡 href → `/insights?view=subscriptions`，08 修订案 A15；滚动动效转国赛，08 §11.2 决议 ①）、`TechArchStrip`（纯静态图标化管线，无新依赖）、`MiniPipelinePreview`（复用 PipelineStepper 的只读形态）。
 - **状态**：
   - 空：首访即正常态，无空态（CTA 永远可用）；
   - 加载：点击示例账单 → 按钮变「正在准备数据…」+ 进度条（DuckDB-WASM 下载/初始化进度，见 01 的 WASM 加载基准），完成后自动跳 `/checkup`；
@@ -235,7 +236,7 @@ export const featureFlags = {
   ```
   ┌──────────────────────────────┬─────────────┐
   │ 工具行：视图切换[卡片流|图表廊|  │ 追问对话区    │
-  │  账本汇总|商户统计]·           │（Collapsible │
+  │  账本汇总|商户统计|订阅管理]·   │（Collapsible │
   │  收藏夹面板入口（FavoritesPanel）│  Panel，     │
   │ 筛选行：阶段 chips · 置信度开关 │ 有活跃会话时 │
   │  · 日期预设 · 类别 combobox    │ 展开 360px）  │
@@ -245,7 +246,7 @@ export const featureFlags = {
   │  确认·质疑·深挖·收藏           │             │
   └──────────────────────────────┴─────────────┘
   ```
-- **核心组件**：`InsightCard`、`InsightViewToggle`（四视图切换：卡片流 / 图表廊 / 账本汇总 / 商户统计——`?view=merchants`，08 修订案 A13）、`FavoritesPanel`、`FavoriteButton`（收藏卡，写 `spendct:fav:v1`，08 修订案 A1）、`InsightFilterBar`（阶段 / 置信度 / 日期 / 类别四维筛选——F04 筛选增强转国赛备选池，08 §11.2 决议 ①）、`FollowUpPanel`（08 修订案 A12 起与智能助理共用 use-chat-pipeline 问答管线，见 §4.1/§2.10）、`PlanStepTree`、`FeedbackButton`、`ChartAnchorLayer`（每张证据图内置）、`TipCard`（省钱贴士卡，F09/P2：student_benefits 检索 top-3 + 一句话适配理由，年度阶段产出流入卡流）。
+- **核心组件**：`InsightCard`、`InsightViewToggle`（五视图切换：卡片流 / 图表廊 / 账本汇总 / 商户统计 / 订阅管理——`?view=merchants` 08 修订案 A13、`?view=subscriptions` 08 修订案 A15）、`FavoritesPanel`、`FavoriteButton`（收藏卡，写 `spendct:fav:v1`，08 修订案 A1）、`InsightFilterBar`（阶段 / 置信度 / 日期 / 类别四维筛选——F04 筛选增强转国赛备选池，08 §11.2 决议 ①）、`FollowUpPanel`（08 修订案 A12 起与智能助理共用 use-chat-pipeline 问答管线，见 §4.1/§2.10）、`PlanStepTree`、`FeedbackButton`、`ChartAnchorLayer`（每张证据图内置）、`TipCard`（省钱贴士卡，F09/P2：student_benefits 检索 top-3 + 一句话适配理由，年度阶段产出流入卡流）。
 - **状态**：
   - 空：未体检 → 空态（§6.3 文案）+ [去上传]；
   - 加载：流水线运行中卡片流式发布——卡片先以骨架屏占位，结论文字逐字流式（真实 token 流），图表数据就绪后一次性渲染（不逐点动画，避免性能抖动）；
@@ -283,7 +284,7 @@ export const featureFlags = {
   - 加载：WASM 查询中 → 图表骨架（shimmer）；查询超 2s → 顶部提示「正在本地计算…」；两大图 IntersectionObserver 懒挂载（进入视口 200px 内才查询渲染，单页实例 ≤6，§3.6 规则 9；国赛两图落地后同机制复用）；
   - 错误：SQL 生成失败（锚点追问）→ 自动重试 1 次 → 回退内置分析模板（07 §18 约束）；DuckDB 崩溃 → 页面错误卡 + 刷新（数据仍在 OPFS/IndexedDB，07 §17）；
   - 成功：图表可交互（悬停 tooltip + 点击锚定 + 框选锚定），明细表虚拟滚动；省赛两图可点选锚定——日历格 → `dim: time_month`、桑基节点 → `dim: merchant`（国赛补齐后雷达顶点 → `dim: category`、词云词条 → `dim: merchant`），折叠为 SelectionContext 后走既有 `/api/followup`（07 §18 零协议改动，08 §④.1）。
-- **路由**：`/insights` 内「账本汇总」tab（07 §14：/ledger 已并入，#46），与卡片流 / 图表廊 / 商户统计并列于视图切换器（`?view=ledger` 为主入口，`?tab=ledger` 旧参数兼容；商户统计 `?view=merchants`，08 修订案 A13）。锚点追问会话期间离开页面 → 会话状态保留在 `anchor` slice，返回后追问区自动展开。
+- **路由**：`/insights` 内「账本汇总」tab（07 §14：/ledger 已并入，#46），与卡片流 / 图表廊 / 商户统计 / 订阅管理并列于视图切换器（`?view=ledger` 为主入口，`?tab=ledger` 旧参数兼容；商户统计 `?view=merchants`，08 修订案 A13；订阅管理 `?view=subscriptions`，08 修订案 A15）。锚点追问会话期间离开页面 → 会话状态保留在 `anchor` slice，返回后追问区自动展开。
 
 ### 1.7 商户统计视图（/insights 内嵌，08 修订案 A13）
 
@@ -316,11 +317,11 @@ export const featureFlags = {
   - 加载：真实动线两条白名单聚合浏览器内异步执行，完成前先展示演示行，成功后替换为真实聚合；
   - 错误：任一查询失败（白名单拒绝 / 数据集缺失）→ 整视图回退演示行，数据来源脚注标「内置数据」；
   - 成功：排名图与数据表同步渲染；商户搜索同步过滤图表与数据表（只作用于展示，不改变聚合口径）；点击柱子 → 追问锚点（anchor id `merchant-view`，label 含商户名 + 合计 + 占全账单比，§18 锚点协议不变，无新工具）；数据来源脚注区分「你的账单数据 / 内置数据」并如实标注全账单支出合计。
-- **路由**：`/insights` 内「商户统计」tab（`?view=merchants`，08 修订案 A13）；路由数不变（仍 10 条）；视图全程浏览器内计算（DuckDB-WASM 白名单聚合），零新端点、零新 env 键、无新增网络请求。
+- **路由**：`/insights` 内「商户统计」tab（`?view=merchants`，08 修订案 A13）；路由数不变（A13 口径仍 10 条；08 修订案 A15 起路由条目 11，见 §1.1）；视图全程浏览器内计算（DuckDB-WASM 白名单聚合），零新端点、零新 env 键、无新增网络请求。
 
-### 1.8 订阅雷达页 `/subscriptions`
+### 1.8 订阅管理视图（/insights 内嵌，原 `/subscriptions` 页降级，08 修订案 A15）
 
-- **目的**：订阅刺客雷达（P1）——确定性 SQL 识别连续小额扣费 + 取消攻略带 RAG 引用。SQL 由数据管线成员在 03 §1.3 S4 给出（业务规则 = 07 §3），本页只负责呈现。
+- **目的**：订阅刺客雷达（P1）——确定性 SQL 识别连续小额扣费 + 取消攻略带 RAG 引用。SQL 由数据管线成员在 03 §1.3 S4 给出（业务规则 = 07 §3），本视图只负责呈现。08 修订案 A15 起为洞察页第 5 视图（`?view=subscriptions`），内容自原 `/subscriptions` 页整体迁入、行为不变；原路由改为静态重定向（§1.1）。
 - **布局分区**：
   ```
   ┌──────────────────────────────────────┐
@@ -338,15 +339,42 @@ export const featureFlags = {
   │  [设为提醒]（接 F13 通知中心）              │
   └──────────────────────────────────────┘
   ```
-- **核心组件**：`SubscriptionRadarCard`、`StatRow`、`NextBillingCountdown`（下次扣费倒计时徽标）、`CancelGuideChecklist`（步骤化操作清单）、`CitationCollapse`、`Sparkline`。
+- **核心组件**：`SubscriptionView`（页面级，自原 `/subscriptions` 页整体迁入、行为不变，登记见 §2.2，08 修订案 A15）、`SubscriptionRadarCard`、`StatRow`、`NextBillingCountdown`（下次扣费倒计时徽标）、`CancelGuideChecklist`（步骤化操作清单）、`CitationCollapse`、`Sparkline`。
 - **状态**：
   - 空：未发现命中 → 积极空态（§6.3：不是「没有订阅」，而是「没抓到连续扣费模式」+ 引导去账本汇总视图框选已知订阅核算）；
   - 加载：确定性 SQL 本地计算，亚秒级，骨架屏一次即可；
   - 错误：SQL 白名单校验失败（不该发生，防御）→ 卡片显示规则错误 + 重跑；
   - 成功：卡片可展开步骤化攻略清单（勾选进度为本地 UI 态 + 一键复制操作要点）、可锚定 sparkline 追问、可标记「已确认订阅 / 误报」（打标反馈回流 04 评测集）、[设为提醒] 写 `spendct:notif:v1`（可重算提醒状态，08 修订案 A1，接 F13 通知铃）。
-- **路由**：`/subscriptions`。
+- **路由**：`/insights` 内「订阅管理」tab（`?view=subscriptions`，08 修订案 A15）；原 `/subscriptions` 路由保留为静态重定向 → 本视图。
 
-### 1.9 年度报告页 `/report`
+### 1.9 消费日历页 `/calendar`（08 修订案 A15）
+
+- **目的**：消费时空格局一目了然——日历热力图看「哪天花得多」，时间轴流水看「那天买了什么」；全程浏览器内计算，零 API、零新端点、零新 env、零新事件。
+- **布局分区**：
+  ```
+  ┌──────────────────────────────────────┐
+  │ 标题「消费日历」+ 月切换（上月/下月）+    │
+  │   深夜消费图例（23:00–05:00 口径）      │
+  ├──────────────────────────────────────┤
+  │ CalendarHeatmap 日历热力图：每日金额    │
+  │   色阶，深夜消费格加「深夜」标记        │
+  ├──────────────────────────────────────┤
+  │ CalendarTimeline 时间轴流水（按日分组）：│
+  │   每笔 时间/类目/商户/金额/方向，       │
+  │   深夜加标；热力图格点点击 → 当日流水   │
+  │   联动定位                             │
+  └──────────────────────────────────────┘
+  ```
+- **数据口径（08 修订案 A15）**：热力图走白名单聚合 `CALENDAR_DAILY_SQL`（expense + paid 双方向，行数上限放宽至 2000）；流水走直连分页 SQL（`LIMIT 200`）；深夜口径 23:00–05:00；演示动线走确定性生成器（每 9 笔 1 收入、深夜约 1/4）；全程浏览器内计算（DuckDB-WASM 白名单聚合），零 API、零新端点、零新 env 键、零新事件。ECharts 包装器按需注册 HeatmapChart / CalendarComponent / VisualMapComponent。
+- **核心组件**：`CalendarView`（页面级）、`CalendarHeatmap`（复用四大静态图同名组件，/calendar 页口径）、`CalendarTimeline`（页面级，登记见 §2.2）。
+- **状态**：
+  - 空：无体检结果 → 确定性演示行（确定性生成器浏览器内聚合，零 API，渲染期即回退不查库）；当月无消费 → 空态「这个月没有消费记录」+ [回到本月]；
+  - 加载：WASM 查询中 → 热力图骨架（shimmer），查询超 2s → 顶部提示「正在本地计算…」；
+  - 错误：任一查询失败（白名单拒绝 / 数据集缺失）→ 整页回退演示行，数据来源脚注标「内置数据」；
+  - 成功：热力图格点点击 → 时间轴联动定位该日流水；流水行点击 → 明细锚点（`dim: date`，§18 锚点协议不变，无新工具）；深夜消费格与流水行带「深夜」标记。
+- **路由**：`/calendar`，守卫无（游客可访问；无体检结果走演示行兜底）；入口 = top-nav「日历」与移动端底部 tab（§1.1）；移动端要点见 §4.5 第 11 条。
+
+### 1.10 年度报告页 `/report`
 
 - **目的**：年度报告升级为滚动式数据故事（F05）+ 消费健康指数仪表（答辩记忆点：隐形订阅率 / 冲动消费浓度等具名指标）+ 消费段位与成就徽章墙（F10）。`featureFlags.reportStory=false` 时回退旧版布局（指标卡 + 年度对比图，本表旧版即兜底，08 §2.3）。
 - **布局分区**：
@@ -361,6 +389,8 @@ export const featureFlags = {
   │  段级模板兜底，08 §⑥.5）                 │
   ├──────────────────────────────────────┤
   │ 消费段位卡 RankBadge（5 档规则判定，F10）  │
+  │ 六维健康明细（每维「每 100 元消费里约 X 元   │
+  │   用于…」+ 百分比小字 + 状态标签，08 A15）  │
   │ 六维健康雷达 HealthRadar（F10）           │
   │ 成就徽章墙 AchievementWall（12 枚，F10）   │
   ├──────────────────────────────────────┤
@@ -369,6 +399,7 @@ export const featureFlags = {
   └──────────────────────────────────────┘
   ```
 - **核心组件**：`HealthIndexGauge`、`StorySegment`、`RankBadge`、`HealthRadar`（六维，F10）、`AchievementWall`、`PosterCanvasButton`、`ExportPdfButton`。原「具名指标卡 ×4」与「年度对比图」并入叙事段（模板段「年度总览」「环比变化」，确定性 SQL 填数，08 §⑥.5 固定 6 段模板）。
+- **通俗化展示口径（08 修订案 A15，仅展示层，底层计算口径不动）**：「六维健康明细」区块每维呈现「每 100 元消费里约 X 元用于…」+ 百分比小字 + 状态标签；健康指数大白话总评；四段数据故事改叙事文案；段位与成就百分比改口语化表述（如「超过八成同龄人」）。六维阈值（RatioKey）与文案映射（buildHealthComment / buildHealthDims / healthRatingLabel）集中在 `src/lib/report/labels.ts`。
 - **状态**：
   - 空：数据不足 3 个月 → 空态「报告需要至少 3 个月的数据，当前 {n} 个月」+ [回洞察流]；
   - 加载：指标 SQL 预计算（模板优先，无 LLM 依赖）→ 仪表骨架；故事段 LLM 流式（annual 阶段内增强，段级真实 delta，§5.1 不放假动画）；
@@ -376,7 +407,7 @@ export const featureFlags = {
   - 成功：仪表动画（数值 count-up 600ms，reduced-motion 下直接显示终值）；故事段逐段 scroll-reveal（240ms 上滑淡入，§3.7）；段位卡与徽章墙由确定性规则即时判定；海报合成 < 2s（01 §8 新增基准）。
 - **路由**：`/report`，守卫见 §1.1。段位/成就解锁状态存 localStorage `spendct:achievements:v1`（可随时由聚合视图重算，08 修订案 A1，≤2KB）。
 
-### 1.10 隐私说明页 `/privacy`（原 `/about` 更名，#46）
+### 1.11 隐私说明页 `/privacy`（原 `/about` 更名，#46）
 
 - **目的**：隐私信任的收口。数据可见性对照表（02 文档第二章）在此以交互形式呈现；同时承载 README 要求的项目介绍/技术架构/团队/费用说明的站内版本。
 - **布局分区**：
@@ -398,7 +429,7 @@ export const featureFlags = {
 - **状态**：静态页，无空/加载态；唯一「错误」是 visibility.ts 加载失败 → 静态表格兜底。
 - **路由**：`/privacy`。全局导航与 README 链接均指向此处（项目介绍/技术架构/团队/费用说明亦随此页承载）。
 
-### 1.11 预算中心 `/budget`（08 修订案 A7，P1）
+### 1.12 预算中心 `/budget`（08 修订案 A7，P1）
 
 - **目的**：月度分类预算 + 预算 vs 实际 + 下月预测 + 超支 AI 提示 + 快速记账入口（F07/F08）。数据面 = `budgets` / `budget_vs_actual` / `forecast_monthly`（DuckDB 数据集内，白名单注册 08 修订案 A2，聚合粒度）。
 - **布局分区**：
@@ -432,7 +463,7 @@ export const featureFlags = {
 - **快速记账（F08，QuickEntryBar 协议）**：文本 ≤200 字 → `/api/ai/task` taskId=quick-entry → `QuickEntrySchema` zod 确认卡（金额分/方向/类别/商户/日期/备注）→ [确认入账] 写 `transactions`（`source='manual'`，08 修订案 A3；原始输入文本仅内存中转、绝不落盘）→ 账本即时可见；[修改] 打开手动表单。语音输入为 P3（国赛窗口）。注意：与智能助理的语音输入（08 修订案 A12，Web Speech 浏览器转写、音频不出浏览器）是两回事，互不影响档期。
 - **路由**：`/budget`（守卫 require="budget"，§1.1）；`featureFlags.budget=false` 时路由下线、快速记账入口随之隐藏（08 §⑩ 第 10 刀）；`/upload` 入口卡与 `/insights` 空态有引流入口。
 
-### 1.12 消费知识小课堂 `/learn`（08 修订案 A7，P2）
+### 1.13 消费知识小课堂 `/learn`（08 修订案 A7，P2）
 
 - **目的**：把 60 条 RAG 案例变成可浏览产品——案例库浏览（8 类分类 / 搜索）+ 金融素养知识卡 + 防坑手册（F11）。展示面 = 静态公开投影（title/summary/category/source/legalBasis/benefitTags），不含任何用户数据（08 §5.4）。
 - **布局分区**：
@@ -457,7 +488,7 @@ export const featureFlags = {
   - 成功：浏览/搜索/折叠案例摘要；案例详情引用格式 = `rag:${caseId}`（与洞察卡引用同格式，04 评测集编号）。
 - **路由**：`/learn`（08 A7）；`featureFlags.learn=false` 时路由下线（08 §⑩ 第 6 刀）；不引 ECharts/DuckDB，chunk < 60 KB。
 
-### 1.13 数据管理与导出 `/settings`（08 修订案 A7，P1）
+### 1.14 数据管理与导出 `/settings`（08 修订案 A7，P1）
 
 - **目的**：数据集管理 / CSV-JSON 导出 / 通知开关 / 主题与演示模式入口（F12）。移动端底部 tab「我的」指向本页（08 §2.1）。
 - **布局分区**：
@@ -502,8 +533,8 @@ App
 │  ├─ HomePage ── HeroCta · PromiseStrip · CapabilityCardWall · TechArchStrip · MiniPipelinePreview
 │  ├─ UploadPage ── UploadDropzone · OcrDropzone · OcrImportPanel · ParsePreviewTable · SampleDataCard · QuickEntryLink
 │  ├─ CheckupPage ── PipelineStepper · CheckpointBar · ThinkingBubble · StageSummaryCard · StageEvidenceDrawer · StageOutputBadge
-│  ├─ InsightsPage ── InsightViewToggle · FavoritesPanel · InsightFilterBar · InsightCard[] · FollowUpPanel · TipCard · LedgerSummaryView（账本汇总，原 /ledger 并入）· MerchantView（商户统计，08 修订案 A13）
-│  ├─ SubscriptionsPage ── StatRow · SubscriptionRadarCard[]（管理墙：NextBillingCountdown · CancelGuideChecklist）
+│  ├─ InsightsPage ── InsightViewToggle · FavoritesPanel · InsightFilterBar · InsightCard[] · FollowUpPanel · TipCard · LedgerSummaryView（账本汇总，原 /ledger 并入）· MerchantView（商户统计，08 修订案 A13）· SubscriptionView（订阅管理，原 /subscriptions 迁入，08 修订案 A15）
+│  ├─ CalendarPage ── CalendarView（CalendarHeatmap · CalendarTimeline，08 修订案 A15）
 │  ├─ ReportPage ── HealthIndexGauge · StorySegment[] · RankBadge · HealthRadar · AchievementWall · PosterCanvasButton · ExportPdfButton
 │  ├─ BudgetPage ── QuickEntryBar · BudgetRing · BudgetBar[] · BudgetAdviceCard · ForecastChart · ForecastNarrativeCard
 │  ├─ LearnPage ── CaseSearchBar · CaseCategoryChips · CaseCard[] · KnowledgeCard
@@ -525,7 +556,7 @@ App
 
 ### 2.2 组件总表
 
-组件命名两级注册（07 §14 + 08 修订案 A7）：**第一级 = 注册表 19 个可复用组件**（既有 13：UploadDropzone、PipelineStepper、ThinkingBubble、SqlCodeBlock、InsightCard、TypingCard、EvidenceTable、DegradeToast、FollowUpPanel、AnchorChip、ArtifactCard、ToolBadge、OcrReviewTable，#52；新增 6：BudgetRing、QuickEntryBar、ForecastChart、CaseCard、DatasetManager、NotificationBell，08 A7）——全仓唯一命名，文档禁止引用未列入注册表的组件名；**第二级 = 本节组件总表为页面级组件的唯一登记表**（页面级组件不占注册表名额、与注册表同为唯一命名源、同样禁止私造，约 20 个：StageEvidenceDrawer、FavoritesPanel、PosterCanvasButton、CapabilityCardWall、NextBillingCountdown、CancelGuideChecklist、AssistantDrawer、ChatBubbles、PlanBlock 等，07 §21 第 10 条 / §14 A7 两级注册口径；08 修订案 A12 增补智能助理三组件、08 修订案 A13 增补 MerchantView 均按同一口径登记；08 修订案 A14 深度分析开关 chip 为 FollowUpPanel 内部扩展、不新增组件，总数不变）。本文扩展组件（ChartCard、FeedbackButton、四大静态图组件等）按第二级登记，不得与注册表重名，也不得升级为注册表名。
+组件命名两级注册（07 §14 + 08 修订案 A7）：**第一级 = 注册表 19 个可复用组件**（既有 13：UploadDropzone、PipelineStepper、ThinkingBubble、SqlCodeBlock、InsightCard、TypingCard、EvidenceTable、DegradeToast、FollowUpPanel、AnchorChip、ArtifactCard、ToolBadge、OcrReviewTable，#52；新增 6：BudgetRing、QuickEntryBar、ForecastChart、CaseCard、DatasetManager、NotificationBell，08 A7）——全仓唯一命名，文档禁止引用未列入注册表的组件名；**第二级 = 本节组件总表为页面级组件的唯一登记表**（页面级组件不占注册表名额、与注册表同为唯一命名源、同样禁止私造，约 23 个：StageEvidenceDrawer、FavoritesPanel、PosterCanvasButton、CapabilityCardWall、NextBillingCountdown、CancelGuideChecklist、AssistantDrawer、ChatBubbles、PlanBlock 等，07 §21 第 10 条 / §14 A7 两级注册口径；08 修订案 A12 增补智能助理三组件、08 修订案 A13 增补 MerchantView 均按同一口径登记；08 修订案 A14 深度分析开关 chip 为 FollowUpPanel 内部扩展、不新增组件，总数不变；08 修订案 A15 增补 CalendarView / CalendarTimeline / SubscriptionView，CalendarHeatmap 既有登记扩 /calendar 页口径）。本文扩展组件（ChartCard、FeedbackButton、四大静态图组件等）按第二级登记，不得与注册表重名，也不得升级为注册表名。
 
 | 组件 | Props 概要 | 状态 | 用到的组件 |
 |---|---|---|---|
@@ -562,14 +593,17 @@ App
 | `CaseCard` | `case: CaseSummary`（title/summary/category/source/legalBasis/benefitTags，08 §5.4 公开投影） | default / expanded | CitationCollapse |
 | `DatasetManager` | `datasets: DatasetMeta[]`、`activeHash`、`onSwitch/onDelete` | default / confirming-delete | DegradeToast |
 | `NotificationBell` | `items: NotifItem[]`、`onOpen`（`spendct:notif:v1`，可重算，08 A1） | default / open | — |
-| `CalendarHeatmap` | `rows: {date, amountCents}[]`（v_daily_expense）、`onAnchor` | loading / ready / empty / table | ChartAnchorLayer、Skeleton、EmptyState |
+| `CalendarHeatmap` | `rows: {date, amountCents}[]`（账本汇总视图走 v_daily_expense；/calendar 消费日历页走白名单 CALENDAR_DAILY_SQL（expense + paid，行数上限 2000），08 修订案 A15）、`onAnchor` | loading / ready / empty / table | ChartAnchorLayer、Skeleton、EmptyState |
 | `CategorySankey` | `nodes/links`（v_category_monthly 当月环比迁移）、`onAnchor` | loading / ready / empty / table | ChartAnchorLayer、Skeleton、EmptyState |
 | `HealthRadar` | `dims: {name, score}[]`（v_health_inputs 六维）、`onAnchor` | loading / ready / empty / table | ChartAnchorLayer、Skeleton、EmptyState |
 | `MerchantWordcloud` | `words: {merchantRef, count, amountCents}[]`（v_merchant_monthly，n≥5 商户还原规则 07 §5）、`onAnchor` | loading / ready / empty / table | ChartAnchorLayer、Skeleton、EmptyState |
 | `StageEvidenceDrawer` | `stage: StageId`、`evidences: StageEvidence[]`（真实 stage:evidence 事件） | closed / open | SqlCodeBlock、InsightCard（产出缩略） |
 | `StageOutputBadge` | `count`、`elapsedMs`、`stage` | entering / visible / exiting | — |
-| `InsightViewToggle` | `view: "cards" \| "gallery" \| "ledger" \| "merchants"`、`onChange`（`?view=merchants`，08 修订案 A13） | — | — |
+| `InsightViewToggle` | `view: "cards" \| "gallery" \| "ledger" \| "merchants" \| "subscriptions"`、`onChange`（`?view=merchants`，08 修订案 A13；`?view=subscriptions`，08 修订案 A15） | — | — |
 | `MerchantView` | `onAnchor`（点击柱子 → 追问锚点 anchor id `merchant-view`，label 含商户名 + 合计 + 占全账单比；排名图前 10 + 数据表全量（50 行上限，截断脚注如实标注），商户搜索同步过滤；页面级，08 修订案 A13） | — | ChartCard、ChartAnchorLayer、Skeleton、EmptyState |
+| `SubscriptionView` | 订阅候选列表 / 逐笔核对 / 下次扣费倒计时（自原 /subscriptions 页整体迁入、行为不变；页面级，08 修订案 A15） | — | SubscriptionRadarCard、StatRow、NextBillingCountdown、CancelGuideChecklist、CitationCollapse、Sparkline |
+| `CalendarView` | 月切换、热力图与时间轴联动（页面级，/calendar 页，08 修订案 A15） | — | CalendarHeatmap、CalendarTimeline、Skeleton |
+| `CalendarTimeline` | `rows: {ts, category, merchant, amountCents, direction, night}[]`（直连分页 SQL，LIMIT 200）、`onAnchor` | loading / ready / empty / table | Skeleton、EmptyState |
 | `FavoritesPanel` | `cardIds: string[]`（`spendct:fav:v1`） | closed / open | EmptyState、InsightCard（缩略） |
 | `NextBillingCountdown` | `nextDate`、`daysLeft`（确定性 SQL 外推） | default | — |
 | `CancelGuideChecklist` | `steps: {text, tip}[]`、`caseId`（rag 引用） | default / expanded | CitationCollapse |
@@ -1169,7 +1203,7 @@ export type AnchorFollowUpState =
 
 **A12 重构（2026-10-15）**：追问面板重构为与全局智能助理共用同一问答管线（唯一实现 `src/lib/assistant/use-chat-pipeline.ts`）——追问路径不开本地案例检索、保持 PEO 协议不变；在线兜底在 `run:start` 后第 0 步发射 plan 事件（07 §2 第 21 类，8s 超时/失败静默跳过，§2.10）；消息脚注三态（本地计算 / 本地案例库 / 在线生成）按路径如实标注；输入闸门（`src/lib/assistant/input-guard.ts`，注入防护第四层：控制字符 → 超长（>500 字）→ 指令覆盖、角色劫持、泄露诱导、SQL 痕迹四类注入特征，02 §11）对追问与智能助理输入同样生效。
 
-**A14 深度分析开关（2026-10-16）**：追问面板输入框上方新增「深度分析」chip 开关（默认关，`aria-pressed` 两态：开启提示「开启：直接交给大模型分析，并发送账单统计与明细」、关闭提示「本地规则优先，答不了才转在线」）。开启后本轮提问跳过闲聊分流/本地规则/本地案例，直连在线兜底 `POST /api/followup`（body 带 `analysisMode:"deep"`）——深度上下文由 `src/lib/chat/deep-analysis.ts` 生成（`buildDeepAnalysisQueries` 10 组代码常量白名单 SQL、支出类查询全部带 `status = 'paid'`、深夜逐月 50 月上限（占比标签诚实标注「近50个月」）、冲动按类目聚合全期不截断、`buildDeepAnalysisContext` ≤2400 字、逐组容错、超长整行丢弃、全失败空串，零动态拼接），与最近 150 笔明细快照分两条消息发送（各 ≤4000 字、总 ≤8000、≤20 条）；回答气泡脚注在既有三态来源脚注（本地计算 / 本地案例库 / 在线生成）之外增补深度分析档「深度分析 · 已发送账单统计与明细」（按实际发送组合标注——统计与明细都发送时显示合称，缺一段只说发了的那段，live 档同机制）。零新端点、零新路由、零新事件（协议仍 21 类）。
+**A14 深度分析开关（2026-10-16）**：追问面板输入框上方新增「深度分析」chip 开关（默认关，`aria-pressed` 两态：开启提示「开启：直接交给大模型分析，并发送账单统计与明细」、关闭提示「本地规则优先，答不了才转在线」）。开启后本轮提问跳过闲聊分流/本地规则/本地案例，直连在线兜底 `POST /api/followup`（body 带 `analysisMode:"deep"`）——深度上下文由 `src/lib/chat/deep-analysis.ts` 生成（`buildDeepAnalysisQueries` 10 组代码常量白名单 SQL、支出类查询全部带 `status = 'paid'`、深夜逐月 50 月上限（占比标签诚实标注「近50个月」）、冲动按类目聚合全期不截断、`buildDeepAnalysisContext` ≤2400 字、逐组容错、超长整行丢弃、全失败空串，零动态拼接），与最近 150 笔明细快照分两条消息发送（各 ≤4000 字、总 ≤8000、≤20 条）；**08 修订案 A15（2026-10-16）起增至三条消息**：统计与快照之间插入「定向明细」段（`src/lib/chat/targeted-detail.ts`，按问题识别月份/年份/商户（DB 商户 Top50 名单最长匹配）/类目（CATEGORY_CODES 枚举）/深夜五类条件，LIMIT 200、≤2500 字，空结果如实说明查不到，任一段失败静默省略回退两条消息）；回答气泡脚注在既有三态来源脚注（本地计算 / 本地案例库 / 在线生成）之外增补深度分析档「深度分析 · 已发送账单统计与明细」（按实际发送组合标注——统计与明细都发送时显示合称，缺一段只说发了的那段，live 档同机制）。零新端点、零新路由、零新事件（协议仍 21 类）。
 
 **4.1.1 上下文 JSON 与计划生成 Prompt（UI→Agent 的契约，canonical = 07 §18 SelectionContext，#65）**
 
@@ -1286,10 +1320,11 @@ export function flushNow(flush: (batch: PipelineEvent[]) => void) { flush(buffer
 4. 明细表列裁剪：移动端只显示 时间/商户/金额/类别 四列，其余收进行展开；
 5. 健康指数仪表尺寸缩至 220px，指标卡单列；订阅卡 sparkline 高度 40px；
 6. 筛选行折叠为抽屉（移动端），桌面常驻一行；
-7. 底部 tab bar 5 项（首页/体检/账本/订阅/我的），安全区 `env(safe-area-inset-bottom)`；「我的」指向 `/settings`（08 A7），`/budget` 与 `/learn` 不新增 tab 项，从首页能力卡与 `/settings` 链接进入；
+7. 底部 tab bar 5 项（首页/体检/账本/日历/我的——「订阅」→「日历」/calendar，08 修订案 A15；订阅管理收进 /insights 第 5 视图），安全区 `env(safe-area-inset-bottom)`；「我的」指向 `/settings`（08 A7），`/budget` 与 `/learn` 不新增 tab 项，从首页能力卡与 `/settings` 链接进入；
 8. `/budget` 移动端单列布局：预算环 → 分类预算列表（每类一行已用比例条）→ 超支贴士 → 预测，快速记账入口收为底部悬浮条（44×44 触控目标），预算编辑弹层改 bottom sheet；
 9. `/report` 移动端故事段单列 + 海报按钮全宽；`/learn` 案例卡单列、搜索框吸顶（国赛窗口补齐后按本节适配，省赛版本仅首页 P2「即将上线」角标入口）；`/settings` 分区折叠为手风琴。
 10. 智能助理：聊天抽屉移动端全屏（滑动手势关闭），悬浮按钮保持 44×44 触控目标与底部 tab bar 安全区共存；语音按钮在浏览器不支持 Web Speech 或 featureFlags.voice=false 时隐藏（08 修订案 A12）。
+11. `/calendar` 消费日历移动端：日历热力图单列全宽（格点触控目标 ≥ 44×44）、时间轴流水单列；月切换收进标题行；深夜标记与色阶同桌面口径（08 修订案 A15）。
 
 ---
 
@@ -1378,12 +1413,12 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | 体检运行页 | —（无空态，进入即跑） | — | — |
 | 洞察流 | 体检完成前，这里还没有洞察 | AI 体检会生成 6 类可审阅的洞察卡，每条结论都附证据图表与来源引用 | [去上传账单] |
 | 账本汇总（/insights 内） | 所选时间范围内没有交易 | 试试放宽时间范围，或清除部分筛选条件 | [清除筛选] |
-| 订阅雷达 | 没抓到连续扣费 | 这次体检没有命中连续小额扣费模式。如果你有已知订阅，可以去账本汇总视图点它的扣费记录，帮你核算总支出 | [去账本汇总] |
+| 订阅管理（原订阅雷达） | 没抓到连续扣费 | 这次体检没有命中连续小额扣费模式。如果你有已知订阅，可以去账本汇总视图点它的扣费记录，帮你核算总支出 | [去账本汇总] |
 | 年度报告 | 报告需要至少 3 个月数据 | 当前账单覆盖 {n} 个月，继续积累或换一份时间跨度更长的账单 | [回洞察流] |
 | 追问区（首次） | 从图表开始提问 | 点击或框选任何图表元素，AI 会制定分析计划并给出带图表的答案 | [看个例子] |
 | 智能助理（首次） | 直接问我 | 示例问题 3-4 条 + [新对话]：本地规则/本地案例优先回答，答不上才在线生成，每条消息脚注标注来源 | [看示例问题] |
 | 预算中心 | 还没有设置预算 | 给 12 个消费类别设一个月度预算，超支时 AI 会给你提示，还能预测下个月的花销 | [设置预算] |
-| 知识课堂 | 没有找到相关案例 | 换一个关键词，或清空搜索浏览全部 {n} 条案例（案例库加载中态 = 骨架屏，见 §1.12） | [清除搜索] |
+| 知识课堂 | 没有找到相关案例 | 换一个关键词，或清空搜索浏览全部 {n} 条案例（案例库加载中态 = 骨架屏，见 §1.13） | [清除搜索] |
 | 数据管理 | 还没有数据集 | 上传账单后，数据集会出现在这里，可导出 CSV/JSON 或一键删除 | [去上传账单] |
 
 ### 6.4 屏幕阅读器与 ARIA
@@ -1424,8 +1459,8 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | 0–3 | 「给你的账单做一次 AI 体检」——点 [加载示例账单]（主 CTA，一次点击） | `/` | Hero + 三承诺条 |
 | 3–8 | 「六项检查开始，注意右侧——它在执行真实的 SQL」 | `/checkup` | 流水线点亮 + ThinkingBubble 滚动 SQL（示例数据命中缓存，3.5s 跑完） |
 | 8–18 | 「AI 不聊天，它先交作业：洞察卡一条条流出来」 | `/insights` | 3 张洞察卡流式发布：结论 + 证据图 + 置信度 + 引用折叠 |
-| 18–24 | 「这张卡怀疑你有订阅刺客」点开订阅卡引用折叠 | `/insights` → `/subscriptions` | 命中卡 + sparkline + 「取消攻略（RAG 引用）」展开 |
-| 24–30 | 「看到可疑的点，直接点它提问」——点击扣费点 → 确认条 → [追问] → 步骤树点亮 → **新图落卡**（2s 高亮） | `/subscriptions` | 锚点追问全流程 6 秒完成 |
+| 18–24 | 「这张卡怀疑你有订阅刺客」点开订阅卡引用折叠 | `/insights` → `/insights?view=subscriptions` | 命中卡 + sparkline + 「取消攻略（RAG 引用）」展开 |
+| 24–30 | 「看到可疑的点，直接点它提问」——点击扣费点 → 确认条 → [追问] → 步骤树点亮 → **新图落卡**（2s 高亮） | `/insights?view=subscriptions` | 锚点追问全流程 6 秒完成 |
 | 收尾 | 鼠标悬停右上角盾牌：「明细数据从未离开浏览器」 | — | PrivacyBadge 弹出可见性对照表 |
 | 富余可选 | 时间富余（评委未打断）时在 /report 滚动一屏——年度故事段逐段浮现 + 段位卡入镜（AnnualStorySchema 分段叙事证据，08 §12.1） | `/report` | 故事段 scroll-reveal + RankBadge（P1 未落地则跳过） |
 
@@ -1480,8 +1515,8 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | UI 设计（UX 10% 内 4 分） | §3 | 「验证过的金融信任色板（CVD/对比度实测数据）+ 统一设计系统」 |
 | 性能优化（前端工程 20% 内 3 分） | §4.3 | 「120ms 事件节流、图表实例 ≤6、DuckDB/ECharts 按路由懒加载、缓存键命中（07 §10）」 |
 | AI 安全与可控性（4%） | §3.6-8、§6.5-8 | 「ECharts option 白名单清洗、SQL 白名单徽标可视化、注入演示账单脱敏显示」 |
-| 实用性 / 社会价值（10%/10%） | §1.6 两大图、§1.8 管理墙、§1.11-1.13 | 「预算/记账/订阅管理/数据导出四类实用功能 + 订阅倒计时与取消攻略，AI 先体检之外的可落地价值」 |
-| 大模型集成（AI 深度内） | §1.11 zod 确认卡、§1.9 故事段、§2.3 新 schema、§2.10 assistant-plan（08 修订案 A12，deepseek） | 「6 个新 LLM 任务（08 5 个 + A12 assistant-plan）全部 zod 强校验 + 模板兜底 + 降级链（08 §⑥/07 §12），扩展不稀释 AI 深度主线」 |
+| 实用性 / 社会价值（10%/10%） | §1.6 两大图、§1.8 管理墙、§1.12-1.14 | 「预算/记账/订阅管理/数据导出四类实用功能 + 订阅倒计时与取消攻略，AI 先体检之外的可落地价值」 |
+| 大模型集成（AI 深度内） | §1.12 zod 确认卡、§1.10 故事段、§2.3 新 schema、§2.10 assistant-plan（08 修订案 A12，deepseek） | 「6 个新 LLM 任务（08 5 个 + A12 assistant-plan）全部 zod 强校验 + 模板兜底 + 降级链（08 §⑥/07 §12），扩展不稀释 AI 深度主线」 |
 
 ### 8.3 本文档修订记录
 
@@ -1493,4 +1528,5 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | 2026-10-15 | v1.2：落实 08 修订案 A12 全局智能助理（07 §18 A12 / 07 §21 05 文档第 14 条）——新节 §2.10（悬浮入口右下固定 + 聊天抽屉桌面 400×600/移动全屏 + 空态示例问题与新对话 + 语音入口 feature-flag voice + PlanBlock 思考计划块 + 三态来源脚注 + 工具徽章复用 07 §18 A9）；§2.2 组件总表新增 AssistantDrawer/ChatBubbles/PlanBlock（两级注册口径，约 16→19 个）；§2.3 事件 20→21 类（plan，在线兜底第 0 步，8s 超时静默跳过）并标注 sanitizeResult async（WebCrypto）；§4.1 补 A12 共享管线 use-chat-pipeline 与输入闸门注记；§1.1 全局 Shell 补悬浮入口、FeatureFlag 新增 voice；§4.4 降级链补 assistant-plan 静默跳过/闸门拦截两行；§4.5 移动端补第 10 条；§6.3 空态补智能助理行；§6.5 补闸门四类注入特征走查；§7.1 竞品行改「本地优先智能助理」口径；§7.3/§7.4 补助理快捷键与扩展镜头 |
 | 2026-10-15 | v1.3：落实 08 修订案 A13 商户统计视图（07 §14 A13）——§1.1/§1.5 视图切换器补第 4 视图「商户统计」（?view=merchants，与卡片流/图表廊/账本汇总并列，路由数不变仍 10 条）；新增 §1.7 商户统计视图节（全账单 expense 数据口径、两条白名单 SQL、排名横向条形图前 10 + 数据表全量（50 行上限，截断脚注「商户较多，按金额取前 50 名」/「全部展示」）、商户搜索同步过滤、点击柱子 → 追问锚点 merchant-view（§18 协议不变，无新工具）、演示行兜底 ledger-demo.ts seed 20261013 100 行、零新端点零新 env 键）；§1.6 补重构登记（演示行生成器与 ChartCard 外壳提取为共享模块 src/lib/insights/ledger-demo.ts、src/components/insights/chart-card.tsx，行为不变）；§2.1 组件树与 §2.2 组件总表登记页面级 MerchantView 与共享 ChartCard 口径；原 §1.7-1.12 顺延为 §1.8-1.13 并同步内部引用 |
 | 2026-10-16 | v1.4：落实 08 修订案 A14 追问深度分析（07 §21）——§4.1 补「深度分析」开关交互规范（输入框上方 chip、aria-pressed 两态、开启/关闭提示文案、开启后回答气泡脚注「深度分析 · 已发送账单统计与明细」（三态来源脚注 + 深度分析档）、零新端点/路由/事件，协议仍 21 类）；§2.2 页面级组件「约 19 个」修正为「约 20 个」（MerchantView 已登记；深度分析 chip 为 FollowUpPanel 内部扩展、不新增组件） |
+| 2026-10-16 | v1.5：落实 08 修订案 A15 订阅管理视图 + 消费日历 + 年度报告通俗化——§1.1 站点地图与路由表：新增 /calendar 消费日历页、/subscriptions 改静态重定向（页面总数仍 10、路由条目 11），top-nav「订阅」→「日历」/calendar、移动端底部 tab 同步、能力卡墙订阅卡 href 改 /insights?view=subscriptions；§1.5/§1.6/§2.2 视图切换器 4→5（+「订阅管理」?view=subscriptions）；§1.8 降级为订阅管理视图（内容全保留，SubscriptionView 页面级组件迁入、行为不变）；新增 §1.9 消费日历页节（CALENDAR_DAILY_SQL 白名单聚合 expense+paid 行数上限 2000、流水直连分页 LIMIT 200、深夜口径 23:00–05:00、演示确定性生成器每 9 笔 1 收入深夜约 1/4、全程浏览器内计算零 API、ECharts 注册 HeatmapChart/CalendarComponent/VisualMapComponent），原 §1.9-1.13 顺延为 §1.10-1.14 并同步内部引用；§1.10 年度报告补通俗化展示口径（六维健康明细「每 100 元消费里约 X 元用于…」+ 百分比小字 + 状态标签、健康指数大白话总评、四段叙事文案、段位成就口语化，仅展示层，底层计算口径不动，文案集中 src/lib/report/labels.ts）；§2.2 页面级组件约 20→23 个（CalendarView/CalendarTimeline/SubscriptionView 登记，CalendarHeatmap 扩 /calendar 页口径）；§4.5 补第 11 条 /calendar 移动端要点；§7.2 演示动线订阅镜头路由改 /insights?view=subscriptions |
 
