@@ -13,7 +13,8 @@
  *    账本登记 → 成功视图，工作台随后跳转体检。
  *
  * 全部状态为本地 useState：截图 Blob、识别行都不落任何持久化存储
- * （02 §12.1 / 07 §17 红线）。
+ * （02 §12.1 / 07 §17 红线）；确认导入后的清洗行按 08 修订案 A18
+ * 与 CSV 同路径落 IndexedDB datasets store（刷新恢复用）。
  */
 import { useCallback, useState } from "react";
 import { CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
@@ -26,6 +27,10 @@ import { registerImportedBook } from "@/lib/import/active-book";
 import { hashCleanRows } from "@/lib/import/clean-input";
 import { cropImageBand } from "@/lib/ocr/compress-image";
 import { OCR_TIME_PATTERN, ocrToCleanTransactions } from "@/lib/ocr/ocr-to-clean";
+import {
+  restorePipelineSnapshot,
+  saveImportedDataset,
+} from "@/lib/persistence/pipeline-persistence";
 import { usePipeline } from "@/lib/pipeline/store";
 import type { OcrReviewCell, OcrTransactionRow } from "@/lib/schema/ocr";
 
@@ -157,6 +162,8 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
     setConfirming(true);
     setImportError(null);
     try {
+      // 会话恢复闸门（08 修订案 A18）：与 CSV 导入同口径，避免并发装配互相覆盖
+      await restorePipelineSnapshot();
       const cleaned = await ocrToCleanTransactions(rows, channel, fileName);
       if (cleaned.length === 0) {
         setImportError("没有可导入的识别结果，请重新选择截图或改用 CSV 导入");
@@ -169,12 +176,14 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
       const auth = useAuth.getState();
       await auth.hydrate().catch(() => {});
       const userId = useAuth.getState().user?.id ?? null;
-      await registerImportedBook({
+      const book = await registerImportedBook({
         name: fileName || "未命名账单",
         userId,
         rowCount: cleaned.length,
       });
       usePipeline.getState().setDataset(datasetTxHash, "upload");
+      // 会话持久化（08 修订案 A18）：行数据与指纹落 IndexedDB，刷新后自动恢复
+      if (book) await saveImportedDataset({ book, txHash: datasetTxHash, rows: cleaned });
       setImportedCount(cleaned.length);
       setDone(true);
       onImported(cleaned.length);

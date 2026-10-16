@@ -2,10 +2,12 @@
  * 追问定向明细检索单测（src/lib/chat/targeted-detail.ts，08 修订案 A15）。
  *
  * 覆盖：
- * 1. buildTargetedDetailPlan 槽位识别：阿拉伯数字 / 中文数字 / 相对月份、
- *    年份、深夜关键词、12 类目词表、商户最长匹配（含长度 <2 跳过）；
+ * 1. buildTargetedDetailPlan 槽位识别：阿拉伯数字 / 中文数字 / 相对月份
+ *    （含上上个月）、年份、深夜关键词、12 类目词表、商户最长匹配
+ *    （含长度 <2 跳过）、显式日期范围（A18）；
  * 2. buildTargetedDetailSql：计划全空返回 null、条件拼装、SQL 注入防护
- *    （商户名单含单引号名称、非法月份/年份/类目/超长商户不产生非法 SQL）；
+ *    （商户名单含单引号名称、非法月份/年份/类目/超长商户/非法日期范围
+ *    不产生非法 SQL）；
  * 3. buildTargetedDetailContext：前缀与行格式、空结果诚实文案、
  *    超长整行截断、执行异常返回空串；
  * 4. planScopeText 范围说明文案、createTargetedDetailRunner 直连执行器接线。
@@ -64,17 +66,34 @@ describe("buildTargetedDetailPlan（检索条件识别）", () => {
     }
   });
 
-  it("相对月份：本月/这个月 → 当前月，上月/上个月 → 前一月（固定时钟 2026-10）", () => {
+  it("相对月份：本月/这个月 → 当前月，上月/上个月 → 前一月，上上个月 → 前两月（固定时钟 2026-10）", () => {
     expect(buildTargetedDetailPlan("这个月花了多少", []).month).toBe("10");
     expect(buildTargetedDetailPlan("本月花了多少", []).month).toBe("10");
     expect(buildTargetedDetailPlan("上个月深夜消费", []).month).toBe("09");
     expect(buildTargetedDetailPlan("上月花了多少", []).month).toBe("09");
+    // A18：长词先于短词，「上上个月」不再被错配成前一月
+    expect(buildTargetedDetailPlan("上上个月交通花了多少", []).month).toBe("08");
+    expect(buildTargetedDetailPlan("前两个月交通花了多少", []).month).toBe("08");
   });
 
   it("年份识别：只认「YYYY 年」写法，裸数字不误判", () => {
     expect(buildTargetedDetailPlan("2026年5月花了多少", []).year).toBe("2026");
     expect(buildTargetedDetailPlan("2026 年 5 月", []).year).toBe("2026");
     expect(buildTargetedDetailPlan("花了2026元", []).year).toBeNull();
+  });
+
+  it("显式日期范围（A18）：识别「YYYY-MM-DD 到 YYYY-MM-DD」，年月槽位让位", () => {
+    const plan = buildTargetedDetailPlan("2026-01-01到2026-05-30这段时间的交通费用", []);
+    expect(plan.dateRange).toEqual({ start: "2026-01-01", end: "2026-05-30" });
+    expect(plan.month).toBeNull();
+    expect(plan.year).toBeNull();
+    expect(plan.category).toBe("交通");
+  });
+
+  it("起止颠倒的日期范围视为无效：不进 SQL，也不影响其他槽位", () => {
+    const plan = buildTargetedDetailPlan("2026-05-30到2026-01-01的交通", []);
+    expect(plan.dateRange).toBeNull();
+    expect(plan.month).toBeNull();
   });
 
   it("深夜关键词：深夜/半夜/凌晨/夜宵/熬夜 → nightOnly，无关词不命中", () => {
@@ -118,6 +137,7 @@ describe("buildTargetedDetailPlan（检索条件识别）", () => {
     expect(plan).toEqual({
       month: null,
       year: null,
+      dateRange: null,
       merchant: null,
       category: null,
       nightOnly: false,
@@ -131,6 +151,7 @@ describe("buildTargetedDetailSql（固定模板 + 参数校验）", () => {
   const emptyPlan: TargetedDetailPlan = {
     month: null,
     year: null,
+    dateRange: null,
     merchant: null,
     category: null,
     nightOnly: false,
@@ -144,6 +165,7 @@ describe("buildTargetedDetailSql（固定模板 + 参数校验）", () => {
     const sql = buildTargetedDetailSql({
       month: "05",
       year: "2026",
+      dateRange: null,
       merchant: "蜜雪冰城",
       category: "餐饮",
       nightOnly: true,
@@ -172,6 +194,29 @@ describe("buildTargetedDetailSql（固定模板 + 参数校验）", () => {
   it("非法年份不产生非法 SQL：非四位数字 → 返回 null", () => {
     expect(buildTargetedDetailSql({ ...emptyPlan, year: "26" })).toBeNull();
     expect(buildTargetedDetailSql({ ...emptyPlan, year: "20'26" })).toBeNull();
+  });
+
+  it("日期范围条件（A18）：双端点校验后落进 WHERE 闭区间", () => {
+    const sql = buildTargetedDetailSql({
+      ...emptyPlan,
+      dateRange: { start: "2026-01-01", end: "2026-05-30" },
+    });
+    expect(sql).toContain("AND date_iso >= '2026-01-01' AND date_iso <= '2026-05-30'");
+  });
+
+  it("非法日期范围不产生非法 SQL：非 ISO 端点 / 起止颠倒 → 返回 null", () => {
+    expect(
+      buildTargetedDetailSql({
+        ...emptyPlan,
+        dateRange: { start: "2026-01-01", end: "2026-05-30'; DROP TABLE transactions" },
+      }),
+    ).toBeNull();
+    expect(
+      buildTargetedDetailSql({
+        ...emptyPlan,
+        dateRange: { start: "2026-05-30", end: "2026-01-01" },
+      }),
+    ).toBeNull();
   });
 
   it("商户名单含单引号名称：单引号双写转义，不产生可注入的未转义引号", () => {
@@ -214,6 +259,7 @@ describe("buildTargetedDetailContext（定向明细文本块）", () => {
   const plan: TargetedDetailPlan = {
     month: "05",
     year: "2026",
+    dateRange: null,
     merchant: null,
     category: null,
     nightOnly: true,
@@ -235,6 +281,25 @@ describe("buildTargetedDetailContext（定向明细文本块）", () => {
     expect(text).toBe("本地账单里没有查到与问题直接相关的明细（2026 年 5 月、深夜）。");
   });
 
+  it("日期范围计划的空结果文案与命中前缀（A18）", async () => {
+    const rangePlan: TargetedDetailPlan = {
+      month: null,
+      year: null,
+      dateRange: { start: "2026-01-01", end: "2026-05-30" },
+      merchant: null,
+      category: "交通",
+      nightOnly: false,
+    };
+    const empty = await buildTargetedDetailContext(runSql([]), rangePlan);
+    expect(empty).toBe(
+      "本地账单里没有查到与问题直接相关的明细（日期 2026-01-01 至 2026-05-30、类目 交通）。",
+    );
+    const hit = await buildTargetedDetailContext(runSql([detailRow()]), rangePlan);
+    expect(hit).toContain(
+      "与问题直接相关的明细（日期 2026-01-01 至 2026-05-30、类目 交通，共 1 笔）：",
+    );
+  });
+
   it("执行异常返回空串（调用方省略该段）", async () => {
     const text = await buildTargetedDetailContext(
       async () => Promise.reject(new Error("boom")),
@@ -248,6 +313,7 @@ describe("buildTargetedDetailContext（定向明细文本块）", () => {
     const text = await buildTargetedDetailContext(spy, {
       month: null,
       year: null,
+      dateRange: null,
       merchant: null,
       category: null,
       nightOnly: false,
@@ -272,6 +338,7 @@ describe("planScopeText（范围说明文案）", () => {
   const base: TargetedDetailPlan = {
     month: null,
     year: null,
+    dateRange: null,
     merchant: null,
     category: null,
     nightOnly: false,
@@ -298,6 +365,24 @@ describe("planScopeText（范围说明文案）", () => {
 
   it("全空计划范围说明为空串", () => {
     expect(planScopeText(base)).toBe("");
+  });
+
+  it("日期范围优先于年月（A18）", () => {
+    expect(
+      planScopeText({
+        ...base,
+        dateRange: { start: "2026-01-01", end: "2026-05-30" },
+        year: "2026",
+        month: "05",
+      }),
+    ).toBe("日期 2026-01-01 至 2026-05-30");
+    expect(
+      planScopeText({
+        ...base,
+        dateRange: { start: "2026-01-01", end: "2026-05-30" },
+        category: "交通",
+      }),
+    ).toBe("日期 2026-01-01 至 2026-05-30、类目 交通");
   });
 });
 

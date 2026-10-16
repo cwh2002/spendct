@@ -40,6 +40,11 @@ export interface TargetedDetailPlan {
   month: string | null;
   /** 年份：YYYY；与 date_iso 前缀 LIKE 匹配 */
   year: string | null;
+  /**
+   * 显式日期范围（「2026-01-01到2026-05-30这段时间」这类问题）。
+   * 命中时 month / year 不参与（日期范围比年月更精确）。
+   */
+  dateRange: { start: string; end: string } | null;
   /** 商户：来自数据库查询的可信名单，绝不直接取用户原文 */
   merchant: string | null;
   /** 类目：必须是 CATEGORY_CODES 常量词表成员 */
@@ -51,8 +56,13 @@ export interface TargetedDetailPlan {
 /** 深夜时段关键词（与 qa-engine 的 NIGHT_SPEND_WORDS 同口径，多一个「熬夜」） */
 const NIGHT_WORDS = ["深夜", "半夜", "凌晨", "夜宵", "熬夜"] as const;
 
-/** 相对月份词：本月 / 这个月 → 当前月；上月 / 上个月 → 前一月（长词先于短词） */
+/**
+ * 相对月份词：本月 / 这个月 → 当前月；上个月 / 上月 → 前一月；
+ * 上上个月 / 前两个月 → 前两月（长词先于短词：「上上个月」含子串「上个月」，
+ * 必须先声明，否则会被错配成前一月）。
+ */
 const RELATIVE_MONTH_WORDS = [
+  { words: ["上上个月", "前两个月"], offset: -2 },
   { words: ["上个月", "上月"], offset: -1 },
   { words: ["这个月", "本月"], offset: 0 },
 ] as const;
@@ -105,27 +115,42 @@ export function buildTargetedDetailPlan(
 ): TargetedDetailPlan {
   const text = question.trim();
 
-  // 月份：相对词 > 阿拉伯数字 > 中文数字
+  // 显式日期范围（「2026-01-01到2026-05-30」）：正则整体匹配两个合法
+  // YYYY-MM-DD 与中间的分隔词，命中时年月槽位让位（日期范围更精确）
+  let dateRange: TargetedDetailPlan["dateRange"] = null;
+  const rangeMatch = text.match(
+    /((?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))\s*(?:到|至|—|–|~)\s*((?:19|20)\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))/,
+  );
+  if (rangeMatch) {
+    const start = rangeMatch[1] ?? "";
+    const end = rangeMatch[2] ?? "";
+    // 起止颠倒（如「05-30到01-01」）视为无效，不进 SQL
+    if (start <= end) dateRange = { start, end };
+  }
+
+  // 月份：相对词 > 阿拉伯数字 > 中文数字（日期范围命中时跳过）
   let month: string | null = null;
-  const now = new Date();
-  for (const entry of RELATIVE_MONTH_WORDS) {
-    if (entry.words.some((word) => text.includes(word))) {
-      month = relativeMonthMm(now, entry.offset);
-      break;
+  if (dateRange === null) {
+    const now = new Date();
+    for (const entry of RELATIVE_MONTH_WORDS) {
+      if (entry.words.some((word) => text.includes(word))) {
+        month = relativeMonthMm(now, entry.offset);
+        break;
+      }
     }
-  }
-  if (month === null) {
-    // (?:^|\D) 边界：数字前必须不是数字，避免「13月」被误切成「3月」
-    const arabic = text.match(/(?:^|\D)([1-9]|1[0-2])\s*月(?:份)?/);
-    if (arabic) month = twoDigitMonth(Number(arabic[1]));
-  }
-  if (month === null) {
-    const chinese = text.match(/(十[一二]|[一二三四五六七八九十])月/);
-    if (chinese) {
-      const token = chinese[1] ?? "";
-      if (token === "十一") month = "11";
-      else if (token === "十二") month = "12";
-      else if (CN_DIGITS[token] !== undefined) month = twoDigitMonth(CN_DIGITS[token]);
+    if (month === null) {
+      // (?:^|\D) 边界：数字前必须不是数字，避免「13月」被误切成「3月」
+      const arabic = text.match(/(?:^|\D)([1-9]|1[0-2])\s*月(?:份)?/);
+      if (arabic) month = twoDigitMonth(Number(arabic[1]));
+    }
+    if (month === null) {
+      const chinese = text.match(/(十[一二]|[一二三四五六七八九十])月/);
+      if (chinese) {
+        const token = chinese[1] ?? "";
+        if (token === "十一") month = "11";
+        else if (token === "十二") month = "12";
+        else if (CN_DIGITS[token] !== undefined) month = twoDigitMonth(CN_DIGITS[token]);
+      }
     }
   }
 
@@ -155,7 +180,7 @@ export function buildTargetedDetailPlan(
     }
   }
 
-  return { month, year, merchant, category, nightOnly };
+  return { month, year, dateRange, merchant, category, nightOnly };
 }
 
 /**
@@ -172,6 +197,13 @@ export function buildTargetedDetailPlan(
  */
 export function buildTargetedDetailSql(plan: TargetedDetailPlan): string | null {
   const conditions: string[] = [];
+  if (plan.dateRange !== null) {
+    // 两个端点必须是纯数字 ISO 日期（YYYY-MM-DD）且起止有序，否则整个计划作废
+    const iso = /^\d{4}-\d{2}-\d{2}$/;
+    if (!iso.test(plan.dateRange.start) || !iso.test(plan.dateRange.end)) return null;
+    if (plan.dateRange.start > plan.dateRange.end) return null;
+    conditions.push(`AND date_iso >= '${plan.dateRange.start}' AND date_iso <= '${plan.dateRange.end}'`);
+  }
   if (plan.month !== null) {
     if (!/^\d{2}$/.test(plan.month)) return null;
     conditions.push(`AND SUBSTR(date_iso, 6, 2) = '${plan.month}'`);
@@ -207,7 +239,9 @@ export function buildTargetedDetailSql(plan: TargetedDetailPlan): string | null 
 /** 计划的命中文案（范围说明）：如「2026 年 5 月」「商户 蜜雪冰城」，组合用顿号连接 */
 export function planScopeText(plan: TargetedDetailPlan): string {
   const parts: string[] = [];
-  if (plan.year !== null && plan.month !== null) {
+  if (plan.dateRange !== null) {
+    parts.push(`日期 ${plan.dateRange.start} 至 ${plan.dateRange.end}`);
+  } else if (plan.year !== null && plan.month !== null) {
     parts.push(`${plan.year} 年 ${Number(plan.month)} 月`);
   } else if (plan.year !== null) {
     parts.push(`${plan.year} 年`);

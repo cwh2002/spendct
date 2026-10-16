@@ -25,12 +25,17 @@ interface LedgerViewProps {
   onAnchor(anchor: FollowUpAnchor): void;
 }
 
-const RANGES: { key: LedgerRange; label: string }[] = [
-  { key: "7d", label: "近 7 天" },
-  { key: "30d", label: "近 30 天" },
-  { key: "90d", label: "近 90 天" },
-  { key: "month", label: "本月" },
-  { key: "all", label: "全部" },
+/**
+ * 日期范围筛选项。windowLabel 是进锚点标签的时间窗关键词写法（08 修订案 A18）：
+ * 与 qa-engine 的 WINDOW_WORDS 对齐，锚点追问才能继承正确的时间窗——
+ * 修复前锚点只写「占所选时间范围」，追问引擎识别不到时间窗，兜底成本月。
+ */
+const RANGES: { key: LedgerRange; label: string; windowLabel: string }[] = [
+  { key: "7d", label: "近 7 天", windowLabel: "近7天" },
+  { key: "30d", label: "近 30 天", windowLabel: "近30天" },
+  { key: "90d", label: "近 90 天", windowLabel: "近90天" },
+  { key: "month", label: "本月", windowLabel: "本月" },
+  { key: "all", label: "全部", windowLabel: "整个账单" },
 ];
 
 const CATEGORY_ORDER = ["餐饮", "购物", "交通", "娱乐", "居住", "其他"] as const;
@@ -278,17 +283,24 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
     [merchantAgg],
   );
 
+  // 当前日期范围的时间窗关键词：写进锚点标签，追问引擎据此继承时间窗
+  const rangeWindowLabel =
+    RANGES.find((item) => item.key === range)?.windowLabel ?? "所选时间范围";
+
   function handleDonutClick(params: ECElementEvent) {
     const percent = typeof params.percent === "number" ? `${params.percent}%` : "";
     onAnchor({
       id: "ledger-donut",
-      label: `${params.name ?? ""} 占所选时间范围 ${percent}`,
+      label: `${params.name ?? ""} 占${rangeWindowLabel}支出 ${percent}`,
     });
   }
 
   function handleMerchantClick(params: ECElementEvent) {
     const cents = typeof params.value === "number" ? Math.round(params.value) : 0;
-    onAnchor({ id: "ledger-merchant", label: `${params.name ?? ""} 合计 ¥${formatYuan(cents)}` });
+    onAnchor({
+      id: "ledger-merchant",
+      label: `${params.name ?? ""} ${rangeWindowLabel}合计 ¥${formatYuan(cents)}`,
+    });
   }
 
   const filtersDirty = range !== "90d" || category !== "all" || merchantQuery.trim() !== "";

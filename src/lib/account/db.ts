@@ -1,8 +1,10 @@
 import { openDB, type DBSchema, type IDBPDatabase } from "idb";
-import type { BookRecord, SessionRecord, UserRecord } from "./types";
+import type { BookRecord, PersistedDatasetRecord, SessionRecord, UserRecord } from "./types";
 
 const DB_NAME = "spendct";
-const DB_VERSION = 1;
+// v2（08 修订案 A18）：新增 datasets store——导入的行数据与体检结果落库，
+// 供刷新后恢复（users/sessions/books 三表结构与 v1 完全一致）
+const DB_VERSION = 2;
 
 interface SpendCtSchema extends DBSchema {
   users: {
@@ -20,6 +22,11 @@ interface SpendCtSchema extends DBSchema {
     value: BookRecord;
     indexes: { "by-userId": string };
   };
+  datasets: {
+    key: string;
+    value: PersistedDatasetRecord;
+    indexes: { "by-txHash": string };
+  };
 }
 
 export type SpendCtDb = IDBPDatabase<SpendCtSchema>;
@@ -34,7 +41,7 @@ export function openDb(): Promise<SpendCtDb> {
   if (!dbPromise) {
     dbPromise = openDB<SpendCtSchema>(DB_NAME, DB_VERSION, {
       upgrade(db) {
-        // v1 首次建库；contains 防御性判断，防止未来版本升级函数重复建表
+        // 首次建库 / 后续版本升级共用；contains 防御性判断，防止升级函数重复建表
         if (!db.objectStoreNames.contains("users")) {
           const users = db.createObjectStore("users", { keyPath: "id" });
           users.createIndex("by-username", "username", { unique: true });
@@ -46,6 +53,11 @@ export function openDb(): Promise<SpendCtDb> {
         if (!db.objectStoreNames.contains("books")) {
           const books = db.createObjectStore("books", { keyPath: "id" });
           books.createIndex("by-userId", "userId");
+        }
+        // v2 新增（08 修订案 A18）：按账本存导入数据集，txHash 索引供订阅同步定位
+        if (!db.objectStoreNames.contains("datasets")) {
+          const datasets = db.createObjectStore("datasets", { keyPath: "bookId" });
+          datasets.createIndex("by-txHash", "txHash");
         }
       },
     });
@@ -114,4 +126,37 @@ export async function createBook(input: { name: string; userId: string | null })
 export async function deleteBook(id: string): Promise<void> {
   const db = await openDb();
   await db.delete("books", id);
+}
+
+// ─────────────────────────── 导入数据集（08 修订案 A18） ───────────────────────────
+
+export async function putDataset(record: PersistedDatasetRecord): Promise<void> {
+  const db = await openDb();
+  await db.put("datasets", record);
+}
+
+export async function getDataset(bookId: string): Promise<PersistedDatasetRecord | undefined> {
+  const db = await openDb();
+  return db.get("datasets", bookId);
+}
+
+/** 最近一次导入的数据集记录（刷新恢复的口径：最新导入优先） */
+export async function getLatestDataset(): Promise<PersistedDatasetRecord | undefined> {
+  const db = await openDb();
+  const all = await db.getAll("datasets");
+  if (all.length === 0) return undefined;
+  return all.reduce((latest, record) => (record.importedAt > latest.importedAt ? record : latest));
+}
+
+/** 按数据集指纹定位记录（体检结果订阅同步用） */
+export async function getDatasetByTxHash(
+  txHash: string,
+): Promise<PersistedDatasetRecord | undefined> {
+  const db = await openDb();
+  return db.getFromIndex("datasets", "by-txHash", txHash);
+}
+
+export async function deleteDataset(bookId: string): Promise<void> {
+  const db = await openDb();
+  await db.delete("datasets", bookId);
 }

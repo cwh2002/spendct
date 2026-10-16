@@ -50,6 +50,10 @@ import { buildCleanCsv, parseBillCsv, stripDuplicates } from "@/lib/import/parse
 import { decodeBillFile } from "@/lib/import/decode-csv";
 import { generateSampleCsv, SAMPLE_BILL_FILE_NAME, SAMPLE_ROW_COUNT } from "@/lib/import/sample-bill";
 import type { ParseResult } from "@/lib/import/types";
+import {
+  restorePipelineSnapshot,
+  saveImportedDataset,
+} from "@/lib/persistence/pipeline-persistence";
 import { usePipeline } from "@/lib/pipeline/store";
 
 import { OcrDropzone, type OcrRecognizedResult } from "./ocr-dropzone";
@@ -631,6 +635,9 @@ export function UploadWorkspace() {
     if (!result || result.rows.length === 0 || importStatus === "importing") return;
     setState((prev) => ({ ...prev, importStatus: "importing", importError: "" }));
     try {
+      // 会话恢复闸门（08 修订案 A18）：页面挂载时可能正在恢复上次数据集，
+      // 先等它结束再装配，避免两个 initDataset 互相覆盖
+      await restorePipelineSnapshot();
       const deduped = stripDuplicates(result.rows);
       const csvText = buildCleanCsv(deduped);
       const conn = await getDuckDB();
@@ -639,7 +646,7 @@ export function UploadWorkspace() {
       const auth = useAuth.getState();
       await auth.hydrate().catch(() => {});
       const userId = useAuth.getState().user?.id ?? null;
-      await registerImportedBook({
+      const book = await registerImportedBook({
         name: fileName || "未命名账单",
         userId,
         rowCount: imported.rowCount,
@@ -656,6 +663,9 @@ export function UploadWorkspace() {
         const datasetTxHash = await hashCleanRows(cleaned);
         await initDataset(conn, cleaned);
         usePipeline.getState().setDataset(datasetTxHash, "upload");
+        // 会话持久化（08 修订案 A18）：行数据与指纹落 IndexedDB，
+        // 刷新后自动恢复；失败只降级，不阻断跳转
+        if (book) await saveImportedDataset({ book, txHash: datasetTxHash, rows: cleaned });
       } catch (assemblyErr) {
         // 降级边界：装配任一步失败都不阻断跳转。检查页侧 verifySchema 会因
         // schema 缺失报错并给出「重新导入」提示，用户重导一次即可恢复；

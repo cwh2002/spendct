@@ -26,6 +26,7 @@ const TREND_MONTHS_IN_TEXT = 12;
  *   0 全期数据范围（首末日期 + 支出笔数）｜1 全期支出类目排行
  *   2 全期商户 Top10｜3 逐月收支趋势｜4 单笔支出金额分布
  *   5 全期收入类目排行｜6 深夜消费逐月（≤50 月）｜7 冲动消费按类目（≤12 类目，全期不截断）｜8 订阅候选｜9 收支总额
+ *   10 各类目支出日期范围（最早/最晚支出日，≤12 类目，08 修订案 A18）
  */
 export function buildDeepAnalysisQueries(): string[] {
   return [
@@ -39,11 +40,12 @@ export function buildDeepAnalysisQueries(): string[] {
     `SELECT category, SUM(amount_cents), COUNT(*) FROM v_impulse_events GROUP BY category LIMIT 50`,
     `SELECT merchant, MAX(avg_cents), SUM(n), MAX(months_active) FROM v_subscription_candidates GROUP BY merchant ORDER BY SUM(n) DESC LIMIT 10`,
     `SELECT direction, SUM(amount_cents) FROM transactions WHERE status = 'paid' GROUP BY direction`,
+    `SELECT category, COUNT(*), MIN(date_iso), MAX(date_iso) FROM transactions WHERE direction = 'expense' AND status = 'paid' GROUP BY category LIMIT 50`,
   ];
 }
 
 /**
- * 深度分析上下文文本：固定 10 组白名单统计拼成中文文本块，每条以「·」开头。
+ * 深度分析上下文文本：固定 11 组白名单统计拼成中文文本块，每条以「·」开头。
  * 口径说明（与 qa-engine.buildAggregateContext 的日常兜底互补）：
  * - 时间口径全期，面向「消费习惯 / 结构 / 趋势」类自由分析问题；
  * - 类目与商户排行带金额与笔数，逐月趋势只保留最近 12 个月进文本；
@@ -84,12 +86,25 @@ export async function buildDeepAnalysisContext(runSql: SqlRunner): Promise<strin
     push(`· 数据范围：${first} 至 ${last}，共 ${txCount} 笔支出`);
   }
 
-  // 组 2：全期支出类目排行（12 类目全出，≤50 行上限保护）
+  // 组 2：全期支出类目排行（12 类目全出，≤50 行上限保护）。
+  // 组 11（查询下标 10）：各类目最早/最晚支出日期，并入排行行——
+  // 「某段时间有没有某类支出」这类问题，模型可直接对照日期范围回答，
+  // 不再说「不能确定」（08 修订案 A18）。
   const categoryRows = at(1);
   if (categoryRows.length > 0) {
-    const parts = categoryRows.map(
-      (row) => `「${String(valAt(row, 0) ?? "")}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔）`,
-    );
+    const rangeByCategory = new Map<string, string>();
+    for (const row of at(10)) {
+      const name = String(valAt(row, 0) ?? "");
+      const first = String(valAt(row, 2) ?? "");
+      const last = String(valAt(row, 3) ?? "");
+      if (name === "" || (first === "" && last === "")) continue;
+      rangeByCategory.set(name, `${first} 至 ${last}`);
+    }
+    const parts = categoryRows.map((row) => {
+      const name = String(valAt(row, 0) ?? "");
+      const range = rangeByCategory.get(name);
+      return `「${name}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔${range ? `，${range}` : ""}）`;
+    });
     push(`· 全期支出类目：${parts.join("、")}`);
   }
 

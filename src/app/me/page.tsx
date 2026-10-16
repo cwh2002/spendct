@@ -42,6 +42,7 @@ import type { BookRecord, UserRecord } from "@/lib/account/types";
 import { DEMO_ACCOUNT_META } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { featureFlags } from "@/lib/feature-flags";
+import { discardDatasetForBook } from "@/lib/persistence/pipeline-persistence";
 import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
 import { useRankTier } from "@/lib/rank";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
@@ -667,6 +668,8 @@ function MeContent() {
     setDeleteBookBusy(true);
     try {
       await deleteBook(target.id);
+      // 账本删除即数据删除（08 修订案 A18）：联动清除本地持久化的数据集与体检结果
+      await discardDatasetForBook(target.id);
       if (activeBookId === target.id) {
         try {
           localStorage.removeItem(ACTIVE_BOOK_KEY);
@@ -1031,7 +1034,7 @@ function MeContent() {
           title="删除账本？"
           description={
             <>
-              将删除账本「{deleteBookTarget.name}」的记录；已导入的账单数据仍保留在你的浏览器里。
+              将删除账本「{deleteBookTarget.name}」的记录；本地保存的该账本账单数据与体检结果会一并清除。
             </>
           }
           confirmLabel="确认删除"

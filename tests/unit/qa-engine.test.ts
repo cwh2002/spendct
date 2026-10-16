@@ -3,7 +3,8 @@
  *
  * 覆盖契约要求的全部断言点：
  * 1. analyzeQuestion：每个意图至少 3 种说法 + 槽位断言、意图优先级、
- *    误报检查（闲聊与无关输入返回 null）、锚点槽位继承、复合说法；
+ *    误报检查（闲聊与无关输入返回 null）、锚点槽位继承、复合说法，
+ *    以及 A18 时间窗扩展（整年/上上个月/最近7天/指定月份 + monthRef 落点）；
  * 2. 每条意图 SQL（buildIntentQueries / buildContextQueries 在固定时钟下生成）
  *    逐一通过 precheckAggregateSql 白名单预检；
  * 3. answerLocalQuestion：fake runner 按 SQL 内容正则分发夹具行（金额用 bigint、
@@ -252,6 +253,84 @@ describe("analyzeQuestion 意图解析", () => {
     ).toEqual({ kind: "category_spend", category: "交通", window: "last_month" });
   });
 
+  it("A18 时间窗扩展：整年/整个账单 → this_year，上上个月 → two_months_ago，最近7天 → last_7d", () => {
+    expect(analyzeQuestion("整年账单的交通是那几笔费用", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "this_year",
+    });
+    expect(analyzeQuestion("整个账单的交通花了多少", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "this_year",
+    });
+    expect(analyzeQuestion("全部账单花了多少", null)).toEqual({
+      kind: "month_total",
+      window: "this_year",
+    });
+    expect(analyzeQuestion("上上个月的交通花了多少", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "two_months_ago",
+    });
+    expect(analyzeQuestion("前两个月花了多少", null)).toEqual({
+      kind: "month_total",
+      window: "two_months_ago",
+    });
+    expect(analyzeQuestion("最近7天花了多少", null)).toEqual({
+      kind: "month_total",
+      window: "last_7d",
+    });
+  });
+
+  it("A18 指定月份：阿拉伯/中文写法与年份归属都落到 specific_month + monthRef", () => {
+    expect(analyzeQuestion("1月份交通花了多少", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "specific_month",
+      monthRef: { month: 1, year: "current" },
+    });
+    expect(analyzeQuestion("去年3月的交通", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "specific_month",
+      monthRef: { month: 3, year: "last" },
+    });
+    expect(analyzeQuestion("2025年4月花了多少", null)).toEqual({
+      kind: "month_total",
+      window: "specific_month",
+      monthRef: { month: 4, year: 2025 },
+    });
+    // 中文月份按「十一/十二先于十/一/二」的顺序命中
+    expect(analyzeQuestion("十一月交通花了多少", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "specific_month",
+      monthRef: { month: 11, year: "current" },
+    });
+    expect(analyzeQuestion("十二月交通花了多少", null)?.monthRef).toEqual({
+      month: 12,
+      year: "current",
+    });
+    // 非指定月份的时间窗不带 monthRef 字段（槽位按需出现）
+    expect(analyzeQuestion("上个月交通花了多少", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "last_month",
+    });
+  });
+
+  it("A18 锚点继承：整个账单/近7天标签补全时间窗", () => {
+    expect(
+      analyzeQuestion("交通花了多少", { id: "card-1", label: "交通 占整个账单支出 0.82%" }),
+    ).toEqual({ kind: "category_spend", category: "交通", window: "this_year" });
+    expect(analyzeQuestion("花了多少", { id: "card-1", label: "打车 · 近7天 ¥10.00" })).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "last_7d",
+    });
+  });
+
   it("EXAMPLE_QUESTIONS：6 个示例问题全部可被本地意图识别", () => {
     expect(EXAMPLE_QUESTIONS).toHaveLength(6);
     for (const question of EXAMPLE_QUESTIONS) {
@@ -263,7 +342,16 @@ describe("analyzeQuestion 意图解析", () => {
 // ─────────────────────────── SQL 白名单预检 ───────────────────────────
 
 describe("意图 SQL 全部通过 precheckAggregateSql", () => {
-  const WINDOWS: TimeWindow[] = ["this_month", "last_month", "this_year", "last_30d", "last_90d"];
+  const WINDOWS: TimeWindow[] = [
+    "this_month",
+    "last_month",
+    "two_months_ago",
+    "this_year",
+    "last_7d",
+    "last_30d",
+    "last_90d",
+    "specific_month",
+  ];
 
   it("每种意图 × 每类时间窗的 SQL 预检 ok:true", () => {
     // 构造器给 intent 参数提供上下文类型，避免 map 回调里 kind 被推断成 string
@@ -288,6 +376,29 @@ describe("意图 SQL 全部通过 precheckAggregateSql", () => {
       mk("budget+cat/this_month", { kind: "budget", category: "餐饮", window: "this_month" }),
       mk("budget/last_30d（按月粒度预算无按天口径，转在线兜底）", { kind: "budget", window: "last_30d" }, false),
       mk("budget/last_90d（按月粒度预算无按天口径，转在线兜底）", { kind: "budget", window: "last_90d" }, false),
+      mk("budget/last_7d（按月粒度预算无按天口径，转在线兜底）", { kind: "budget", window: "last_7d" }, false),
+      mk("budget/two_months_ago", { kind: "budget", window: "two_months_ago" }),
+      mk("night_spend/two_months_ago", { kind: "night_spend", window: "two_months_ago" }),
+      mk("night_spend/specific_month", { kind: "night_spend", window: "specific_month" }),
+      mk("night_spend/last_7d（无按天口径，转在线兜底）", { kind: "night_spend", window: "last_7d" }, false),
+      // A18：指定月份带 monthRef 落点（去年 1 月 / 显式 2025 年 3 月）
+      mk("month_total/specific_month+去年1月", {
+        kind: "month_total",
+        window: "specific_month",
+        monthRef: { month: 1, year: "last" },
+      }),
+      mk("category_spend/specific_month+2025年3月", {
+        kind: "category_spend",
+        category: "交通",
+        window: "specific_month",
+        monthRef: { month: 3, year: 2025 },
+      }),
+      mk("budget/specific_month+2025年3月", {
+        kind: "budget",
+        category: "餐饮",
+        window: "specific_month",
+        monthRef: { month: 3, year: 2025 },
+      }),
       ...WINDOWS.map((w) => mk(`overview/${w}`, { kind: "overview", window: w })),
     ];
 
@@ -407,6 +518,66 @@ describe("answerLocalQuestion 答案文案（数字全部来自夹具行）", ()
     expect(answer).toEqual({ kind: "data", text: "最近90天「餐饮」支出 ¥450.00 元，共 9 笔。" });
   });
 
+  it("month_total 整年（A18「整年/整个账单」词）：按年汇总", async () => {
+    const runner = makeRunner([
+      {
+        match: /v_monthly_summary/,
+        rows: [{ month: MS_OCT, expense_cents: 96338n, income_cents: 0n, expense_tx: 89n }],
+      },
+    ]);
+    const answer = await answerLocalQuestion(runner, { kind: "month_total", window: "this_year" }, null);
+    expect(answer).toEqual({ kind: "data", text: "今年共支出 ¥963.38 元，共 89 笔。" });
+  });
+
+  it("month_total 最近7天：日粒度视图求和", async () => {
+    const runner = makeRunner([
+      {
+        match: /v_daily_expense/,
+        rows: [
+          { date_iso: "2026-10-13", total_cents: 10000n, tx_count: 3n },
+          { date_iso: "2026-10-14", total_cents: 5000n, tx_count: 1n },
+        ],
+      },
+    ]);
+    const answer = await answerLocalQuestion(runner, { kind: "month_total", window: "last_7d" }, null);
+    expect(answer).toEqual({ kind: "data", text: "最近7天共支出 ¥150.00 元，共 4 笔。" });
+  });
+
+  it("category_spend 上上个月：独立月窗取数", async () => {
+    const runner = makeRunner([
+      {
+        match: /v_category_monthly/,
+        rows: [{ month: MS_OCT, category: "交通", expense_cents: 16650n, tx_count: 16n }],
+      },
+    ]);
+    const answer = await answerLocalQuestion(
+      runner,
+      { kind: "category_spend", category: "交通", window: "two_months_ago" },
+      null,
+    );
+    expect(answer).toEqual({ kind: "data", text: "上上个月「交通」支出 ¥166.50 元，共 16 笔。" });
+  });
+
+  it("category_spend 指定月份：回答里写「2025年3月」", async () => {
+    const runner = makeRunner([
+      {
+        match: /v_category_monthly/,
+        rows: [{ month: MS_OCT, category: "交通", expense_cents: 96338n, tx_count: 89n }],
+      },
+    ]);
+    const answer = await answerLocalQuestion(
+      runner,
+      {
+        kind: "category_spend",
+        category: "交通",
+        window: "specific_month",
+        monthRef: { month: 3, year: 2025 },
+      },
+      null,
+    );
+    expect(answer).toEqual({ kind: "data", text: "2025年3月「交通」支出 ¥963.38 元，共 89 笔。" });
+  });
+
   it("top_merchant 近90天：Top3 精确文案", async () => {
     const runner = makeRunner([
       {
@@ -485,6 +656,43 @@ describe("answerLocalQuestion 答案文案（数字全部来自夹具行）", ()
     expect(answer).toEqual({
       kind: "data",
       text: "最近30天「餐饮」支出 ¥112.30 元，前一个30天 ¥100.00 元，环比涨 ¥12.30 元（+12.3%）。",
+    });
+  });
+
+  it("mom_compare 上上个月：上一期措辞为「上上上个月」", async () => {
+    const runner = makeRunner([
+      {
+        match: /v_mom_category/,
+        rows: [{ category: "交通", cur_cents: 5000n, prev_cents: null, change_ratio: null }],
+      },
+    ]);
+    const answer = await answerLocalQuestion(
+      runner,
+      { kind: "mom_compare", category: "交通", window: "two_months_ago" },
+      null,
+    );
+    expect(answer).toEqual({
+      kind: "data",
+      text: "上上个月「交通」支出 ¥50.00 元；上上上个月没有支出记录，无法计算环比。",
+    });
+  });
+
+  it("mom_compare 最近7天：前一个7天对照", async () => {
+    const start7 = isoDaysAgo(7);
+    const start14 = isoDaysAgo(14);
+    const runner = makeRunner([
+      { match: /v_impulse_events/, rows: [] },
+      { match: new RegExp(`date_iso >= '${start7}'`), rows: [{ category: "餐饮", cur: 11230n, n: 10n }] },
+      { match: new RegExp(`date_iso >= '${start14}'`), rows: [{ category: "餐饮", prev: 10000n, n: 9n }] },
+    ]);
+    const answer = await answerLocalQuestion(
+      runner,
+      { kind: "mom_compare", category: "餐饮", window: "last_7d" },
+      null,
+    );
+    expect(answer).toEqual({
+      kind: "data",
+      text: "最近7天「餐饮」支出 ¥112.30 元，前一个7天 ¥100.00 元，环比涨 ¥12.30 元（+12.3%）。",
     });
   });
 
@@ -631,6 +839,31 @@ describe("answerLocalQuestion 答案文案（数字全部来自夹具行）", ()
       null,
     );
     expect(answer).toEqual({ kind: "no-data", text: "本月没有「餐饮」支出记录。" });
+  });
+
+  it("no-data 上上个月：维度为空文案带上上个月", async () => {
+    const runner = makeRunner([{ match: /v_category_monthly/, rows: [] }]);
+    const answer = await answerLocalQuestion(
+      runner,
+      { kind: "category_spend", category: "交通", window: "two_months_ago" },
+      null,
+    );
+    expect(answer).toEqual({ kind: "no-data", text: "上上个月没有「交通」支出记录。" });
+  });
+
+  it("no-data 指定月份：2025年1月没有交通支出记录", async () => {
+    const runner = makeRunner([{ match: /v_category_monthly/, rows: [] }]);
+    const answer = await answerLocalQuestion(
+      runner,
+      {
+        kind: "category_spend",
+        category: "交通",
+        window: "specific_month",
+        monthRef: { month: 1, year: 2025 },
+      },
+      null,
+    );
+    expect(answer).toEqual({ kind: "no-data", text: "2025年1月没有「交通」支出记录。" });
   });
 
   it("主查询抛错返回 unhandled：引擎故障转在线兜底，不假称「还没有账单数据」", async () => {

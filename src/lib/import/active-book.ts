@@ -25,8 +25,12 @@ export interface RegisterImportedBookInput {
  * 登记一次成功导入：写入账本记录 + 标记为当前激活账本。
  * 任一环节失败只降级（不写登记），不向上抛错——DuckDB 已导入成功，
  * 账本列表缺失一条记录不应阻断「开始体检」。
+ * 返回登记成功的 BookRecord（08 修订案 A18：调用方拿它把行数据按 bookId
+ * 落进 datasets store）；登记失败返回 null，调用方跳过数据集持久化。
  */
-export async function registerImportedBook(input: RegisterImportedBookInput): Promise<void> {
+export async function registerImportedBook(
+  input: RegisterImportedBookInput,
+): Promise<BookRecord | null> {
   const book: BookRecord = {
     id: crypto.randomUUID(),
     name: input.name,
@@ -39,11 +43,12 @@ export async function registerImportedBook(input: RegisterImportedBookInput): Pr
     await db.put("books", book);
   } catch {
     // IndexedDB 不可用（隐私模式等）：账本登记失败，导入本身不受影响
-    return;
+    return null;
   }
   try {
     localStorage.setItem(ACTIVE_BOOK_KEY, book.id);
   } catch {
     // localStorage 不可用时只缺「当前激活账本」标记，账本记录已落库
   }
+  return book;
 }

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { PipelineRestore } from "@/components/layout/pipeline-restore";
 import { Providers } from "@/components/layout/providers";
 import { Shell } from "@/components/layout/shell";
 import { featureFlags } from "@/lib/feature-flags";
@@ -32,6 +33,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         ) : null}
         <Providers>
+          {/* 会话恢复常驻组件（08 修订案 A18）：无可见 UI，只做恢复与订阅 */}
+          <PipelineRestore />
           <Shell>{children}</Shell>
         </Providers>
       </body>

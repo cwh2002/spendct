@@ -30,8 +30,27 @@ import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
 // ─────────────────────────── 公共类型 ───────────────────────────
 
-/** 时间窗：本月 / 上个月 / 今年 / 最近30天 / 最近90天 */
-export type TimeWindow = "this_month" | "last_month" | "this_year" | "last_30d" | "last_90d";
+/**
+ * 时间窗：本月 / 上个月 / 上上个月 / 今年 / 最近7天 / 最近30天 / 最近90天 /
+ * 指定月份（「1月份」「去年3月」这类问题里的具体月份，落点见 SpecificMonthRef）。
+ * 新增值来自 08 修订案 A18：整年/整个账单等说法归入今年，上上个月独立成窗，
+ * 具体月份问题不再被兜底成本月。
+ */
+export type TimeWindow =
+  | "this_month"
+  | "last_month"
+  | "two_months_ago"
+  | "this_year"
+  | "last_7d"
+  | "last_30d"
+  | "last_90d"
+  | "specific_month";
+
+/** 「N月」类问题解析出的具体月份：month 为 1-12，year 的 current/last 在回答时刻解析 */
+export interface SpecificMonthRef {
+  month: number;
+  year: number | "current" | "last";
+}
 
 /** 本地可回答的九类账单问题 */
 export type QaKind =
@@ -50,6 +69,11 @@ export interface QaIntent {
   kind: QaKind;
   category?: CategoryCode;
   window: TimeWindow;
+  /**
+   * specific_month 的落点。只有 window === "specific_month" 时才存在，
+   * 其余时间窗不带此字段（契约断言：槽位字段按需出现）。
+   */
+  monthRef?: SpecificMonthRef;
   /** 预留槽位：当前版本不参与判定与取数，保留供后续按商户追问扩展 */
   merchant?: string;
 }
@@ -78,11 +102,20 @@ const CATEGORY_ALIASES: readonly { category: CategoryCode; words: readonly strin
   { category: "其他", words: ["其他"] },
 ];
 
-/** 时间窗关键词：按声明顺序匹配（“最近90天”等长词先于短词） */
+/**
+ * 时间窗关键词：按声明顺序匹配，长词与含短词的词必须先声明
+ * （「上上个月」含子串「上个月」，必须排在「上个月」之前；
+ * 「最近90天」同理排在「最近30天」前）。
+ */
 const WINDOW_WORDS: readonly { window: TimeWindow; words: readonly string[] }[] = [
   { window: "last_90d", words: ["最近90天", "近90天"] },
   { window: "last_30d", words: ["最近30天", "近30天"] },
-  { window: "this_year", words: ["今年", "全年"] },
+  { window: "last_7d", words: ["最近7天", "近7天"] },
+  {
+    window: "this_year",
+    words: ["今年", "全年", "整年", "全期", "整个账单", "全部账单", "所有账单", "全账单"],
+  },
+  { window: "two_months_ago", words: ["上上个月", "前两个月"] },
   { window: "last_month", words: ["上个月", "上月"] },
   { window: "this_month", words: ["这个月", "本月"] },
 ];
@@ -134,23 +167,54 @@ const MONTH_TOTAL_WORDS = ["花了", "总共", "一共", "支出", "花费", "�
 export const DATASET_EMPTY_TEXT =
   "还没有账单数据，先到「上传账单」导入一份账单，我就能回答这些问题了。";
 
-/** 时间窗的答案措辞 */
-const WINDOW_NAMES: Record<TimeWindow, string> = {
-  this_month: "本月",
-  last_month: "上个月",
-  this_year: "今年",
-  last_30d: "最近30天",
-  last_90d: "最近90天",
-};
+/** 时间窗的答案措辞（specific_month 按回答时刻解析年份，如「2026年1月」） */
+function windowLabel(intent: QaIntent, now: Date): string {
+  switch (intent.window) {
+    case "this_month":
+      return "本月";
+    case "last_month":
+      return "上个月";
+    case "two_months_ago":
+      return "上上个月";
+    case "this_year":
+      return "今年";
+    case "last_7d":
+      return "最近7天";
+    case "last_30d":
+      return "最近30天";
+    case "last_90d":
+      return "最近90天";
+    case "specific_month":
+      if (!intent.monthRef) return "该月";
+      return `${specificMonthYear(intent.monthRef, now)}年${intent.monthRef.month}月`;
+  }
+}
 
-/** 环比比较里“上一期”的措辞（按时间窗区分） */
-const PREV_WINDOW_NAMES: Record<TimeWindow, string> = {
-  this_month: "上月",
-  last_month: "上上个月",
-  this_year: "去年",
-  last_30d: "前一个30天",
-  last_90d: "前一个90天",
-};
+/** 环比比较里“上一期”的措辞（按时间窗区分；指定月份的上一期是其前一个自然月） */
+function prevWindowLabel(intent: QaIntent, now: Date): string {
+  switch (intent.window) {
+    case "this_month":
+      return "上月";
+    case "last_month":
+      return "上上个月";
+    case "two_months_ago":
+      return "上上上个月";
+    case "this_year":
+      return "去年";
+    case "last_7d":
+      return "前一个7天";
+    case "last_30d":
+      return "前一个30天";
+    case "last_90d":
+      return "前一个90天";
+    case "specific_month": {
+      if (!intent.monthRef) return "前一月";
+      const year = specificMonthYear(intent.monthRef, now);
+      const prev = new Date(year, intent.monthRef.month - 2, 1);
+      return `${prev.getFullYear()}年${prev.getMonth() + 1}月`;
+    }
+  }
+}
 
 /** 空态提问建议（6 个示例问题 chips，全部可被本地规则回答） */
 export const EXAMPLE_QUESTIONS: readonly string[] = [
@@ -185,6 +249,54 @@ function detectWindow(text: string): TimeWindow | null {
   return null;
 }
 
+/**
+ * 中文数字月份：十一 / 十二必须排在 十 / 一 / 二 之前——
+ * 「十一月」含子串「一月」，顺序命中才能取到正确的月份。
+ */
+const CHINESE_MONTH_WORDS: readonly { month: number; words: readonly string[] }[] = [
+  { month: 12, words: ["十二"] },
+  { month: 11, words: ["十一"] },
+  { month: 10, words: ["十"] },
+  { month: 9, words: ["九"] },
+  { month: 8, words: ["八"] },
+  { month: 7, words: ["七"] },
+  { month: 6, words: ["六"] },
+  { month: 5, words: ["五"] },
+  { month: 4, words: ["四"] },
+  { month: 3, words: ["三"] },
+  { month: 2, words: ["二"] },
+  { month: 1, words: ["一"] },
+];
+
+/** 文本里的「YYYY 年」（只认 19xx/20xx 带年字的写法，避免金额等裸数字误判） */
+const YEAR_IN_TEXT = /((?:19|20)\d{2})\s*年/;
+
+/**
+ * 识别问题里的具体月份（「1月份」「3 月」「一月」「去年6月」「2025年4月」），
+ * 找不到返回 null。年份解析规则：文本带「YYYY年」用该年；带「去年」用上一自然年；
+ * 否则记 current（回答时刻所在年，由调用方解析）。纯函数：只做字符串匹配，
+ * 不触碰时钟——year 的 current/last 解析推迟到取数阶段。
+ */
+function detectSpecificMonth(text: string): SpecificMonthRef | null {
+  // 中文月份：词表按「十一/十二优先于 十/一/二」的顺序声明，命中即止
+  for (const entry of CHINESE_MONTH_WORDS) {
+    if (entry.words.some((word) => text.includes(`${word}月`))) {
+      return { month: entry.month, year: resolveMonthYear(text) };
+    }
+  }
+  // 阿拉伯数字月份：前面必须不是数字（避免「13月」被切成「3月」），可带空格
+  const arabic = /(?:^|\D)(1[0-2]|[1-9])\s*月(?:份)?/.exec(text);
+  if (!arabic) return null;
+  return { month: Number(arabic[1]), year: resolveMonthYear(text) };
+}
+
+/** 具体月份的年份归属：显式「YYYY年」> 「去年」> 回答时刻所在年 */
+function resolveMonthYear(text: string): number | "current" | "last" {
+  if (text.includes("去年")) return "last";
+  const yearMatch = YEAR_IN_TEXT.exec(text);
+  return yearMatch ? Number(yearMatch[1]) : "current";
+}
+
 // ─────────────────────────── 意图解析 ───────────────────────────
 
 /**
@@ -209,39 +321,40 @@ export function analyzeQuestion(
 
   const anchorLabel = anchor ? anchor.label : "";
   const category = detectCategory(normalized) ?? detectCategory(anchorLabel);
-  const window = detectWindow(normalized) ?? detectWindow(anchorLabel) ?? "this_month";
+  // 问题里的具体月份（如「1月份」）比任何时间窗关键词都更精确，优先取；
+  // 其次问题里的时间窗词，再锚点标签里的时间窗词，最后默认本月。
+  const specificMonth = detectSpecificMonth(normalized);
+  const window = specificMonth
+    ? "specific_month"
+    : (detectWindow(normalized) ?? detectWindow(anchorLabel) ?? "this_month");
 
+  let intent: QaIntent | null;
   if (hasAnyWord(normalized, BALANCE_WORDS)) {
-    return { kind: "balance", window };
-  }
-  if (hasAnyWord(normalized, SUBSCRIPTION_WORDS)) {
+    intent = { kind: "balance", window };
+  } else if (hasAnyWord(normalized, SUBSCRIPTION_WORDS)) {
     // 订阅意图的类目槽位恒为「订阅」，与问题里带出的其他类目词无关
-    return { kind: "subscription", category: "订阅", window };
-  }
-  if (hasAnyWord(normalized, TOP_MERCHANT_WORDS)) {
-    return category ? { kind: "top_merchant", category, window } : { kind: "top_merchant", window };
-  }
-  if (hasAnyWord(normalized, MOM_COMPARE_WORDS)) {
-    return category ? { kind: "mom_compare", category, window } : { kind: "mom_compare", window };
-  }
-  if (hasAnyWord(normalized, NIGHT_SPEND_WORDS)) {
-    return { kind: "night_spend", window };
-  }
-  if (hasAnyWord(normalized, BUDGET_WORDS)) {
-    return category ? { kind: "budget", category, window } : { kind: "budget", window };
-  }
-  if (hasAnyWord(normalized, OVERVIEW_WORDS)) {
-    return { kind: "overview", window };
-  }
-  if (category !== null) {
+    intent = { kind: "subscription", category: "订阅", window };
+  } else if (hasAnyWord(normalized, TOP_MERCHANT_WORDS)) {
+    intent = category ? { kind: "top_merchant", category, window } : { kind: "top_merchant", window };
+  } else if (hasAnyWord(normalized, MOM_COMPARE_WORDS)) {
+    intent = category ? { kind: "mom_compare", category, window } : { kind: "mom_compare", window };
+  } else if (hasAnyWord(normalized, NIGHT_SPEND_WORDS)) {
+    intent = { kind: "night_spend", window };
+  } else if (hasAnyWord(normalized, BUDGET_WORDS)) {
+    intent = category ? { kind: "budget", category, window } : { kind: "budget", window };
+  } else if (hasAnyWord(normalized, OVERVIEW_WORDS)) {
+    intent = { kind: "overview", window };
+  } else if (category !== null) {
     // 含类目词且含「花/支出/多少/几笔」，或只出现类目词本身，都归为类目支出
     // （类目词也可能来自锚点：如锚点「外卖 · 近30天」+ 问题「花了多少」）。
-    return { kind: "category_spend", category, window };
+    intent = { kind: "category_spend", category, window };
+  } else if (hasAnyWord(normalized, MONTH_TOTAL_WORDS)) {
+    intent = { kind: "month_total", window };
+  } else {
+    intent = null;
   }
-  if (hasAnyWord(normalized, MONTH_TOTAL_WORDS)) {
-    return { kind: "month_total", window };
-  }
-  return null;
+  // specific_month 的落点只在取到具体月份时带上；其余窗口不出现 monthRef 字段
+  return intent && specificMonth ? { ...intent, monthRef: specificMonth } : intent;
 }
 
 // ─────────────────────────── 本地日期键（纯函数，本地时钟口径） ───────────────────────────
@@ -262,14 +375,22 @@ interface DateRange {
   end: string;
 }
 
-function windowDateRange(window: TimeWindow, now: Date): DateRange {
+function windowDateRange(window: TimeWindow, now: Date, monthRef?: SpecificMonthRef): DateRange {
   switch (window) {
     case "this_month":
       return { start: monthStartKey(now, 0), end: monthStartKey(now, 1) };
     case "last_month":
       return { start: monthStartKey(now, -1), end: monthStartKey(now, 0) };
+    case "two_months_ago":
+      return { start: monthStartKey(now, -2), end: monthStartKey(now, -1) };
+    case "specific_month": {
+      const key = monthRef ? specificMonthKey(monthRef, now) : monthStartKey(now, 0);
+      return { start: key, end: nextMonthKey(key) };
+    }
     case "this_year":
       return { start: `${now.getFullYear()}-01-01`, end: `${now.getFullYear() + 1}-01-01` };
+    case "last_7d":
+      return { start: dayStartKey(now, -7), end: dayStartKey(now, 0) };
     case "last_30d":
       return { start: dayStartKey(now, -30), end: dayStartKey(now, 0) };
     case "last_90d":
@@ -277,9 +398,48 @@ function windowDateRange(window: TimeWindow, now: Date): DateRange {
   }
 }
 
-/** 是否是「本月 / 上个月」两个月窗（这两个窗有按月粒度的视图可用） */
+/** 具体月份归属的年份（current/last 按回答时刻解析） */
+function specificMonthYear(ref: SpecificMonthRef, now: Date): number {
+  if (ref.year === "current") return now.getFullYear();
+  if (ref.year === "last") return now.getFullYear() - 1;
+  return ref.year;
+}
+
+/** 具体月份 → YYYY-MM-01 */
+function specificMonthKey(ref: SpecificMonthRef, now: Date): string {
+  return fmtDate(new Date(specificMonthYear(ref, now), ref.month - 1, 1));
+}
+
+/** 月窗起始键的后一个月起始键（作日期范围的右开端点） */
+function nextMonthKey(monthKey: string): string {
+  const [year = 0, month = 1] = monthKey.split("-").map(Number);
+  return fmtDate(new Date(year, month, 1));
+}
+
+/** 是否是按月粒度的窗口（这些窗有按月粒度的视图可用） */
 function isMonthWindow(window: TimeWindow): boolean {
-  return window === "this_month" || window === "last_month";
+  return (
+    window === "this_month" ||
+    window === "last_month" ||
+    window === "two_months_ago" ||
+    window === "specific_month"
+  );
+}
+
+/** 月窗对应的 month 键（YYYY-MM-01）：四个按月窗口各自解析 */
+function monthWindowKey(intent: QaIntent, now: Date): string {
+  switch (intent.window) {
+    case "this_month":
+      return monthStartKey(now, 0);
+    case "last_month":
+      return monthStartKey(now, -1);
+    case "two_months_ago":
+      return monthStartKey(now, -2);
+    case "specific_month":
+      return intent.monthRef ? specificMonthKey(intent.monthRef, now) : monthStartKey(now, 0);
+    default:
+      return monthStartKey(now, 0);
+  }
 }
 
 // ─────────────────────────── SQL 生成（全部走白名单聚合口径） ───────────────────────────
@@ -313,17 +473,15 @@ function isMonthWindow(window: TimeWindow): boolean {
  */
 export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
   const { kind, category, window } = intent;
-  const curMonth = monthStartKey(now, 0);
-  const prevMonth = monthStartKey(now, -1);
   const yearStart = `${now.getFullYear()}-01-01`;
-  const range = windowDateRange(window, now);
+  const range = windowDateRange(window, now, intent.monthRef);
   const catCond = category ? ` AND category = '${category}'` : "";
 
   switch (kind) {
     case "month_total": {
       // 月度总额：按 month 过滤本月/上个月，今年按年首起汇总，30/90 天走日粒度视图
       if (isMonthWindow(window)) {
-        const month = window === "this_month" ? curMonth : prevMonth;
+        const month = monthWindowKey(intent, now);
         return [
           `SELECT month, SUM(expense_cents), SUM(income_cents), SUM(expense_tx) FROM v_monthly_summary WHERE month = '${month}' GROUP BY month`,
         ];
@@ -339,15 +497,15 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
     }
 
     case "balance": {
-      // 结余需要收入与支出两侧：30/90 天窗按 direction 分组直接汇总，
+      // 结余需要收入与支出两侧：7/30/90 天窗按 direction 分组直接汇总，
       // 月度与年度走 v_monthly_summary（income_cents 在内）
-      if (window === "last_30d" || window === "last_90d") {
+      if (window === "last_7d" || window === "last_30d" || window === "last_90d") {
         return [
           `SELECT direction, SUM(amount_cents), COUNT(*) FROM transactions WHERE status = 'paid' AND date_iso >= '${range.start}' GROUP BY direction`,
         ];
       }
       if (isMonthWindow(window)) {
-        const month = window === "this_month" ? curMonth : prevMonth;
+        const month = monthWindowKey(intent, now);
         return [
           `SELECT month, SUM(expense_cents), SUM(income_cents), SUM(expense_tx) FROM v_monthly_summary WHERE month = '${month}' GROUP BY month`,
         ];
@@ -360,7 +518,7 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
     case "category_spend": {
       if (!category) return [];
       if (isMonthWindow(window)) {
-        const month = window === "this_month" ? curMonth : prevMonth;
+        const month = monthWindowKey(intent, now);
         return [
           `SELECT month, category, SUM(expense_cents), SUM(tx_count) FROM v_category_monthly WHERE month = '${month}' AND category = '${category}' GROUP BY month, category`,
         ];
@@ -389,7 +547,7 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
           `SELECT merchant, SUM(total_cents), SUM(tx_count) FROM v_top_merchants_90d GROUP BY merchant ORDER BY SUM(total_cents) DESC LIMIT 5`,
         ];
       }
-      if (window === "last_30d") {
+      if (window === "last_30d" || window === "last_7d") {
         return [
           `SELECT merchant, SUM(amount_cents), COUNT(*) FROM transactions WHERE direction = 'expense' AND status = 'paid' AND date_iso >= '${range.start}' AND date_iso < '${range.end}' GROUP BY merchant ORDER BY SUM(amount_cents) DESC LIMIT 5`,
         ];
@@ -399,7 +557,8 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
           `SELECT merchant, SUM(total_cents), SUM(tx_count) FROM v_merchant_monthly WHERE month >= '${yearStart}' GROUP BY merchant ORDER BY SUM(total_cents) DESC LIMIT 5`,
         ];
       }
-      const month = window === "this_month" ? curMonth : prevMonth;
+      // 剩余四种按月窗口（本月/上月/上上个月/指定月份）共用按月粒度商户视图
+      const month = monthWindowKey(intent, now);
       return [
         `SELECT merchant, SUM(total_cents), SUM(tx_count) FROM v_merchant_monthly WHERE month = '${month}' GROUP BY merchant ORDER BY SUM(total_cents) DESC LIMIT 5`,
       ];
@@ -412,22 +571,24 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
         : "";
       if (isMonthWindow(window)) {
         // 月窗：v_mom_category 一行同时带本期与上期（change_ratio 为 null 表示上月无记录）
-        const month = window === "this_month" ? curMonth : prevMonth;
+        const month = monthWindowKey(intent, now);
         const queries = [
           `SELECT category, SUM(cur_cents), SUM(prev_cents), AVG(change_ratio) FROM v_mom_category WHERE month = '${month}'${catCond} GROUP BY category ORDER BY SUM(cur_cents) DESC LIMIT 5`,
         ];
         if (impulseSql) queries.push(impulseSql);
         return queries;
       }
-      // 今年 / 30天 / 90天窗：v_mom_category 是月粒度，跨月环比口径不精确，
+      // 今年 / 7天 / 30天 / 90天窗：v_mom_category 是月粒度，跨月环比口径不精确，
       // 改为把窗口与前一个等长窗口分别按明细表聚合后在 JS 里比较。
       // 下标 0 = 本期、下标 1 = 上期、下标 2 = 冲动证据。
       const prevRange: DateRange =
         window === "this_year"
           ? { start: `${now.getFullYear() - 1}-01-01`, end: `${now.getFullYear()}-01-01` }
-          : window === "last_30d"
-            ? { start: dayStartKey(now, -60), end: dayStartKey(now, -30) }
-            : { start: dayStartKey(now, -180), end: dayStartKey(now, -90) };
+          : window === "last_7d"
+            ? { start: dayStartKey(now, -14), end: dayStartKey(now, -7) }
+            : window === "last_30d"
+              ? { start: dayStartKey(now, -60), end: dayStartKey(now, -30) }
+              : { start: dayStartKey(now, -180), end: dayStartKey(now, -90) };
       const queries = [
         `SELECT category, SUM(amount_cents), COUNT(*) FROM transactions WHERE direction = 'expense' AND status = 'paid'${catCond} AND date_iso >= '${range.start}' AND date_iso < '${range.end}' GROUP BY category LIMIT 5`,
         `SELECT category, SUM(amount_cents), COUNT(*) FROM transactions WHERE direction = 'expense' AND status = 'paid'${catCond} AND date_iso >= '${prevRange.start}' AND date_iso < '${prevRange.end}' GROUP BY category LIMIT 5`,
@@ -439,7 +600,7 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
     case "subscription": {
       let amountSql: string;
       if (isMonthWindow(window)) {
-        const month = window === "this_month" ? curMonth : prevMonth;
+        const month = monthWindowKey(intent, now);
         amountSql = `SELECT category, SUM(expense_cents), SUM(tx_count) FROM v_category_monthly WHERE month = '${month}' AND category = '订阅' GROUP BY category`;
       } else if (window === "this_year") {
         amountSql = `SELECT category, SUM(expense_cents), SUM(tx_count) FROM v_category_monthly WHERE month >= '${yearStart}' AND category = '订阅' GROUP BY category`;
@@ -455,7 +616,7 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
 
     case "night_spend": {
       if (isMonthWindow(window)) {
-        const month = window === "this_month" ? curMonth : prevMonth;
+        const month = monthWindowKey(intent, now);
         return [
           `SELECT month, SUM(night_cents), AVG(night_ratio) FROM v_night_spend WHERE month = '${month}' GROUP BY month`,
         ];
@@ -481,7 +642,7 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
         ];
       }
       if (isMonthWindow(window)) {
-        const ym = (window === "this_month" ? curMonth : prevMonth).slice(0, 7);
+        const ym = monthWindowKey(intent, now).slice(0, 7);
         return [
           `SELECT ym, category, SUM(budget_cents), SUM(actual_cents) FROM budget_vs_actual WHERE ym = '${ym}'${catCond} GROUP BY ym, category LIMIT 50`,
         ];
@@ -494,7 +655,7 @@ export function buildIntentQueries(intent: QaIntent, now: Date): string[] {
       // 下标 0 = 收支总额（月窗按月、日窗按天、30/90 天窗按 direction 分组）；
       // 下标 1 = 支出 Top5 类目。
       if (isMonthWindow(window)) {
-        const month = window === "this_month" ? curMonth : prevMonth;
+        const month = monthWindowKey(intent, now);
         return [
           `SELECT month, SUM(expense_cents), SUM(income_cents), SUM(expense_tx), SUM(income_tx) FROM v_monthly_summary WHERE month = '${month}' GROUP BY month`,
           `SELECT category, SUM(expense_cents), SUM(tx_count) FROM v_category_monthly WHERE month = '${month}' GROUP BY category ORDER BY SUM(expense_cents) DESC LIMIT 5`,
@@ -543,8 +704,8 @@ export function merchantName(value: unknown): string {
 }
 
 /** 某维度查不到数据时的确定文案（有数据但该维度为空的第二种措辞） */
-function emptyDimensionText(intent: QaIntent): string {
-  const win = WINDOW_NAMES[intent.window];
+function emptyDimensionText(intent: QaIntent, now: Date): string {
+  const win = windowLabel(intent, now);
   switch (intent.kind) {
     case "month_total":
     case "overview":
@@ -605,10 +766,11 @@ function buildAnswerText(
   intent: QaIntent,
   primary: Record<string, unknown>[],
   secondary: Record<string, unknown>[][],
+  now: Date,
 ): string {
   const { kind, window } = intent;
-  const win = WINDOW_NAMES[window];
-  const daily = window === "last_30d" || window === "last_90d";
+  const win = windowLabel(intent, now);
+  const daily = window === "last_7d" || window === "last_30d" || window === "last_90d";
 
   switch (kind) {
     case "month_total": {
@@ -663,7 +825,7 @@ function buildAnswerText(
     }
 
     case "mom_compare": {
-      const prevName = PREV_WINDOW_NAMES[window];
+      const prevName = prevWindowLabel(intent, now);
       const monthWindow = isMonthWindow(window);
       if (intent.category) {
         if (monthWindow) {
@@ -889,7 +1051,8 @@ export async function answerLocalQuestion(
   // 契约签名里保留 anchor 参数，便于后续追问链路扩展；当前版本不读取。
   void anchor;
 
-  const queries = buildIntentQueries(intent, new Date());
+  const now = new Date();
+  const queries = buildIntentQueries(intent, now);
   if (queries.length === 0) return { kind: "unhandled" };
 
   let primary: Record<string, unknown>[];
@@ -905,7 +1068,7 @@ export async function answerLocalQuestion(
     if (await datasetIsEmpty(runSql)) {
       return { kind: "no-data", text: DATASET_EMPTY_TEXT };
     }
-    return { kind: "no-data", text: emptyDimensionText(intent) };
+    return { kind: "no-data", text: emptyDimensionText(intent, now) };
   }
 
   const secondary: Record<string, unknown>[][] = [];
@@ -916,7 +1079,7 @@ export async function answerLocalQuestion(
       secondary.push([]);
     }
   }
-  return { kind: "data", text: buildAnswerText(intent, primary, secondary) };
+  return { kind: "data", text: buildAnswerText(intent, primary, secondary, now) };
 }
 
 // ─────────────────────────── 在线兜底用的汇总上下文 ───────────────────────────

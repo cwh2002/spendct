@@ -3,7 +3,7 @@
  * 1. 全部固定查询逐条过白名单预检——深度分析上下文是发送给大模型的账单数据，
  *    绝不允许任何一条 SQL 突破窄文法（与 A13 页面常量同口径的持久回归）；
  * 2. buildDeepAnalysisContext 用假行驱动，验证组装口径：全期类目/商户/逐月/
- *    金额分布/深夜冲动占比/订阅候选，超长丢弃与空查询容错。
+ *    金额分布/深夜冲动占比/订阅候选/类目起止日期（A18），超长丢弃与空查询容错。
  */
 import { describe, expect, it } from "vitest";
 
@@ -11,9 +11,9 @@ import { buildDeepAnalysisContext, buildDeepAnalysisQueries, DEEP_CONTEXT_MAX_LE
 import { precheckAggregateSql } from "@/lib/sql-guard/whitelist";
 
 describe("深度分析查询清单（白名单预检）", () => {
-  it("10 条固定查询全部通过白名单文法（A14 上下文，零动态拼接）", () => {
+  it("11 条固定查询全部通过白名单文法（A14 上下文 + A18 类目日期范围，零动态拼接）", () => {
     const queries = buildDeepAnalysisQueries();
-    expect(queries).toHaveLength(10);
+    expect(queries).toHaveLength(11);
     queries.forEach((sql) => {
       expect(precheckAggregateSql(sql), `未通过白名单：${sql}`).toEqual({ ok: true });
     });
@@ -52,10 +52,18 @@ describe("buildDeepAnalysisContext（全期聚合上下文组装）", () => {
           { direction: "expense", sum: 75000 },
           { direction: "income", sum: 201000 },
         ],
+        [
+          { category: "餐饮", count: 20, first: "2026-01-01", last: "2026-10-15" },
+          { category: "购物", count: 8, first: "2026-02-01", last: "2026-09-30" },
+        ],
       ]),
     );
     expect(text).toContain("数据范围：2026-01-01 至 2026-10-15，共 12 笔支出");
-    expect(text).toContain("全期支出类目：「餐饮」¥450.00 元（20 笔）");
+    // A18：类目行末尾并入各自最早/最晚支出日期
+    expect(text).toContain(
+      "全期支出类目：「餐饮」¥450.00 元（20 笔，2026-01-01 至 2026-10-15）",
+    );
+    expect(text).toContain("「购物」¥300.00 元（8 笔，2026-02-01 至 2026-09-30）");
     expect(text).toContain("全期商户 Top10：「美团外卖」¥250.00 元（15 笔）");
     expect(text).toContain("逐月收支（近1个月）");
     expect(text).toContain("单笔支出分布：28 笔，最低 ¥1.00 元、最高 ¥80.00 元、均值 ¥15.00 元、中位数 ¥12.00 元");
@@ -63,6 +71,32 @@ describe("buildDeepAnalysisContext（全期聚合上下文组装）", () => {
     expect(text).toContain("全期收支：支出 ¥750.00 元、收入 ¥2010.00 元、结余 ¥1260.00 元");
     expect(text).toContain("全期深夜支出占比 1.2%、冲动消费占比 0.8%");
     expect(text).toContain("订阅候选：「视频会员」月均 ¥15.00 元（活跃 4 个月）");
+  });
+
+  it("类目起止日期并入排行行（A18）：无日期范围行的类目不带范围", async () => {
+    const text = await buildDeepAnalysisContext(
+      fakeRunner([
+        [{ account_id: "a", n: 91, min: "2026-05-30", max: "2026-10-07" }],
+        [
+          { category: "交通", sum: 96338, count: 89 },
+          { category: "餐饮", sum: 1990, count: 2 },
+        ],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [{ direction: "expense", sum: 98328 }],
+        [{ category: "交通", count: 89, first: "2026-05-30", last: "2026-10-07" }],
+      ]),
+    );
+    expect(text).toContain(
+      "全期支出类目：「交通」¥963.38 元（89 笔，2026-05-30 至 2026-10-07）、「餐饮」¥19.90 元（2 笔）",
+    );
+    // 索引 10 里没有「餐饮」的日期范围行 → 该行不带范围
+    expect(text).not.toContain("「餐饮」¥19.90 元（2 笔，");
   });
 
   it("账单只有支出时：收入类目与结余省略，深夜冲动占比照常", async () => {
@@ -78,9 +112,10 @@ describe("buildDeepAnalysisContext（全期聚合上下文组装）", () => {
         [],
         [],
         [{ direction: "expense", sum: 5000 }],
+        [{ category: "交通", count: 4, first: "2026-09-01", last: "2026-09-30" }],
       ]),
     );
-    expect(text).toContain("全期支出类目：「交通」¥50.00 元（4 笔）");
+    expect(text).toContain("全期支出类目：「交通」¥50.00 元（4 笔，2026-09-01 至 2026-09-30）");
     expect(text).not.toContain("收入类目");
     expect(text).toContain("全期收支：支出 ¥50.00 元、收入 ¥0.00 元、结余 -¥50.00 元");
     expect(text).toContain("全期深夜支出占比 8.0%");
@@ -89,7 +124,7 @@ describe("buildDeepAnalysisContext（全期聚合上下文组装）", () => {
 
   it("全部查询失败时返回空串（面板不空手转在线）", async () => {
     const text = await buildDeepAnalysisContext(
-      fakeRunner(Array.from({ length: 10 }, () => [])),
+      fakeRunner(Array.from({ length: 11 }, () => [])),
     );
     expect(text).toBe("");
   });
@@ -129,6 +164,7 @@ describe("buildDeepAnalysisContext（全期聚合上下文组装）", () => {
           months: 4,
         })),
         [{ direction: "expense", sum: 1200000 }],
+        [],
       ]),
     );
     expect(text.length).toBeLessThanOrEqual(DEEP_CONTEXT_MAX_LENGTH);
@@ -157,6 +193,7 @@ describe("buildDeepAnalysisContext（全期聚合上下文组装）", () => {
         [{ category: "深夜餐饮", sum: 2000, count: 4 }],
         [],
         [{ direction: "expense", sum: 100000 }],
+        [],
       ]),
     );
     expect(text).toContain("深夜支出占比（近50个月） 1.5%");
@@ -179,6 +216,7 @@ describe("buildDeepAnalysisContext（全期聚合上下文组装）", () => {
         [],
         [],
         [{ direction: "expense", sum: 3000 }],
+        [],
       ]),
     );
     expect(text).toContain("2026-10 支出 ¥30.00 元（3 笔）");
