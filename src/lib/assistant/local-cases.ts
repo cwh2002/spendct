@@ -19,7 +19,7 @@ export interface LocalCaseRef {
 /**
  * 聊天案例路径的检索阈值：高于通用引用阈值 TFIDF_CITE_MIN（0.08）。
  * 回答气泡直接展示案例引用，噪音案例比不引用更伤可信度，宁缺毋滥；
- * 页面浏览引用（/insights、/learn、/subscriptions）维持 0.08 不变。
+ * 页面浏览引用（/insights、/learn、/insights?view=subscriptions）维持 0.08 不变。
  * 取值依据：实测「双11 大促」问题强相关命中 0.22、噪音命中 ≤0.14，
  * 0.15 恰好只保留强相关案例（导出供单测锁定该口径）。
  */

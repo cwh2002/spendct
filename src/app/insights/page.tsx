@@ -7,6 +7,7 @@ import {
   LayoutGrid,
   MessageSquare,
   PiggyBank,
+  Radar,
   ReceiptText,
   Rows3,
   Star,
@@ -39,6 +40,7 @@ import {
 import { InsightCard, type InsightCardHandle } from "@/components/insights/insight-card";
 import { LedgerView } from "@/components/insights/ledger-view";
 import { MerchantView } from "@/components/insights/merchant-view";
+import { SubscriptionView } from "@/components/insights/subscription-view";
 import { CASES, type CaseRecord } from "@/lib/cases";
 import { DEMO_BUDGET, DEMO_INSIGHTS, DEMO_STAGES, type DemoInsight } from "@/lib/demo-data";
 import tfidfManifest from "@/data/tfidf-manifest.json";
@@ -52,7 +54,7 @@ import type { InsightCard as RunInsightCard } from "@/lib/schema/insight-card";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 import { useMounted } from "@/lib/use-mounted";
 
-type ViewMode = "cards" | "gallery" | "ledger" | "merchants";
+type ViewMode = "cards" | "gallery" | "ledger" | "merchants" | "subscriptions";
 
 /** 挂载前的空收藏快照：稳定引用，避免 activeFavorites 每次渲染生成新数组 */
 const EMPTY_FAVORITES: string[] = [];
@@ -62,6 +64,8 @@ const VIEW_OPTIONS: { key: ViewMode; label: string; icon: typeof Rows3 }[] = [
   { key: "gallery", label: "图表廊", icon: LayoutGrid },
   { key: "ledger", label: "账本汇总", icon: ChartColumn },
   { key: "merchants", label: "商户统计", icon: ReceiptText },
+  // 第 5 视图：订阅雷达自独立页迁入（A15 第四部分），Radar 与订阅页识别语义一致
+  { key: "subscriptions", label: "订阅管理", icon: Radar },
 ];
 
 function Kbd({ children }: { children: React.ReactNode }) {
@@ -472,7 +476,9 @@ function InsightsView() {
   // ?view=ledger 为主入口（顶部导航「账本」链接）；?tab=ledger 为旧参数兼容
   const rawView = searchParams.get("view") ?? searchParams.get("tab") ?? "cards";
   const view: ViewMode =
-    rawView === "gallery" || rawView === "ledger" || rawView === "merchants" ? rawView : "cards";
+    rawView === "gallery" || rawView === "ledger" || rawView === "merchants" || rawView === "subscriptions"
+      ? rawView
+      : "cards";
 
   const [filters, setFilters] = useState<InsightFilters>(DEFAULT_INSIGHT_FILTERS);
   // 收藏与演示开关在初始 state 里同步读取：本子树经 Suspense 客户端渲染，无 SSR HTML 需要对齐；
@@ -682,7 +688,16 @@ function InsightsView() {
         requestAnimationFrame(() => panelRef.current?.focusInput());
         return;
       }
-      if (inField || hasModifier || view === "ledger" || view === "merchants" || visible.length === 0) return;
+      if (
+        inField ||
+        hasModifier ||
+        view === "ledger" ||
+        view === "merchants" ||
+        view === "subscriptions" ||
+        visible.length === 0
+      ) {
+        return;
+      }
 
       if (e.key === "j" || e.key === "k") {
         e.preventDefault();
@@ -868,6 +883,8 @@ function InsightsView() {
             <LedgerView onAnchor={openPanelForAnchor} />
           ) : view === "merchants" ? (
             <MerchantView onAnchor={openPanelForAnchor} />
+          ) : view === "subscriptions" ? (
+            <SubscriptionView />
           ) : demoOff ? (
             <EmptyState />
           ) : visible.length === 0 ? (

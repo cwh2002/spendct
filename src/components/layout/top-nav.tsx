@@ -30,7 +30,9 @@ const NAV_ITEMS = [
   { href: "/", label: "首页" },
   { href: "/upload", label: "体检" },
   { href: "/insights?view=ledger", label: "账本" },
-  { href: "/subscriptions", label: "订阅" },
+  // 订阅雷达已并入洞察页第 5 视图（/insights?view=subscriptions），
+  // 顶栏入口让位给消费日历页（A15 第四部分）
+  { href: "/calendar", label: "日历" },
   { href: "/report", label: "报告" },
 ] as const;
 

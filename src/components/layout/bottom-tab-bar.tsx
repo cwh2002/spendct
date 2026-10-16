@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, BellRing, Home, Upload, UserRound } from "lucide-react";
+import { BarChart3, CalendarDays, Home, Upload, UserRound } from "lucide-react";
 
 const TABS = [
   { href: "/", label: "首页", icon: Home },
   { href: "/upload", label: "体检", icon: Upload },
   { href: "/insights?view=ledger", label: "账本", icon: BarChart3 },
-  { href: "/subscriptions", label: "订阅", icon: BellRing },
+  { href: "/calendar", label: "日历", icon: CalendarDays },
   { href: "/me", label: "我的", icon: UserRound },
 ] as const;
 

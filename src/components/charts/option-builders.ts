@@ -1,6 +1,6 @@
 /**
- * 折线/环图/柱图三类的 option 工厂（05 §3.6 标记规范）：
- * 洞察卡、账本汇总、年度报告共用同一套标记规格，避免各页漂移。
+ * 折线/环图/柱图/日历热力图四类的 option 工厂（05 §3.6 标记规范）：
+ * 洞察卡、账本汇总、年度报告、消费日历共用同一套标记规格，避免各页漂移。
  * 工厂内部通过 chartTokens() 读 CSS 变量取色，配合 EChart 的暗色重绘
  * （html class 变化 → 重新调用工厂）自动切到暗面色板。
  * 无 "use client" 指令：本模块只含纯函数，随使用方一起进客户端包。
@@ -242,6 +242,110 @@ export function buildDonutOption(data: SeriesData, opts: DonutOpts = {}): ECOpti
           name: data.labels[i] ?? `系列${i + 1}`,
           ...(dimExcept && data.labels[i] !== dimExcept ? { itemStyle: { opacity: 0.25 } } : {}),
         })),
+      },
+    ],
+  };
+}
+
+/** 日历热力图数据点：YYYY-MM-DD → 数值（消费日历页为当日支出分） */
+export interface CalendarHeatmapPoint {
+  date: string;
+  value: number;
+}
+
+interface HeatmapOpts {
+  /** 数值格式化（tooltip 用），如分→元 */
+  formatValue?: (v: number) => string;
+  /** 单位后缀，拼在格式化值之后 */
+  unit?: string;
+}
+
+/**
+ * 日历热力图（消费日历页）：ECharts calendar 坐标系 + heatmap 系列，
+ * 每个日期格子按数值经 visualMap 连续映射颜色深浅——数值越大颜色越深
+ * （口径说明「颜色越深花得越多」由卡面文案承担）。
+ * 无消费日不渲染数据点，由 calendar.itemStyle 的空格底色兜底，
+ * 有支出的日子一眼可见。日期范围取数据点自身的 min/max 日期，
+ * 跨年账单自动铺满整段区间；空数据回退当前年份（调用方通常只在非空时渲染）。
+ */
+export function buildCalendarHeatmapOption(
+  points: CalendarHeatmapPoint[],
+  opts: HeatmapOpts = {},
+): ECOption {
+  const { formatValue, unit = "" } = opts;
+  const t = chartTokens();
+  const color = t.palette[0] ?? "#2e7ce8";
+  const fmt = (v: number) => `${formatValue ? formatValue(v) : v}${unit}`;
+
+  // 值域：visualMap 从 0 起步，深色端取数据最大值；全 0 时给 1 防除零/整张白板
+  const visualMax = points.reduce((max, p) => Math.max(max, p.value), 0) || 1;
+
+  // 日期范围：数据点最小/最大日期；无数据回退当前年份（占位渲染兜底）
+  const dates = points
+    .map((p) => p.date)
+    .filter((d) => d.length === 10)
+    .sort();
+  const year = new Date().getFullYear();
+  const [rangeStart, rangeEnd] =
+    dates.length > 0
+      ? [dates[0] ?? `${year}-01-01`, dates[dates.length - 1] ?? `${year}-12-31`]
+      : [`${year}-01-01`, `${year}-12-31`];
+
+  return {
+    color: [color],
+    textStyle: { fontFamily: t.fontSans, color: t.inkSecondary, fontSize: 12 },
+    tooltip: {
+      trigger: "item",
+      confine: true,
+      backgroundColor: t.surface,
+      borderColor: t.lineHair,
+      borderWidth: 1,
+      padding: [8, 12],
+      textStyle: { color: t.ink, fontSize: 12 },
+      extraCssText: "border-radius:8px;",
+      // heatmap 数据点的 value 是 [日期, 数值]：报「日期：金额」，参数需先收窄
+      formatter: (params) => {
+        const p = Array.isArray(params) ? params[0] : params;
+        if (!p || !Array.isArray(p.value)) return "";
+        return `${String(p.value[0])}：${fmt(Number(p.value[1]))}`;
+      },
+    },
+    visualMap: {
+      // 色带隐藏：深浅语义由卡面口径说明承担（「颜色越深花得越多」），
+      // 不占日历版面；色阶为同色系三档透明度（浅 → 深）
+      show: false,
+      min: 0,
+      max: visualMax,
+      inRange: { color: [withAlpha(color, 0.08), withAlpha(color, 0.45), color] },
+      calculable: false,
+    },
+    calendar: {
+      top: 24,
+      left: 32,
+      right: 16,
+      bottom: 4,
+      range: [rangeStart, rangeEnd],
+      cellSize: ["auto", 15],
+      splitLine: { show: false },
+      // 无数据日期格子的底色：与主题 surface-2 一致，有支出的格子叠加色块
+      itemStyle: { borderWidth: 3, borderColor: t.surface, color: t.surface2 },
+      dayLabel: {
+        // 周一开头的周历（firstDay 1 时 nameMap 从周一起排）
+        firstDay: 1,
+        nameMap: ["一", "二", "三", "四", "五", "六", "日"],
+        color: t.inkMuted,
+        fontSize: 10,
+        margin: 8,
+      },
+      monthLabel: { color: t.inkSecondary, fontSize: 10, nameMap: "cn", margin: 6 },
+      yearLabel: { show: false },
+    },
+    series: [
+      {
+        name: "每日支出",
+        type: "heatmap",
+        coordinateSystem: "calendar",
+        data: points.map((p) => [p.date, p.value]),
       },
     ],
   };

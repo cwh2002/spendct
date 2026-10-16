@@ -528,7 +528,7 @@ const QUICK_LINKS: readonly QuickLinkDef[] = [
   { href: "/settings", label: "数据管理", desc: "账单 · 导出 · 偏好", icon: Database },
   { href: "/learn", label: "知识课堂", desc: "订阅陷阱与维权案例", icon: GraduationCap, flag: "learn", isNew: true },
   { href: "/report", label: "年度报告", desc: "消费年报与年度海报", icon: BarChart3 },
-  { href: "/subscriptions", label: "订阅雷达", desc: "连续扣费监控与倒计时", icon: BellRing },
+  { href: "/insights?view=subscriptions", label: "订阅雷达", desc: "连续扣费监控与倒计时", icon: BellRing },
   { href: "/privacy", label: "隐私说明", desc: "数据可见性对照表", icon: ShieldCheck },
 ];
 

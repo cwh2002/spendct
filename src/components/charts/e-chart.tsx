@@ -2,44 +2,61 @@
 
 import * as echarts from "echarts/core";
 import type { ComposeOption, ECElementEvent } from "echarts/core";
-import { BarChart, GaugeChart, LineChart, PieChart, RadarChart } from "echarts/charts";
+import {
+  BarChart,
+  GaugeChart,
+  HeatmapChart,
+  LineChart,
+  PieChart,
+  RadarChart,
+} from "echarts/charts";
 import type {
   BarSeriesOption,
   GaugeSeriesOption,
+  HeatmapSeriesOption,
   LineSeriesOption,
   PieSeriesOption,
   RadarSeriesOption,
 } from "echarts/charts";
 import {
+  CalendarComponent,
   GridComponent,
   LegendComponent,
   MarkLineComponent,
   RadarComponent,
   TooltipComponent,
+  VisualMapComponent,
 } from "echarts/components";
 import type {
+  CalendarComponentOption,
   GridComponentOption,
   LegendComponentOption,
   MarkLineComponentOption,
   RadarComponentOption,
   TooltipComponentOption,
+  VisualMapComponentOption,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
 import { useCallback, useEffect, useRef } from "react";
 
 // 按需注册（05 §1.1）：只打包用到的图表与组件，页面无需再关心注册顺序。
 // 注册在模块顶层执行一次，多页面共享同一个 echarts/core 实例。
+// 日历热力图（消费日历页）：HeatmapChart 系列 + calendar 坐标系 +
+// visualMap 连续色带三件套，缺一个都渲染不出色块。
 echarts.use([
   BarChart,
   GaugeChart,
+  HeatmapChart,
   LineChart,
   PieChart,
   RadarChart,
+  CalendarComponent,
   GridComponent,
   LegendComponent,
   MarkLineComponent,
   RadarComponent,
   TooltipComponent,
+  VisualMapComponent,
   CanvasRenderer,
 ]);
 
@@ -47,14 +64,17 @@ echarts.use([
 export type ECOption = ComposeOption<
   | BarSeriesOption
   | GaugeSeriesOption
+  | HeatmapSeriesOption
   | LineSeriesOption
   | PieSeriesOption
   | RadarSeriesOption
+  | CalendarComponentOption
   | GridComponentOption
   | LegendComponentOption
   | MarkLineComponentOption
   | RadarComponentOption
   | TooltipComponentOption
+  | VisualMapComponentOption
 >;
 
 /**

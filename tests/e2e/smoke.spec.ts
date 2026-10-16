@@ -21,7 +21,8 @@ const GUEST_PAGES = [
   { path: "/upload", name: "上传" },
   { path: "/checkup", name: "体检" },
   { path: "/insights", name: "洞察" },
-  { path: "/subscriptions", name: "订阅" },
+  // 订阅雷达已并入洞察页第 5 视图，顶栏入口换成消费日历页（A15 第四部分）
+  { path: "/calendar", name: "日历" },
   { path: "/report", name: "报告" },
   { path: "/learn", name: "课堂" },
   { path: "/privacy", name: "隐私" },
@@ -37,6 +38,16 @@ for (const route of GUEST_PAGES) {
     expect(errors).toEqual([]);
   });
 }
+
+test("旧订阅页 /subscriptions 重定向到洞察页订阅视图（旧链接不 404）", async ({ page }) => {
+  const errors = collectConsoleErrors(page);
+  await page.goto("/subscriptions");
+  await expect(page).toHaveURL(/\/insights\?view=subscriptions/);
+  await expect(page.locator("h1").first()).toBeVisible();
+  // 订阅视图渲染出识别结果摘要（演示动线为内置订阅列表）
+  await expect(page.getByRole("heading", { name: "订阅雷达" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
 
 for (const path of PROTECTED_PAGES) {
   test(`受保护页 ${path} 游客态重定向到登录页`, async ({ page }) => {

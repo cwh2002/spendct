@@ -48,7 +48,7 @@ const LIST: Capability[] = [
     title: "订阅雷达",
     desc: "自动揪出连续小额扣费，附下次扣费倒计时。",
     icon: BellRing,
-    href: "/subscriptions",
+    href: "/insights?view=subscriptions",
     tier: "P1",
   },
   {
