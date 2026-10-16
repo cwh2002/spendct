@@ -34,6 +34,10 @@ const NAV_ITEMS = [
   // 顶栏入口让位给消费日历页（A15 第四部分）
   { href: "/calendar", label: "日历" },
   { href: "/report", label: "报告" },
+  // 以下三项为 A17 修订新增（放在「报告」之后）
+  { href: "/challenge", label: "挑战" },
+  { href: "/goals", label: "攒钱" },
+  { href: "/poster", label: "海报" },
 ] as const;
 
 /**
@@ -57,7 +61,7 @@ function NavLinks({ className }: { className: string }) {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className={`relative flex h-full items-center px-3 text-sm font-medium transition-colors ${
+            className={`relative flex h-full items-center px-2 text-sm font-medium transition-colors lg:px-3 ${
               active
                 ? "text-(--color-primary)"
                 : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
@@ -112,7 +116,8 @@ function AuthArea() {
       </Link>
       <Link
         href="/register"
-        className="hidden h-9 items-center rounded-full bg-(--color-btn-primary) px-4 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover) md:inline-flex"
+        // 8 项入口后注册按钮延后到 lg 断点（宽度预算见 NavLinks 注释）
+        className="hidden h-9 items-center rounded-full bg-(--color-btn-primary) px-4 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover) lg:inline-flex"
       >
         注册
       </Link>
@@ -329,7 +334,9 @@ export function TopNav() {
             <span className="text-lg font-bold tracking-tight">消费CT</span>
           </Link>
 
-          {/* 移动端隐藏：分段导航由底部 tab bar 承担（05 §1.1） */}
+          {/* 移动端隐藏：分段导航由底部 tab bar 承担（05 §1.1）。
+              8 项入口的宽度预算（A17 三新页）：md 断点链接 px-2、隐私文案
+              缩成图标、注册按钮隐藏（lg 恢复），左右两侧合计约 670px < 768px */}
           <NavLinks className="hidden h-full flex-1 items-center justify-center gap-1 md:flex" />
 
           <div className="ml-auto flex items-center gap-1 md:gap-2">
@@ -338,7 +345,8 @@ export function TopNav() {
               className="flex items-center gap-1 rounded-full border border-(--color-border) px-2.5 py-1 text-xs text-slate-600 transition-colors hover:border-(--color-border-strong) dark:text-slate-300"
             >
               <Lock className="size-3.5" aria-hidden />
-              <span className="hidden md:inline">本地计算 · 零存储</span>
+              {/* 8 项入口后文案只在 xl 断点展示，md/lg 只留图标（宽度预算见 NavLinks 注释） */}
+              <span className="hidden xl:inline">本地计算 · 零存储</span>
             </Link>
             <ThemeToggle />
             <NotificationBell />

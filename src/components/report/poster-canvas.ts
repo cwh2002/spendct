@@ -13,11 +13,16 @@
  *
  * 颜色与页面同源（读 CSS 变量），海报底为渐变深底，状态色需比页面 -ink 档
  * 更亮一档以保证对比度，故单独维护 POSTER_STATUS_COLORS。
+ *
+ * A17 修订（海报页）：支持三档配色样式（青屿/暮橙/夜紫）与自定义标语。
+ * 标语插在主标题与健康环之间（布局游标自上而下，插入一段后续块自动下移，
+ * 页脚保护区断言仍然生效）；不传样式与标语时输出与旧版逐像素一致，
+ * 报告页的一键下载不受影响。
  */
 
-import { DEMO_ACCOUNT_META, DEMO_REPORT } from "@/lib/demo-data";
 import { fmtYuan } from "@/lib/pipeline/stages/spec";
 import { getRankTier } from "@/lib/rank";
+import { demoPosterInput } from "@/lib/report/poster-input";
 
 const W = 1080;
 const H = 1920;
@@ -46,19 +51,41 @@ const POSTER_STATUS_COLORS: Record<string, string> = {
 /** 健康指数环的进度色：健康青 */
 const HEALTH_COLOR = "#7ee2a8";
 
+/** 海报配色样式：青屿为默认（与页面主色同源），暮橙/夜紫为海报页新增的固定色板 */
+export type PosterStyleId = "aurora" | "sunset" | "midnight";
+
+/** 样式清单（海报页选择器用）：id 与色板一一对应 */
+export const POSTER_STYLES: readonly { id: PosterStyleId; name: string }[] = [
+  { id: "aurora", name: "青屿" },
+  { id: "sunset", name: "暮橙" },
+  { id: "midnight", name: "夜紫" },
+];
+
+interface PosterStylePalette {
+  /** 渐变底顶部色 */
+  top: string;
+  /** 渐变底底部色 */
+  bottom: string;
+  /** 健康环进度色 */
+  ring: string;
+}
+
 /**
- * 内置数据路径的公开基准（与报告页 METRIC_BENCHMARKS 同口径）：
- * 只有存在公开来源的指标才显示基准行，避免海报出现无来源的对比值。
- * 餐饮占比 29.3% = 国家统计局 2025 恩格尔系数（食品烟酒）；
- * 结余率 32.0% = 按国家统计局 2025 人均收支数据推算（1 − 29,476/43,377）。
- * 订阅率/冲动浓度暂无公开全国基准 → null，不画基准行。
+ * 非默认样式的固定色板（默认样式走 CSS 变量与 HEALTH_COLOR，保持旧输出不变）。
+ * 渐变底上的文字保持白色系（三档底色都足够深，对比度不变）。
  */
-const DEMO_BENCHMARKS: Record<string, string | null> = {
-  "hidden-subscription": null,
-  impulse: null,
-  "dining-share": "29.3%",
-  "save-rate": "32.0%",
-};
+const POSTER_STYLE_PALETTES: Readonly<Record<Exclude<PosterStyleId, "aurora">, PosterStylePalette>> =
+  {
+    sunset: { top: "#f97316", bottom: "#9a3412", ring: "#ffd76a" },
+    midnight: { top: "#4f46e5", bottom: "#1e1b4b", ring: "#a5b4fc" },
+  };
+
+/** 渲染选项：海报页传样式与标语，报告页不传走默认输出（与旧版一致） */
+export interface PosterRenderOptions {
+  style?: PosterStyleId;
+  /** 自定义标语：空串与缺省都不画（最多 16 字，超长由调用方截断） */
+  slogan?: string;
+}
 
 /** 海报单条指标：benchmark 为 null 时不画基准行 */
 export interface PosterMetric {
@@ -168,6 +195,8 @@ interface PosterLayout {
   pill: { y: number; w: number; h: number; centerY: number; fontSize: number };
   title: { text: string; baseline: number; fontSize: number };
   subtitle: { text: string; baseline: number; fontSize: number };
+  /** 自定义标语块：未传标语时为 null（主标题与健康环之间） */
+  slogan: { text: string; baseline: number; fontSize: number } | null;
   ring: {
     y: number;
     r: number;
@@ -204,6 +233,7 @@ function buildLayout(
   ctx: CanvasRenderingContext2D,
   report: ReportData,
   scale: number,
+  opts?: PosterRenderOptions,
 ): PosterLayout {
   const s = (n: number) => n * scale;
   const lineH = (fontSize: number) => fontSize * LINE_RATIO;
@@ -247,10 +277,30 @@ function buildLayout(
   const subtitleMetrics = measureText(ctx, subtitleText, subtitleFontSize);
   const subtitleBaseline = subtitleTop + subtitleMetrics.ascent;
 
+  // 自定义标语（A17）：副标题下方独立一行，游标顺延；未传标语时保持旧间距，
+  // 输出与旧版逐像素一致。文字带「」书名号，与「一句话总结」的观感区分开。
+  const sloganInput = opts?.slogan?.trim();
+  let slogan: { text: string; baseline: number; fontSize: number } | null = null;
+  let cursorBaseline = subtitleBaseline;
+  let cursorDescent = subtitleMetrics.descent;
+  if (sloganInput) {
+    const sloganFontSize = s(30);
+    ctx.font = `600 ${sloganFontSize}px ${FONT_STACK}`;
+    const sloganText = `「${sloganInput}」`;
+    const sloganMetrics = measureText(ctx, sloganText, sloganFontSize);
+    slogan = {
+      text: sloganText,
+      baseline: subtitleBaseline + subtitleMetrics.descent + s(26) + sloganMetrics.ascent,
+      fontSize: sloganFontSize,
+    };
+    cursorBaseline = slogan.baseline;
+    cursorDescent = sloganMetrics.descent;
+  }
+
   // 健康指数环：270° 圆环（开口朝下），环体随缩放等比
   const ringR = s(128);
   const ringWidth = s(20);
-  const ringTop = subtitleBaseline + subtitleMetrics.descent + s(44);
+  const ringTop = cursorBaseline + cursorDescent + s(44);
   const ringY = ringTop + ringR + ringWidth / 2;
   const frac = Math.min(1, report.healthIndex / 100);
 
@@ -374,6 +424,7 @@ function buildLayout(
     pill,
     title: { text: titleText, baseline: titleBaseline, fontSize: titleFontSize },
     subtitle: { text: subtitleText, baseline: subtitleBaseline, fontSize: subtitleFontSize },
+    slogan,
     ring: {
       y: ringY,
       r: ringR,
@@ -409,16 +460,20 @@ function buildLayout(
  * 计算布局并做页脚保护区断言：内容越界时按「可用高度/已用高度」的比例
  * 缩小字号与间距重排（保底 0.75 倍），页脚始终底部锚定。
  */
-function computePosterLayout(ctx: CanvasRenderingContext2D, report: ReportData): PosterLayout {
+function computePosterLayout(
+  ctx: CanvasRenderingContext2D,
+  report: ReportData,
+  opts?: PosterRenderOptions,
+): PosterLayout {
   const available = FOOTER_Y - 60;
   let scale = 1;
-  let layout = buildLayout(ctx, report, scale);
+  let layout = buildLayout(ctx, report, scale, opts);
   // 顶部起点 96 随缩放移动：可分配高度 = available − 96×s，已用 = contentEnd − 96×s
   for (let attempt = 0; attempt < 2 && layout.contentEnd > available; attempt++) {
     const used = layout.contentEnd - 96 * scale;
     const space = available - 96 * scale;
     scale = Math.max(0.75, (scale * space) / used);
-    layout = buildLayout(ctx, report, scale);
+    layout = buildLayout(ctx, report, scale, opts);
   }
   if (layout.contentEnd > available) {
     // 0.75 倍仍放不下（仅极端字体度量下可能）：提示但照常绘制，不做裁剪
@@ -428,16 +483,18 @@ function computePosterLayout(ctx: CanvasRenderingContext2D, report: ReportData):
 }
 
 /** 按布局结果绘制整张海报：所有位置来自 layout，函数内不再计算坐标 */
-function paintPoster(ctx: CanvasRenderingContext2D, layout: PosterLayout): void {
+function paintPoster(ctx: CanvasRenderingContext2D, layout: PosterLayout, style: PosterStyleId): void {
+  // 默认样式走 CSS 变量（与页面主色同源）；暮橙/夜紫走固定色板（A17）
   const primary = cssVar("--color-primary", "#2e7ce8");
   const brand700 = cssVar("--color-brand-700", "#1a55ad");
+  const palette = style === "aurora" ? null : POSTER_STYLE_PALETTES[style];
   const cx = W / 2;
   const padX = 28;
 
   // 渐变底 + 纯装饰圆（只做层次，不承载信息）
   const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, primary);
-  bg.addColorStop(1, brand700);
+  bg.addColorStop(0, palette ? palette.top : primary);
+  bg.addColorStop(1, palette ? palette.bottom : brand700);
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = "rgba(255,255,255,0.06)";
@@ -467,6 +524,14 @@ function paintPoster(ctx: CanvasRenderingContext2D, layout: PosterLayout): void 
   ctx.font = `400 ${layout.subtitle.fontSize}px ${FONT_STACK}`;
   ctx.fillText(layout.subtitle.text, cx, layout.subtitle.baseline);
 
+  // 自定义标语（A17）：主标题与健康环之间，居中一行
+  if (layout.slogan) {
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = `600 ${layout.slogan.fontSize}px ${FONT_STACK}`;
+    ctx.fillText(layout.slogan.text, cx, layout.slogan.baseline);
+  }
+
   // 健康指数环：270° 底轨 + 进度弧（圆帽）+ 中心大数字 + 环下方标签
   ctx.lineCap = "round";
   ctx.lineWidth = layout.ring.lineWidth;
@@ -474,7 +539,7 @@ function paintPoster(ctx: CanvasRenderingContext2D, layout: PosterLayout): void 
   ctx.beginPath();
   ctx.arc(cx, layout.ring.y, layout.ring.r, Math.PI * 0.75, Math.PI * 2.25);
   ctx.stroke();
-  ctx.strokeStyle = HEALTH_COLOR;
+  ctx.strokeStyle = palette ? palette.ring : HEALTH_COLOR;
   ctx.beginPath();
   ctx.arc(
     cx,
@@ -558,41 +623,24 @@ function paintPoster(ctx: CanvasRenderingContext2D, layout: PosterLayout): void 
 
 /**
  * 绘制整张海报（设计坐标 1080×1920）。
- * 无参走内置数据（离线评审/静态展示），传 report 走报告页映射后的真实数据。
+ * 无参走内置数据（离线评审/静态展示），传 report 走报告页映射后的真实数据；
+ * opts 传海报页的样式与标语（A17），缺省时输出与旧版一致。
  */
-export function drawAnnualPoster(ctx: CanvasRenderingContext2D, report?: ReportData): void {
-  const layout = computePosterLayout(ctx, report ?? demoPosterReport());
-  paintPoster(ctx, layout);
-}
-
-/**
- * 无参调用的内置数据路径：数值与 DEMO_ACCOUNT_META/DEMO_REPORT 同源，
- * 基准行统一走 DEMO_BENCHMARKS（与报告页内置动线同口径，不出现无来源对比值）。
- */
-function demoPosterReport(): ReportData {
-  return {
-    meta: {
-      year: "2026", // 内置数据集年份（DEMO_REPORT 故事段口径，报告页 demoReportData 同值）
-      monthsCovered: DEMO_ACCOUNT_META.monthsCovered,
-      totalTransactions: DEMO_ACCOUNT_META.totalTransactions,
-      totalExpenseCents: DEMO_ACCOUNT_META.totalExpenseCents,
-    },
-    healthIndex: DEMO_REPORT.healthIndex,
-    namedMetrics: DEMO_REPORT.namedMetrics.map((m) => ({
-      name: m.name,
-      value: m.value,
-      delta: m.delta,
-      status: m.status === "warn" || m.status === "serious" ? m.status : "good",
-      benchmark: DEMO_BENCHMARKS[m.id] ?? null,
-    })),
-  };
+export function drawAnnualPoster(
+  ctx: CanvasRenderingContext2D,
+  report?: ReportData,
+  opts?: PosterRenderOptions,
+): void {
+  const style = opts?.style ?? "aurora";
+  const layout = computePosterLayout(ctx, report ?? demoPosterInput(), opts);
+  paintPoster(ctx, layout, style);
 }
 
 /**
  * 在内存 canvas 上渲染海报并输出 PNG Blob：不插入 DOM，下载由调用方处理。
  * 画布 1620×2880（设计坐标 ×1.5），绘制前整体缩放一次，设计坐标全部不变。
  */
-export function renderPosterPng(report?: ReportData): Promise<Blob | null> {
+export function renderPosterPng(report?: ReportData, opts?: PosterRenderOptions): Promise<Blob | null> {
   return new Promise((resolve) => {
     try {
       const canvas = document.createElement("canvas");
@@ -604,7 +652,7 @@ export function renderPosterPng(report?: ReportData): Promise<Blob | null> {
         return;
       }
       ctx.scale(EXPORT_SCALE, EXPORT_SCALE);
-      drawAnnualPoster(ctx, report);
+      drawAnnualPoster(ctx, report, opts);
       canvas.toBlob((blob) => resolve(blob), "image/png");
     } catch {
       // 绘制异常（如字体度量缺失）不抛出：调用方按失败提示

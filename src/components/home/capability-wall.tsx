@@ -10,7 +10,7 @@ const CARD_BASE =
   "relative flex flex-col rounded-(--radius-card) border border-(--color-border) bg-(--color-surface) p-4 text-left transition-all duration-200";
 
 /**
- * 10 卡能力墙（08 §2.2 F01）：数据源只有 src/lib/capabilities 一份。
+ * 12 卡能力墙（08 §2.2 F01，A17 新增挑战/攒钱/海报三卡）：数据源只有 src/lib/capabilities 一份。
  * 已上线能力整卡可点跳转（hover 描边主色 + 阴影）；
  * 未上线能力灰显 + 右上「即将上线」角标，点击弹静态介绍层。
  */
@@ -19,7 +19,7 @@ export function CapabilityWall() {
 
   return (
     <>
-      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6 lg:gap-4">
         {CAPABILITIES.map((cap) => {
           const active = isCapabilityActive(cap);
           const Icon = cap.icon;

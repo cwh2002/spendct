@@ -1,7 +1,8 @@
 /**
- * 全路由冒烟：13 个页面逐个打开，断言无 console error 且页面挂载出主标题。
+ * 全路由冒烟：16 个页面逐个打开，断言无 console error 且页面挂载出主标题。
  * 受 AuthGuard 保护的 /budget /me /settings 游客态重定向到 /login，
- * 这三页断言落在重定向后的 URL 上；其余 10 页断言 h1 可见。
+ * 这三页断言落在重定向后的 URL 上；其余 13 页断言 h1 可见。
+ * /challenge /goals /poster 为 A17 修订新增路由。
  */
 import { expect, test, type Page } from "@playwright/test";
 
@@ -24,6 +25,10 @@ const GUEST_PAGES = [
   // 订阅雷达已并入洞察页第 5 视图，顶栏入口换成消费日历页（A15 第四部分）
   { path: "/calendar", name: "日历" },
   { path: "/report", name: "报告" },
+  // 以下三页为 A17 修订新增
+  { path: "/challenge", name: "挑战" },
+  { path: "/goals", name: "攒钱" },
+  { path: "/poster", name: "海报" },
   { path: "/learn", name: "课堂" },
   { path: "/privacy", name: "隐私" },
 ];
@@ -38,6 +43,25 @@ for (const route of GUEST_PAGES) {
     expect(errors).toEqual([]);
   });
 }
+
+test("顶栏新增挑战/攒钱/海报三个入口可跳转（A17）", async ({ page }) => {
+  const errors = collectConsoleErrors(page);
+  await page.goto("/");
+  const nav = page.getByRole("navigation", { name: "主导航" });
+  await expect(nav.getByRole("link", { name: "挑战" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "攒钱" })).toBeVisible();
+  await expect(nav.getByRole("link", { name: "海报" })).toBeVisible();
+  await nav.getByRole("link", { name: "挑战" }).click();
+  await expect(page).toHaveURL(/\/challenge/);
+  await expect(page.getByRole("heading", { name: "省钱挑战" })).toBeVisible();
+  await nav.getByRole("link", { name: "攒钱" }).click();
+  await expect(page).toHaveURL(/\/goals/);
+  await expect(page.getByRole("heading", { name: "攒钱目标" })).toBeVisible();
+  await nav.getByRole("link", { name: "海报" }).click();
+  await expect(page).toHaveURL(/\/poster/);
+  await expect(page.getByRole("heading", { name: "年度海报" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
 
 test("旧订阅页 /subscriptions 重定向到洞察页订阅视图（旧链接不 404）", async ({ page }) => {
   const errors = collectConsoleErrors(page);

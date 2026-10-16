@@ -365,5 +365,6 @@ export const DEMO_ACHIEVEMENTS = {
     "cleaner",
     "questioner",
     "collector",
+    "challenge-streak",
   ],
 };

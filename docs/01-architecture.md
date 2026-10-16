@@ -2,11 +2,11 @@
 
 | 文档编号 | 01 |
 |---|---|
-| 版本 | v1.5（v1.0 本轮按 07 权威契约文档修订；v1.1 按 08 功能扩展方案落实；v1.2 按 08 修订案 A12（全局智能助理）落实；v1.3 按 08 修订案 A13（商户统计视图）落实；v1.4 按 08 修订案 A14（追问深度分析）落实；v1.5 按 08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）落实，2026-10-16） |
+| 版本 | v1.6（v1.0 本轮按 07 权威契约文档修订；v1.1 按 08 功能扩展方案落实；v1.2 按 08 修订案 A12（全局智能助理）落实；v1.3 按 08 修订案 A13（商户统计视图）落实；v1.4 按 08 修订案 A14（追问深度分析）落实；v1.5 按 08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）落实；v1.6 按 08 修订案 A17（省钱挑战打卡 / 攒钱目标中心 / 年度海报分享）落实，2026-10-16） |
 | 文档职责 | 全项目技术总纲：技术栈锁定、系统架构、目录结构、环境变量、状态管理、流式架构、全局智能助理（plan 流事件 / assistant-plan 任务 / 聊天输入闸门 / 语音转写 / 聊天案例检索）、商户统计视图（/insights 第 4 视图，08 修订案 A13）、追问深度分析（深度分析开关 / 深度上下文与明细快照 / 本地大模型端点，08 修订案 A14）、08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）、mock 模式、性能预算、部署方案、依赖风险 |
 | 读者 | 全体团队成员（前端交互 / 数据管线+AI / 材料）；评委（作为 PDF 技术文档「系统架构设计 + 技术选型理由」章节的素材源） |
-| 上游依据 | 产品定义（2026-10-13 确认版，本文件不推翻任何已确认决策）；**07 权威契约文档（docs/07-canonical-contract.md）为本文件的上位裁决——任何冲突以 07 为准**；08 功能扩展方案（docs/08-feature-expansion.md，2026-10-13 确认版）为增量设计——本文件 v1.1 落实其「各文档改动索引」针对 01 的全部改动与修订案 A1-A7 的镜像条款；v1.2 落实 08 修订案 A12（全局智能助理）的镜像条款；v1.3 落实 08 修订案 A13（商户统计视图）的镜像条款；v1.4 落实 08 修订案 A14（追问深度分析）的镜像条款；v1.5 落实 08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）的镜像条款 |
-| 生效日期 | 2026-10-13，随 W1 建仓落地（v1.1 同日随 08 功能扩展方案生效；v1.2 于 2026-10-15 随 08 修订案 A12 生效；v1.3 于 2026-10-15 随 08 修订案 A13 生效；v1.4 于 2026-10-16 随 08 修订案 A14 生效；v1.5 于 2026-10-16 随 08 修订案 A15 生效） |
+| 上游依据 | 产品定义（2026-10-13 确认版，本文件不推翻任何已确认决策）；**07 权威契约文档（docs/07-canonical-contract.md）为本文件的上位裁决——任何冲突以 07 为准**；08 功能扩展方案（docs/08-feature-expansion.md，2026-10-13 确认版）为增量设计——本文件 v1.1 落实其「各文档改动索引」针对 01 的全部改动与修订案 A1-A7 的镜像条款；v1.2 落实 08 修订案 A12（全局智能助理）的镜像条款；v1.3 落实 08 修订案 A13（商户统计视图）的镜像条款；v1.4 落实 08 修订案 A14（追问深度分析）的镜像条款；v1.5 落实 08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）的镜像条款；v1.6 落实 08 修订案 A17（省钱挑战打卡 / 攒钱目标中心 / 年度海报分享）的镜像条款 |
+| 生效日期 | 2026-10-13，随 W1 建仓落地（v1.1 同日随 08 功能扩展方案生效；v1.2 于 2026-10-15 随 08 修订案 A12 生效；v1.3 于 2026-10-15 随 08 修订案 A13 生效；v1.4 于 2026-10-16 随 08 修订案 A14 生效；v1.5 于 2026-10-16 随 08 修订案 A15 生效；v1.6 于 2026-10-16 随 08 修订案 A17 生效） |
 | 版本核实 | 所有 npm 包版本于 2026-10-13 从 registry.npmjs.org 实时核实（见附录 A） |
 
 > **实现收口（2026-10-15）**：本文为设计总纲。其中嵌入检索（EMBEDDING_PROVIDER）、案例库 150+ 等条目为**设计态**；实际交付口径以 07 §13 A10 收口说明与 README 为准（案例库 60 条 + 本地关键词匹配、6 条 API 路由、MCP 工具链已上线（07 §19 A9，接入层自建 SDK Client）、截图 OCR 已上线（07 §11 A11：DeepSeek deepseek-flash 主 + 智谱 glm-4.6v-flash / SiliconFlow GLM-4.1V-9B 降级，低置信字段条带裁剪二次复核））。全局智能助理已上线（07 §18 A12）：与追问面板共用 `use-chat-pipeline` 问答管线；`plan` 流事件（协议第 21 类）与 assistant-plan 任务（归 DeepSeek，8s 超时静默跳过）；聊天输入闸门 input-guard、Web Speech 语音转写、聊天 TF-IDF 检索阈值 0.15；sanitizeResult 改 async（WebCrypto 异步哈希）。商户统计视图已上线（07 §14 A13）：/insights 第 4 视图 tab「商户统计」（?view=merchants）——当时 4 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计），路由数不变（仍 10 条）；全程浏览器内 DuckDB-WASM 白名单聚合，零新端点、零新 env 键、无新增网络请求。追问深度分析已上线（07 §21 A14；单测 458 / e2e 38，2026-10-16 实测）：追问面板「深度分析」开关（默认关，aria-pressed 两态；开启提示「开启：直接交给大模型分析，并发送账单统计与明细」、关闭提示「本地规则优先，答不了才转在线」）；开启后本轮提问跳过闲聊分流/本地规则/本地案例，直连在线兜底 /api/followup（body 带 analysisMode:"deep"）；深度上下文 src/lib/chat/deep-analysis.ts（10 组代码常量白名单 SQL，零动态拼接、经白名单预检；buildDeepAnalysisContext ≤2400 字、逐组容错、超长整行丢弃）与最近 150 笔明细快照分两条消息（各 ≤4000 字、总 ≤8000、≤20 条；A15 起命中定向条件时增至三条，见下）；气泡脚注「深度分析 · 已发送账单统计与明细」（按实际发送组合标注，缺一段只说发了的那段）；本地大模型端点 LLM_BASE_URL + LLM_MODEL 双配置才生效（仅接管 chat 任务，其余任务路由不变；LLM_API_KEY 可选），解析纯函数 src/lib/llm/endpoint-config.ts（主机白名单校验：仅 loopback/私网网段，越界视为未配置）；mock 下 analysisMode:"deep" 走 deep 档脚本化演示流（不虚构账单数字，deep 优先于 promo 档）；零新端点、零新路由、零新事件（协议仍 21 类）。08 修订案 A15 已上线（单测 540 / e2e 45，2026-10-16 实测）：/insights 第 5 视图「订阅管理」（?view=subscriptions，订阅候选列表/逐笔核对/下次扣费倒计时全保留），原 /subscriptions 独立页降级为静态重定向；新增静态路由 /calendar「消费日历」（日历热力图 + 时间轴流水；CALENDAR_DAILY_SQL 白名单聚合 expense + paid、行数上限 2000；深夜口径 23:00-05:00；演示走确定性生成器每 9 笔 1 收入、深夜约 1/4；全程浏览器内计算零 API），路由条目 11 条（/calendar 入列、/subscriptions 降为静态重定向页；产品页面口径仍 10 个，与 05 §1.1 一致）；deep 档追问新增第三段定向明细检索 src/lib/chat/targeted-detail.ts（五类条件识别：月份/年份/商户 DB 商户 Top50 名单最长匹配/类目 CATEGORY_CODES 枚举/深夜，LIMIT 200、上下文 ≤2500 字、空结果诚实文案「本地账单里没有查到与问题直接相关的明细（范围说明）」、任一段失败静默省略回退两条消息），明细快照升级七列投影含深夜标记（07 §18 A8 口径修订，deep 档三条消息顺序 = 深度统计 → 定向明细 → 明细快照）；年度报告展示层通俗化 src/lib/report/labels.ts（RatioKey 六维阈值、healthRatingLabel；底层计算口径不动，仅文案）；零新端点、零新 env、零新事件。
@@ -270,14 +270,17 @@ spendct/
 │  ├─ app/                             # Next.js App Router 路由层（薄：只做布局与组装）
 │  │  ├─ layout.tsx                    # 根布局：字体、主题 Provider、QueryClientProvider、全站 ErrorBoundary 挂载
 │  │  ├─ globals.css                   # Tailwind v4 CSS-first 配置入口（@import + @theme 设计令牌，§1.1）
-│  │  ├─ page.tsx                      # 路由 / 落地页：Hero 一句话主张（3 秒价值动画转国赛）+ 「10 大能力」亮点卡墙 + 技术架构展示条（F01 纯文案版，08 §2.2）+ 上传入口 + 「加载示例账单」一键演示 + 隐私声明摘要
+│  │  ├─ page.tsx                      # 路由 / 落地页：Hero 一句话主张（3 秒价值动画转国赛）+ 「12 大能力」亮点卡墙 + 技术架构展示条（F01 纯文案版，08 §2.2）+ 上传入口 + 「加载示例账单」一键演示 + 隐私声明摘要
 │  │  ├─ upload/page.tsx               # 路由 /upload：上传与解析预览（含 OCR 入口、映射确认、去重提示）
 │  │  ├─ checkup/page.tsx              # 路由 /checkup（核心页，'use client'）：六阶段体检 + 洞察卡流 + 锚点追问面板
 │  │  ├─ insights/page.tsx             # 路由 /insights：5 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计 / 订阅管理），?view 视图内切换（08 修订案 A13/A15，路由数不变；吸收原 /ledger 与原 /subscriptions）
 │  │  ├─ subscriptions/page.tsx        # 路由 /subscriptions：静态重定向 → /insights?view=subscriptions（订阅管理视图，08 修订案 A15）
 │  │  ├─ calendar/page.tsx             # 路由 /calendar：消费日历（日历热力图 + 时间轴流水；浏览器内计算零 API；08 修订案 A15）
 │  │  ├─ report/page.tsx               # 路由 /report：年度报告
-│  │  ├─ privacy/page.tsx              # 路由 /privacy：隐私说明 + 数据可见性对照表（吸收原 /about；对照表补预算/成就/通知/导出 3 行 + 「10 大能力」静态版，08 §2.2）
+│  │  ├─ challenge/page.tsx             # 路由 /challenge：省钱挑战打卡（挑类目定每日预算 + 21 天打卡 + 基线/节省统计；浏览器内白名单聚合，零 API；08 修订案 A17）
+│  │  ├─ goals/page.tsx                 # 路由 /goals：攒钱目标中心（目标+存入 + 月结余估算进度 + 预计达成月 + 加速建议；浏览器内计算，零 API；08 修订案 A17）
+│  │  ├─ poster/page.tsx                # 路由 /poster：年度海报分享（三模板 + 自定义标语 + canvas 本地合成 PNG；与报告页共用 poster-input 口径；08 修订案 A17）
+│  │  ├─ privacy/page.tsx              # 路由 /privacy：隐私说明 + 数据可见性对照表（吸收原 /about；对照表补预算/成就/通知/导出 3 行 + 「12 大能力」静态版，08 §2.2）
 │  │  ├─ budget/page.tsx               # 路由 /budget：预算中心（预算环/预算 vs 实际/下月预测/超支贴士/快速记账入口；无账单数据 → redirect /upload?next=/budget；懒加载 chunk 含 ECharts core <300KB gzip，B12；F07/F08）
 │  │  ├─ learn/page.tsx                # 路由 /learn：消费知识小课堂（案例库浏览/知识卡/防坑手册；浏览器 TF-IDF 搜索；chunk <60KB 不引 ECharts/DuckDB；P2 档 F11）
 │  │  ├─ settings/page.tsx             # 路由 /settings：数据管理与导出（数据集列表/切换/删除 + CSV/JSON 本地导出 + 通知开关 + 主题/演示模式入口；chunk <60KB；F12）
@@ -338,6 +341,12 @@ spendct/
 │  │  ├─ llm/endpoint-config.ts        # 本地大模型端点解析（resolveLocalEndpoint 纯函数；LLM_BASE_URL + LLM_MODEL 双配置才生效、仅接管 chat 任务；08 修订案 A14）
 │  │  ├─ insights/                     # /insights 视图数据逻辑（08 修订案 A13/A15）：ledger-demo.ts（确定性演示行生成器，seed 20261013、100 行，账本汇总/商户统计共用）、merchant-aggregate.ts（aggregateMerchants / merchantsFromQuery / expenseTotalFromDirection 商户聚合纯函数）、calendar-aggregate.ts（CALENDAR_DAILY_SQL 白名单聚合 expense + paid、行数上限 2000；08 修订案 A15）、calendar-demo.ts（确定性演示生成器：每 9 笔 1 收入、深夜约 1/4；08 修订案 A15）
 │  │  ├─ report/labels.ts               # 年度报告展示层文案（RatioKey 六维阈值、buildHealthComment / buildHealthDims / healthRatingLabel；底层计算口径不动，仅文案；08 修订案 A15）
+│  │  ├─ report/poster-input.ts         # 报告/海报共享数据口径（loadPosterInput 年度概览 + 健康分 + 指标文案；dimScore 按方向分别计算跨度，修复结余率维度恒 0 分既有 bug；08 修订案 A17）
+│  │  ├─ insights/challenge-sql.ts      # 省钱挑战白名单日聚合 SQL 常量 + 窗口统计纯函数（toDateKey/addDays/daysBetween/seriesOf/sumBetween/averageDaily/quotaSuggestionCents；08 修订案 A17）
+│  │  ├─ insights/challenge-demo.ts     # 省钱挑战确定性演示行（seed 20261016，12 类目约 120 天，无体检结果兜底；08 修订案 A17）
+│  │  ├─ insights/challenge-store.ts    # 挑战状态纯函数（checkIn/uncheck 幂等、streakOf、buildChallengeDays、summarizeDays、computeBaselineCents；localStorage spendct:challenge:v1；08 修订案 A17）
+│  │  ├─ insights/goals-sql.ts          # 攒钱目标月度聚合映射（parseMonthlyIncomeExpense/estimateMonthlySurplus/parseCategoryMonthly；08 修订案 A17）
+│  │  ├─ insights/goals-store.ts        # 目标状态纯函数（createGoal/addDeposit/removeGoal/totalSaved/monthsToGoal/月份键工具；localStorage spendct:goals:v1；08 修订案 A17）
 │  │  ├─ store/                        # Zustand 切片（§5.1：pipeline/cards/anchor/dataset/ui/session）
 │  │  ├─ hooks/                        # useEChart / usePipelineRun / useDuckDBReady / useMediaQuery / useDemoMode（use-chat-pipeline 在 lib/assistant/，08 修订案 A12）
 │  │  ├─ utils/                        # format.ts、time-range.ts

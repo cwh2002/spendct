@@ -1,17 +1,20 @@
 /**
- * 10 大能力卡墙单一数据源（08 §2.2 F01）：
+ * 12 大能力卡墙单一数据源（08 §2.2 F01）：
  * 首页卡墙与 /privacy 静态版共用此清单，避免两处维护漂移。
  * 档位口径：P1 = 省赛窗口上线；P2 = 国赛窗口（入口带「即将上线」角标）。
+ * 省钱挑战/攒钱目标/年度海报为 A17 修订新增。
  */
 import type { LucideIcon } from "lucide-react";
 import {
   BellRing,
   Download,
+  Flame,
   GraduationCap,
   Lock,
   PenLine,
   PiggyBank,
   Stethoscope,
+  Target,
   Trophy,
   Wallet,
   WandSparkles,
@@ -72,16 +75,32 @@ const LIST: Capability[] = [
   {
     id: "poster",
     title: "年度海报",
-    desc: "一键生成年度账单海报，保存到手机随时分享。",
+    desc: "三款模板定制年度海报，本地生成一键分享。",
     icon: WandSparkles,
-    href: "/report",
+    href: "/poster",
     tier: "P1",
     flag: "reportStory",
   },
   {
+    id: "challenge",
+    title: "省钱挑战",
+    desc: "挑类目定每日预算，21 天打卡看能省多少。",
+    icon: Flame,
+    href: "/challenge",
+    tier: "P1",
+  },
+  {
+    id: "goals",
+    title: "攒钱目标",
+    desc: "立目标按月存入，结余估算多久能攒到。",
+    icon: Target,
+    href: "/goals",
+    tier: "P1",
+  },
+  {
     id: "achievements",
     title: "成就段位",
-    desc: "五档消费段位 + 12 枚成就徽章，完成条件即自动解锁。",
+    desc: "五档消费段位 + 13 枚成就徽章，完成条件即自动解锁。",
     icon: Trophy,
     href: "/report#achievements",
     tier: "P1",

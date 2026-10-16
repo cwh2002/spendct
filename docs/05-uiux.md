@@ -112,7 +112,7 @@ export function RouteGuard({ require, children }: {
 }
 ```
 
-**全局 Shell**：顶部导航（Logo「消费CT」、分段导航 体检/账本/日历/报告（账本 = /insights 内账本汇总视图，订阅管理 = /insights 第 5 视图、不占导航项，「订阅」→「日历」/calendar，08 修订案 A15）、右侧 PrivacyBadge、NotificationBell 通知铃（F13 落地后）、主题切换、演示模式 badge）；移动端（< 640px）顶部只留 Logo + PrivacyBadge + 主题切换，导航收进底部 tab bar（首页/体检/账本/日历/我的）；**「我的」指向 `/settings`**（08 修订案 A7）；`/budget` 与 `/learn` 不新增 tab 项，从首页「10 大能力」卡墙与 `/settings` 链接进入（08 §2.1）。全局右下悬浮「智能助理」入口（AssistantDrawer：悬浮入口 + 聊天抽屉，任何非登录页可用；聊天抽屉桌面 400×600 面板、移动端全屏，08 修订案 A12，详见 §2.10）；移动端悬浮按钮与底部 tab bar 共存，同为 44×44 触控目标。
+**全局 Shell**：顶部导航（Logo「消费CT」、分段导航 体检/账本/日历/报告/挑战/攒钱/海报（账本 = /insights 内账本汇总视图，订阅管理 = /insights 第 5 视图、不占导航项，「订阅」→「日历」/calendar，08 修订案 A15；挑战/攒钱/海报三入口为 08 修订案 A17 新增，8 项入口的 md 断点宽度预算见 top-nav.tsx 注释）、右侧 PrivacyBadge、NotificationBell 通知铃（F13 落地后）、主题切换、演示模式 badge）；移动端（< 640px）顶部只留 Logo + PrivacyBadge + 主题切换，导航收进底部 tab bar（首页/体检/账本/日历/我的）；**「我的」指向 `/settings`**（08 修订案 A7）；`/budget` 与 `/learn` 不新增 tab 项，从首页「12 大能力」卡墙与 `/settings` 链接进入（08 §2.1）；`/challenge`、`/goals`、`/poster` 同样不占 tab 位，从首页能力卡进入（08 修订案 A17）。全局右下悬浮「智能助理」入口（AssistantDrawer：悬浮入口 + 聊天抽屉，任何非登录页可用；聊天抽屉桌面 400×600 面板、移动端全屏，08 修订案 A12，详见 §2.10）；移动端悬浮按钮与底部 tab bar 共存，同为 44×44 触控目标。
 
 **FeatureFlag（砍法落点，与 06 联动）**：
 
@@ -162,9 +162,10 @@ export const featureFlags = {
   │ 三承诺条（图标+一行字，保留）：                │
   │   🔒 明细默认不出浏览器 · 👁 追问时可见统计与明细 · ✅ 每条结论你审阅 │
   ├────────────────────────────────────────────┤
-  │ 「10 大能力」亮点卡墙（2×5 栅格；滚动动效转国赛）：│
+  │ 「12 大能力」亮点卡墙（2×6 栅格；滚动动效转国赛）：│
   │   六阶段体检/订阅雷达/预算中心/快速记账/年度海报/  │
-  │   成就段位/省钱贴士/知识课堂/数据导出/隐私可见    │
+  │   成就段位/省钱贴士/知识课堂/数据导出/隐私可见/   │
+  │   省钱挑战/攒钱目标（A17 增补三卡）              │
   │   （点击跳对应页面；P2 项带「即将上线」角标）     │
   ├────────────────────────────────────────────┤
   │ 技术架构展示条（图标化管线图）：                │
@@ -175,7 +176,7 @@ export const featureFlags = {
   │ 六阶段预览（横向 mini stepper，静态，保留）      │
   └────────────────────────────────────────────┘
   ```
-- **核心组件**：`HeroCta`、`PromiseStrip`、`CapabilityCardWall`（10 卡，与 /privacy 静态版同数据源；订阅雷达卡 href → `/insights?view=subscriptions`，08 修订案 A15；滚动动效转国赛，08 §11.2 决议 ①）、`TechArchStrip`（纯静态图标化管线，无新依赖）、`MiniPipelinePreview`（复用 PipelineStepper 的只读形态）。
+- **核心组件**：`HeroCta`、`PromiseStrip`、`CapabilityCardWall`（12 卡，与 /privacy 静态版同数据源；订阅雷达卡 href → `/insights?view=subscriptions`，08 修订案 A15；海报卡 href → `/poster`，08 修订案 A17；滚动动效转国赛，08 §11.2 决议 ①）、`TechArchStrip`（纯静态图标化管线，无新依赖）、`MiniPipelinePreview`（复用 PipelineStepper 的只读形态）。
 - **状态**：
   - 空：首访即正常态，无空态（CTA 永远可用）；
   - 加载：点击示例账单 → 按钮变「正在准备数据…」+ 进度条（DuckDB-WASM 下载/初始化进度，见 01 的 WASM 加载基准），完成后自动跳 `/checkup`；
@@ -398,7 +399,8 @@ export const featureFlags = {
   │ 六维健康明细（每维「每 100 元消费里约 X 元   │
   │   用于…」+ 百分比小字 + 状态标签，08 A15）  │
   │ 六维健康雷达 HealthRadar（F10）           │
-  │ 成就徽章墙 AchievementWall（12 枚，F10）   │
+  │ 成就徽章墙 AchievementWall（13 枚，F10，   │
+  │   第 13 枚「七日打卡王」为 A17 挑战页解锁）  │
   ├──────────────────────────────────────┤
   │ [生成年度海报]（canvas 合成 1080×1920 PNG  │
   │   保存本地，F05）+ [导出 PDF]（保留）      │
@@ -427,7 +429,7 @@ export const featureFlags = {
   │    23 成就收藏通知与导出（浏览器 only）       │
   │ ② 隐私承诺三卡（浏览器/LLM/服务器各看到什么）│
   │ ③ 技术栈与开源仓库 · 团队 · 费用说明        │
-  │ ④ 「10 大能力」一览静态版（与首页能力卡      │
+  │ ④ 「12 大能力」一览静态版（与首页能力卡      │
   │    同数据源，随 F01 落地）                 │
   └──────────────────────────────────────┘
   ```
@@ -522,6 +524,96 @@ export const featureFlags = {
   - 成功：导出完成 → 浏览器本地下载 + 完成提示；删除后自动回 `/upload`。
 - **路由**：`/settings`（08 A7）；`/budget`、`/learn` 由此页链接与首页能力卡进入，不新增底部 tab 项。
 
+### 1.15 省钱挑战打卡页 `/challenge`（08 修订案 A17）
+
+- **目的**：把「省钱」落成可坚持的行为——挑一个类目定每日预算，连续打卡 21 天，用基线对比看到省下的真金白银；全程浏览器内计算，零 API。
+- **布局分区**：
+  ```
+  ┌──────────────────────────────────────┐
+  │ 标题「省钱挑战」+ 副标题「挑一个类目…    │
+  │   连续打卡 21 天」                     │
+  ├──────────────────────────────────────┤
+  │ 未开始态：12 类目 chips（aria-pressed） │
+  │   + 每日预算输入（placeholder 给建议值） │
+  │   + 基线说明（近 30 天日均）            │
+  │   + [开始挑战]                        │
+  ├──────────────────────────────────────┤
+  │ 进行中：四宫格 StatCard（进行天数 N/21/  │
+  │   连续打卡/达标天数/累计节省）+ 今日卡    │
+  │   （达标/超支徽标、[打卡今日]/[撤销]、   │
+  │   预算进度条）+ 近 7 天柱条（虚线=预算线，│
+  │   绿达标橙超支，CircleCheck 已打卡标记）  │
+  ├──────────────────────────────────────┤
+  │ 完成态：21 天总结 + [再来一次]          │
+  │ 玩法说明卡（如何算节省/中途可放弃）      │
+  └──────────────────────────────────────┘
+  ```
+- **数据口径（08 修订案 A17）**：真实数据走白名单聚合 `CHALLENGE_DAILY_SQL`（所选类目按日聚合，expense + paid 口径与 A13/A15 一致，行数上限 600）；基线 = 开始前 30 天该类目日均；节省 = 基线 − 当日实际（正计节省、负计超支）；无体检结果或查询失败 → 确定性演示行兜底（seed 20261016，12 类目约 120 天）；全程浏览器内计算。
+- **核心组件**：`ChallengeView`（页面级，登记见 §2.2）；挑战状态纯函数在 `src/lib/insights/challenge-store.ts`（checkIn/uncheck 幂等、streakOf、buildChallengeDays、summarizeDays、computeBaselineCents），SQL 与窗口统计在 `challenge-sql.ts`，演示行在 `challenge-demo.ts`。
+- **状态**：
+  - 空：无进行中挑战 → 选类目+定预算表单（建议值按近 30 天日均向上取整到元，下限 ¥5）；
+  - 加载：挂载前骨架（Flame 图标 + 加载中）；WASM 查询中 → 演示行即时兜底；
+  - 错误：查询失败 → 整页回退演示行，数据来源脚注标「内置数据」；
+  - 成功：打卡/撤销即时更新四宫格与柱条（toast 确认）；连续打卡 ≥7 天 → 解锁成就「七日打卡王」（第 13 枚，unlockAchievement 幂等 + 通知）。
+- **持久化**：挑战记录存 localStorage `spendct:challenge:v1`（类目/预算/起止日/打卡日期集，≤20KB，07 §17 A17，不含行数据）；刷新后恢复进行中状态。
+- **路由**：`/challenge`，守卫无；入口 = top-nav「挑战」（报告之后，08 A17）与首页能力卡；移动端要点：四宫格 2×2，今日卡与柱条单列。
+
+### 1.16 攒钱目标中心页 `/goals`（08 修订案 A17）
+
+- **目的**：把「想买什么」变成攒钱计划——立目标、按月存入、用月结余估算进度与预计达成月，攒不动时给出加速建议；全程浏览器内计算，零 API。
+- **布局分区**：
+  ```
+  ┌──────────────────────────────────────┐
+  │ 标题「攒钱目标」+ 副标题               │
+  ├──────────────────────────────────────┤
+  │ 左：预计月结余卡（¥X/月 或 暂无法估算  │
+  │   + 口径说明）+ 月均支出 TOP 卡        │
+  │   （top3 类目横向条）                  │
+  │ 右：新建目标表单（名称/金额/目标月，    │
+  │   目标月默认 12 个月后）               │
+  ├──────────────────────────────────────┤
+  │ 目标卡列表：进度条（已存/目标）+ 预计   │
+  │   达成月（按结余估算）+ 加速建议        │
+  │   + 存入输入框 + [存入] + 近 5 笔记录   │
+  │   + 删除（两步确认）                   │
+  └──────────────────────────────────────┘
+  ```
+- **数据口径（08 修订案 A17）**：结余 = 近月平均收入 − 平均支出（只取收入 >0 的月份口径）；类目月均 = 各类目支出 ÷ 活跃月数；预计达成月 = 目标月结余估算向上取整（结余非正 → 「暂无法估算」）；无体检结果或查询失败 → 确定性演示口径兜底（复用 ledger 演示行同源 seed）；全程浏览器内计算。
+- **核心组件**：`GoalsView`（页面级，登记见 §2.2）；目标状态纯函数在 `src/lib/insights/goals-store.ts`（createGoal/addDeposit/removeGoal/totalSaved/monthsToGoal/月份键工具），月度聚合映射在 `goals-sql.ts`。
+- **状态**：
+  - 空：无目标 → 空态卡「还没有攒钱目标」+ [立第一个目标]；无账单数据 → 结余卡标「暂无法估算」（口径说明如实标注），目标仍可创建与存入；
+  - 加载：挂载前骨架（Target 图标 + 加载中）；
+  - 错误：聚合查询失败 → 演示口径兜底，数据来源脚注标「内置数据」；
+  - 成功：存入后进度条/预计达成即时重算；加速建议四态（已达成/进度未知/按计划/落后——落后态给出「每月需存 ¥X，可在类目再省 ¥Y」）。
+- **持久化**：目标列表存 localStorage `spendct:goals:v1`（目标+存入记录，≤20KB，07 §17 A17，不含行数据）；刷新后恢复。
+- **路由**：`/goals`，守卫无；入口 = top-nav「攒钱」（报告之后，08 A17）与首页能力卡。
+
+### 1.17 年度海报分享页 `/poster`（08 修订案 A17）
+
+- **目的**：把年度账单体检结果做成可分享的海报——三款模板 + 自定义标语，canvas 本地合成 PNG，下载/系统分享/复制到剪贴板；全程浏览器本地绘制，不上传任何数据。
+- **布局分区**：
+  ```
+  ┌──────────────────────────────────────┐
+  │ 标题「年度海报」+ 副标题「本地生成…」   │
+  ├──────────────────────────────────────┤
+  │ 左：海报预览 canvas（540×960 缩放预览，│
+  │   aria-label='年度海报预览'）+ 年份/    │
+  │   数据来源 meta 行                     │
+  │ 右：样式卡（青屿/暮橙/夜紫 aria-pressed │
+  │   + 色点预览）· 标语卡（input 16 字上限 │
+  │   + 字数计数）· 导出卡（[下载 PNG]      │
+  │   [系统分享] [复制图片]，busy 转圈）    │
+  └──────────────────────────────────────┘
+  ```
+- **数据口径（08 修订案 A17）**：海报数据与报告页共用 `src/lib/report/poster-input.ts` 单一口径（年度概览/健康分/指标文案，含 dimScore 结余率维度修复）；无体检结果或查询失败 → 演示口径兜底（与报告页同源 demo）；导出走 `<a download>` 内存生成（spendct-annual-poster-{year}.png），不落盘、不经服务端；系统分享优先 `navigator.share({files})`，不支持则复制图片到剪贴板（toast 如实提示）。
+- **核心组件**：`PosterStudio`（页面级，登记见 §2.2）；绘制函数与样式表在 `src/lib/report/poster-canvas.ts`（drawAnnualPoster/renderPosterPng/POSTER_STYLES 三模板）。
+- **状态**：
+  - 空：无体检结果 → 演示口径海报（数据来源脚注标「内置数据」），功能全部可用；
+  - 加载：挂载前骨架 + canvas 绘制中预览区 shimmer；
+  - 错误：canvas 合成失败 → 预览区错误态 + [重试]；系统分享被取消（AbortError）→ 静默；
+  - 成功：样式/标语切换即时重绘（依赖数组联动）；下载触发浏览器下载事件；分享/复制完成 → toast 确认。
+- **路由**：`/poster`，守卫无；入口 = top-nav「海报」（报告之后，08 A17）与首页能力卡（能力墙海报卡 href 已由 /report 改为 /poster）。
+
 ---
 
 ## 2. 组件树与可复用组件清单
@@ -542,6 +634,9 @@ App
 │  ├─ InsightsPage ── InsightViewToggle · FavoritesPanel · InsightFilterBar · InsightCard[] · FollowUpPanel · TipCard · LedgerSummaryView（账本汇总，原 /ledger 并入）· MerchantView（商户统计，08 修订案 A13）· SubscriptionView（订阅管理，原 /subscriptions 迁入，08 修订案 A15）
 │  ├─ CalendarPage ── CalendarView（CalendarHeatmap · CalendarTimeline，08 修订案 A15）
 │  ├─ ReportPage ── HealthIndexGauge · StorySegment[] · RankBadge · HealthRadar · AchievementWall · PosterCanvasButton · ExportPdfButton
+│  ├─ ChallengePage ── ChallengeView（StatCard 四宫格 · 近 7 天柱条，08 修订案 A17）
+│  ├─ GoalsPage ── GoalsView（结余卡 · 类目 TOP 卡 · 目标卡列表，08 修订案 A17）
+│  ├─ PosterPage ── PosterStudio（预览 canvas · 样式/标语卡 · 导出卡，08 修订案 A17）
 │  ├─ BudgetPage ── QuickEntryBar · BudgetRing · BudgetBar[] · BudgetAdviceCard · ForecastChart · ForecastNarrativeCard
 │  ├─ LearnPage ── CaseSearchBar · CaseCategoryChips · CaseCard[] · KnowledgeCard
 │  ├─ SettingsPage ── DatasetManager · ExportButton · NotificationSettingSwitch
@@ -611,6 +706,9 @@ App
 | `SubscriptionView` | 订阅候选列表 / 逐笔核对 / 下次扣费倒计时（自原 /subscriptions 页整体迁入、行为不变；页面级，08 修订案 A15） | — | SubscriptionRadarCard、StatRow、NextBillingCountdown、CancelGuideChecklist、CitationCollapse、Sparkline |
 | `CalendarView` | 月切换、热力图与时间轴联动（页面级，/calendar 页，08 修订案 A15） | — | CalendarHeatmap、CalendarTimeline、Skeleton |
 | `CalendarTimeline` | `rows: {ts, category, merchant, amountCents, direction, night}[]`（直连分页 SQL，LIMIT 200）、`onAnchor` | loading / ready / empty / table | Skeleton、EmptyState |
+| `ChallengeView` | 三态（未开始选类目+定预算 / 进行中四宫格+今日卡+近 7 天柱条 / 完成总结）；挑战状态纯函数走 `src/lib/insights/challenge-store.ts`；持久化 `spendct:challenge:v1`（07 §17 A17；页面级，08 修订案 A17） | not-started / running / finished | StatCard、Skeleton、EmptyState |
+| `GoalsView` | 结余卡+月均支出 TOP、新建目标表单、目标卡列表（进度条/预计达成/存入/两步删除确认）；状态纯函数走 `src/lib/insights/goals-store.ts`；持久化 `spendct:goals:v1`（07 §17 A17；页面级，08 修订案 A17） | loading / ready | Skeleton、EmptyState |
+| `PosterStudio` | 三样式切换（aria-pressed）+ 标语 16 字计数 + 下载/系统分享/复制；预览 canvas（aria-label='年度海报预览'）；数据与报告页共用 `src/lib/report/poster-input.ts`（页面级，08 修订案 A17） | loading / ready / error | Skeleton、EmptyState |
 | `FavoritesPanel` | `cardIds: string[]`（`spendct:fav:v1`） | closed / open | EmptyState、InsightCard（缩略） |
 | `NextBillingCountdown` | `nextDate`、`daysLeft`（确定性 SQL 外推） | default | — |
 | `CancelGuideChecklist` | `steps: {text, tip}[]`、`caseId`（rag 引用） | default / expanded | CitationCollapse |
@@ -1490,6 +1588,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 5. 成就段位一屏（6s）：成就墙一屏 + 徽章弹出一枚（F10，UI 设计 4% + 前端交互 3% 的落点镜头）；
 6. 数据导出（5s）：CSV/JSON 导出 + 隐私提示（F12，隐私信任收口）。
 7. 智能助理（6s）：悬浮按钮 → 抽屉 → 示例问题本地命中（脚注「本地计算」）→ 一条在线兜底（plan 思考计划块 + ToolBadge）→ 语音输入一例（如浏览器支持）。（08 修订案 A12 未强制入动线，随 06 路线图 §6.3/§6.4 修订决定）
+8. 三新页可选动作（时间再富余时加，08 修订案 A17）：/challenge 选类目定预算并打卡一笔（基线→节省即时反馈）→ /poster 切一款样式下载一张 PNG（6s）。不进 30 秒主动线；PDF/README 以「12 大能力」静态展示。
 
 接 30 秒动线（§7.2）后的富余时间依次播放；若 P1/P2 已砍（08 §⑩），按 E1/E2 验收结果跳过对应段，回退旧版三镜头（OCR / 健康仪表 / 导出 PDF）。**F09/F11/F13（P2）不进任何动线**：PDF/README 静态展示 + 首页「即将上线」角标，T52b/T53/T54 点亮后才考虑 60s v2 加映。演示控制台「跳转新功能」快捷键组（§7.3）按同一顺序直达。
 
@@ -1522,7 +1621,7 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | UI 设计（UX 10% 内 4 分） | §3 | 「验证过的金融信任色板（CVD/对比度实测数据）+ 统一设计系统」 |
 | 性能优化（前端工程 20% 内 3 分） | §4.3 | 「120ms 事件节流、图表实例 ≤6、DuckDB/ECharts 按路由懒加载、缓存键命中（07 §10）」 |
 | AI 安全与可控性（4%） | §3.6-8、§6.5-8 | 「ECharts option 白名单清洗、SQL 白名单徽标可视化、注入演示账单脱敏显示」 |
-| 实用性 / 社会价值（10%/10%） | §1.6 两大图、§1.8 管理墙、§1.12-1.14 | 「预算/记账/订阅管理/数据导出四类实用功能 + 订阅倒计时与取消攻略，AI 先体检之外的可落地价值」 |
+| 实用性 / 社会价值（10%/10%） | §1.6 两大图、§1.8 管理墙、§1.12-1.14、§1.15-1.17 | 「预算/记账/订阅管理/数据导出四类实用功能 + 订阅倒计时与取消攻略 + 省钱挑战/攒钱目标/年度海报（08 A17），AI 先体检之外的可落地价值」 |
 | 大模型集成（AI 深度内） | §1.12 zod 确认卡、§1.10 故事段、§2.3 新 schema、§2.10 assistant-plan（08 修订案 A12，deepseek） | 「6 个新 LLM 任务（08 5 个 + A12 assistant-plan）全部 zod 强校验 + 模板兜底 + 降级链（08 §⑥/07 §12），扩展不稀释 AI 深度主线」 |
 
 ### 8.3 本文档修订记录
@@ -1536,4 +1635,5 @@ export type Checkpoint = RunStateV1; // { version, runId, datasetTxHash, status,
 | 2026-10-15 | v1.3：落实 08 修订案 A13 商户统计视图（07 §14 A13）——§1.1/§1.5 视图切换器补第 4 视图「商户统计」（?view=merchants，与卡片流/图表廊/账本汇总并列，路由数不变仍 10 条）；新增 §1.7 商户统计视图节（全账单 expense 数据口径、两条白名单 SQL、排名横向条形图前 10 + 数据表全量（50 行上限，截断脚注「商户较多，按金额取前 50 名」/「全部展示」）、商户搜索同步过滤、点击柱子 → 追问锚点 merchant-view（§18 协议不变，无新工具）、演示行兜底 ledger-demo.ts seed 20261013 100 行、零新端点零新 env 键）；§1.6 补重构登记（演示行生成器与 ChartCard 外壳提取为共享模块 src/lib/insights/ledger-demo.ts、src/components/insights/chart-card.tsx，行为不变）；§2.1 组件树与 §2.2 组件总表登记页面级 MerchantView 与共享 ChartCard 口径；原 §1.7-1.12 顺延为 §1.8-1.13 并同步内部引用 |
 | 2026-10-16 | v1.4：落实 08 修订案 A14 追问深度分析（07 §21）——§4.1 补「深度分析」开关交互规范（输入框上方 chip、aria-pressed 两态、开启/关闭提示文案、开启后回答气泡脚注「深度分析 · 已发送账单统计与明细」（三态来源脚注 + 深度分析档）、零新端点/路由/事件，协议仍 21 类）；§2.2 页面级组件「约 19 个」修正为「约 20 个」（MerchantView 已登记；深度分析 chip 为 FollowUpPanel 内部扩展、不新增组件） |
 | 2026-10-16 | v1.5：落实 08 修订案 A15 订阅管理视图 + 消费日历 + 年度报告通俗化——§1.1 站点地图与路由表：新增 /calendar 消费日历页、/subscriptions 改静态重定向（页面总数仍 10、路由条目 11），top-nav「订阅」→「日历」/calendar、移动端底部 tab 同步、能力卡墙订阅卡 href 改 /insights?view=subscriptions；§1.5/§1.6/§2.2 视图切换器 4→5（+「订阅管理」?view=subscriptions）；§1.8 降级为订阅管理视图（内容全保留，SubscriptionView 页面级组件迁入、行为不变）；新增 §1.9 消费日历页节（CALENDAR_DAILY_SQL 白名单聚合 expense+paid 行数上限 2000、流水直连分页 LIMIT 200、深夜口径 23:00–05:00、演示确定性生成器每 9 笔 1 收入深夜约 1/4、全程浏览器内计算零 API、ECharts 注册 HeatmapChart/CalendarComponent/VisualMapComponent），原 §1.9-1.13 顺延为 §1.10-1.14 并同步内部引用；§1.10 年度报告补通俗化展示口径（六维健康明细「每 100 元消费里约 X 元用于…」+ 百分比小字 + 状态标签、健康指数大白话总评、四段叙事文案、段位成就口语化，仅展示层，底层计算口径不动，文案集中 src/lib/report/labels.ts）；§2.2 页面级组件约 20→23 个（CalendarView/CalendarTimeline/SubscriptionView 登记，CalendarHeatmap 扩 /calendar 页口径）；§4.5 补第 11 条 /calendar 移动端要点；§7.2 演示动线订阅镜头路由改 /insights?view=subscriptions |
+| 2026-10-16 | v1.6：落实 08 修订案 A17 省钱挑战打卡 + 攒钱目标中心 + 年度海报分享（07 §14/§17 A17）——§1.1 站点地图与路由表：静态页 13→16（+ /challenge /goals /poster，top-nav 5→8 项「挑战/攒钱/海报」列报告之后、md 断点宽度预算口径，移动端不占 tab 位从首页能力卡进入）；新增 §1.15/§1.16/§1.17 三页完整四态与数据口径（challenge：白名单日聚合+21 天打卡+基线/节省、goals：月结余估算+目标进度+预计达成月、poster：三模板+标语+canvas 本地合成 PNG，全部本地计算零 API 零新端点零新 env）；§1.2 能力墙 10→12 卡（海报卡 href /report→/poster）；§1.10 成就墙 12→13 枚（第 13 枚「七日打卡王」由挑战页连续打卡解锁）；§2.1 组件树与 §2.2 组件总表登记页面级 ChallengeView/GoalsView/PosterStudio（约 23→26 个）；§8.2 实用性落点索引补 §1.15-1.17 |
 

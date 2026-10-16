@@ -274,10 +274,10 @@ export default function PrivacyPage() {
         </div>
       </section>
 
-      {/* ④ 10 大能力一览（静态版，与首页能力卡同数据源） */}
+      {/* ④ 12 大能力一览（静态版，与首页能力卡同数据源，A17 增补三卡） */}
       <section aria-label="能力一览" className="mt-14">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-xl font-bold md:text-2xl">10 大能力一览</h2>
+          <h2 className="text-xl font-bold md:text-2xl">12 大能力一览</h2>
           <p className="flex items-center gap-1.5 text-sm text-(--color-ink-muted)">
             <ListChecks className="size-4" aria-hidden />
             与首页能力卡同数据源

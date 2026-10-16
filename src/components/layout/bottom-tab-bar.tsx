@@ -23,7 +23,8 @@ function isActivePath(pathname: string, href: string): boolean {
  * 移动端底部 tab bar（< md 显示，05 §1.1）。
  * 高 56px + env(safe-area-inset-bottom)：内边距让内容区避开 iPhone 底部手势条，
  * 主内容区在 Shell 里预留 pb-20 防止被遮挡。
- * /budget 与 /learn 不设 tab 项，从首页能力卡与个人中心进入。
+ * /budget 与 /learn 不设 tab 项，从首页能力卡与个人中心进入；
+ * /challenge、/goals、/poster（A17）同样从首页能力卡进入，不占 tab 位。
  */
 export function BottomTabBar() {
   const pathname = usePathname();

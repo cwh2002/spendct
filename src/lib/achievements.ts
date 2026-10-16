@@ -1,5 +1,5 @@
 /**
- * 成就徽章单一数据源（F10：12 枚，确定性规则判定）。
+ * 成就徽章单一数据源（F10：13 枚，确定性规则判定；第 13 枚为 A17 省钱挑战）。
  * 解锁状态持久化在 localStorage "spendct:achievements:v1"：
  * 当前版本由演示集初始化并支持 unlockAchievement 增量解锁；
  * 正式版可改为每次体检完成后按规则重算（例如 sub-hunter 要求命中 ≥1 项沉默订阅，
@@ -10,6 +10,7 @@
 import {
   BellRing,
   Bookmark,
+  CalendarCheck,
   Flame,
   GraduationCap,
   MessageCircleQuestion,
@@ -50,6 +51,7 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
   { id: "cleaner", name: "一尘不染", desc: "累计清理 100 条重复记录", plain: "清理 100 条重复", icon: Sparkles },
   { id: "questioner", name: "十万个为什么", desc: "对洞察卡发起 10 次追问", plain: "追问洞察 10 次", icon: MessageCircleQuestion },
   { id: "collector", name: "收藏家", desc: "收藏 10 张洞察卡", plain: "收藏 10 张卡", icon: Bookmark },
+  { id: "challenge-streak", name: "七日打卡王", desc: "连续完成 7 天省钱挑战打卡", plain: "连续打卡 7 天", icon: CalendarCheck },
 ];
 
 /** 规格兼容别名：title/condition 分别镜像 name/desc，供按旧字段名引用的页面使用 */

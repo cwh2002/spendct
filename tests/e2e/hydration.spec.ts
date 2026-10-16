@@ -1,7 +1,7 @@
 /**
  * SSR 水合一致性回归：预置与服务器兜底冲突的本地存储（成就解锁集、段位档位），
  * 整页加载（真实 SSR + 水合）后不得出现水合不一致报错，且最终渲染本地值。
- * 覆盖用户反馈的「报告页已解锁 4/12 与本地 3/12 不一致」一类问题：
+ * 覆盖用户反馈的「报告页已解锁 4/13 与本地 3/13 不一致」一类问题：
  * 本地数据只能订阅式读取（useSyncExternalStore 服务器快照），渲染期直接读
  * localStorage 或分支 typeof window 必炸。
  */
@@ -37,7 +37,7 @@ test("报告页：本地存储与服务器兜底冲突时水合一致", async ({
   await page.goto("/report");
   await expect(page.locator("h1").first()).toBeVisible();
   // 水合后渲染的是本地值（1 枚），而非服务器演示集（4 枚）
-  await expect(page.getByText(/已解锁 1\/12 枚/).first()).toBeVisible();
+  await expect(page.getByText(/已解锁 1\/13 枚/).first()).toBeVisible();
   await expect(page.getByText("消费新手").first()).toBeVisible();
   expect(issues).toEqual([]);
 });
@@ -53,7 +53,7 @@ test("个人中心：登录后整页加载水合一致", async ({ page }) => {
   const issues = collectHydrationErrors(page);
   await page.reload();
   await expect(page.locator("h1").first()).toBeVisible();
-  await expect(page.getByText(/已解锁 1\/12 枚/).first()).toBeVisible();
+  await expect(page.getByText(/已解锁 1\/13 枚/).first()).toBeVisible();
   await expect(page.getByText("消费新手").first()).toBeVisible();
   expect(issues).toEqual([]);
 });

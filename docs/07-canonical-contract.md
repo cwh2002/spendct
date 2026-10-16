@@ -671,6 +671,10 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 
 **理由**：用户反馈①「追问深度分析读不到五月明细、月份标签是垃圾数字、无深夜标记」——根因两层（A14 深析统计的月份标签格式化 bug + 快照只有最近 150 笔且无时分秒），修复后追问可按月/年/商户/类目/深夜定向读取原始账单，满足「追问小程序能读取账单原始数据」的诉求；定向段全部参数来自可信来源（DB 名单、常量枚举、纯数字正则），注入面为零，隐私出口仍只有 A8 一条。
 
+### 08 修订案 A17（2026-10-16）：路由口径 20 → 23（静态页 13 → 16）
+
+**新裁决**：`/challenge` `/goals` `/poster` 三静态页上线（§14 A17），API 端点不变（仍 6 条）。**本条同时更新 A10 的实现收口说明**：交付代码实际部署的 API 路由仍为 **6 条**——ocr / followup / rag / mcp/[tool] / ai/chat / ai/task（六阶段流水线、白名单 SQL、追问本地回答、三新页计算均在浏览器内确定性执行）；README / PDF 的构建口径按「**23 路由（16 静态页 + 6 API + not-found）**」表述，以本条为准。三新页零新端点、零新事件、零新 env 键（协议仍 21 类）。
+
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
 - 四套清单（#47）：01 六条 vs 03 `/api/ai/*`+轮询 vs 06 `/api/chat` vs 04 session/schema。
@@ -682,7 +686,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 
 ### 权威定义
 
-**路由（10 条，#46 fixHint + 08 修订案 A7）**：
+**路由（A7 起 10 条；A15 起 +/calendar 且 /subscriptions 降为静态重定向；A17 起 +3 条，交付静态页口径以 §13 收口注记为准）**：
 
 | 路由 | 页面 |
 | --- | --- |
@@ -693,6 +697,9 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 | `/calendar` | 消费日历：日历热力图 + 时间轴流水（A15，替代原 /subscriptions 独立页） |
 | `/subscriptions` | 静态重定向 → `/insights?view=subscriptions`（A15，独立页降级为洞察页第 5 视图） |
 | `/report` | 年度报告 |
+| `/challenge` | 省钱挑战打卡：挑类目定每日预算、21 天打卡、基线/节省/连续打卡统计（A17） |
+| `/goals` | 攒钱目标中心：目标+存入、月结余估算进度、预计达成月+加速建议（A17） |
+| `/poster` | 年度海报分享：三款模板+自定义标语、预览/下载/系统分享/复制（A17） |
 | `/privacy` | 隐私说明 + 数据可见性对照表（吸收原 /about） |
 | `/budget` | 预算中心：预算环进度 / 预算 vs 实际 / 超支 AI 贴士 / 下月预测 / 快速记账入口（P1，A7） |
 | `/learn` | 消费知识小课堂：案例库浏览（分类/搜索）/ 金融素养知识卡 / 防坑手册（P2，A7） |
@@ -740,6 +747,19 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - **测试**：单测 `tests/unit/calendar-aggregate.test.ts`、`tests/unit/calendar-demo.test.ts`；e2e `tests/e2e/calendar.spec.ts`（页面加载、热力图、搜索过滤、方向筛选、数据表视图）、`tests/e2e/smoke.spec.ts`（/calendar 入游客清单 + /subscriptions 重定向断言）。
 
 **理由**：用户反馈④「订阅服务基本很少人做，页面可以做其他更容易服务用户的功能」——订阅功能内容整体保留（评分证据不丢）但降格为视图，独立页位置让给消费日历（用户拍板新页面），热力图原属路线图规划提前落地。
+
+### 08 修订案 A17（2026-10-16）：三新路由 /challenge /goals /poster（静态页 13 → 16）
+
+- **路由新增 3 条**（见上表，导航「报告」之后）：`/challenge` 省钱挑战打卡、`/goals` 攒钱目标中心、`/poster` 年度海报分享；全站入口同步（顶栏 5 → 8 项、首页能力墙 10 → 12 卡）。无守卫；三页均带 `loading.tsx` 兜底骨架（与 05 §1.1 既有约定一致）。
+- **数据口径（权威）**：三页全程浏览器内计算，零 API 调用——真实数据走既有白名单 SQL（页面代码常量，零用户输入，经 runWhitelistedAggregate 预检双保险 + 单测文法回归）：challenge 按类目日聚合 `CHALLENGE_DAILY_SQL`（`WHERE direction = 'expense' AND status = 'paid'`，与 A13/A15 已支付口径一致）；goals 走月度收支/类目月聚合（estimateMonthlySurplus / parseCategoryMonthly，只取收入>0 月份口径）；poster 与报告页共用 `src/lib/report/poster-input.ts` 单一口径。无体检结果（lastRun 为空）或查询失败 → 确定性演示行兜底（`src/lib/insights/challenge-demo.ts` seed 20261016；goals 复用 ledger 演示口径），浏览器内聚合。
+- **持久化（§17）**：挑战记录与目标列表为可重算状态，存 localStorage 两新键 `spendct:challenge:v1` / `spendct:goals:v1`（均 ≤20KB，不含任何行数据，§17 允许项增补）。
+- **poster-input 共享层与既有 bug 修复**：报告页与海报页共用 `src/lib/report/poster-input.ts`（年度概览/健康分/指标文案同一数据面）；顺带修复既有 dimScore 结余率维度恒 0 分 bug——higher 维度跨度误用 `zeroAt − fullAt` 恒为负被归零，改为按方向分别计算跨度（lower: zeroAt−fullAt；higher: fullAt−zeroAt），真实数据健康指数口径与 06 §6.3「结余率 40% 以上满分」对齐；A15 通俗化展示层不动。海报 canvas 全程浏览器本地绘制合成 PNG（`<a download>` 内存生成，不落盘、不经服务端）。
+- **成就 12 → 13 枚**：新增 `challenge-streak`「七日打卡王」（连续打卡 7 天，unlockAchievement 幂等解锁），全站文案（能力墙/privacy/成就墙）与演示集同步。
+- **模块登记**：`src/lib/insights/challenge-sql.ts`（日聚合 SQL 常量 + 窗口统计纯函数）、`challenge-demo.ts`（演示行生成器）、`challenge-store.ts`（挑战状态纯函数）、`goals-sql.ts`（月度聚合映射）、`goals-store.ts`（目标状态纯函数）、`src/lib/report/poster-input.ts`（报告/海报共享口径 + dimScore 修复）；页面级组件 `ChallengeView` / `GoalsView` / `PosterStudio` 按 §14 A7 两级注册口径登记进 05 §2.2 组件总表（不占可复用注册表名额）。
+- **隐私与端点**：**零新端点、零新事件、零新 env 键、无新增网络请求**（协议仍 21 类）。
+- **测试**：单测 `tests/unit/challenge-sql.test.ts`、`challenge-demo.test.ts`、`challenge-store.test.ts`、`goals-store.test.ts`、`goals-sql.test.ts`、`poster-input.test.ts`；e2e `tests/e2e/challenge.spec.ts`、`goals.spec.ts`、`poster.spec.ts` + smoke.spec 游客清单与顶栏跳转断言。
+
+**理由**：用户反馈④要求两个特色实用功能点（实用、可用），多选三项「省钱挑战打卡/年度海报分享/攒钱目标中心」全部落地，放导航「报告」之后；三页均为本地计算 + 可持久化状态，复用既有 SQL 白名单与演示兜底纪律，隐私出口零新增，把得分点落在「实用性」与「社会价值」上（06 §6.3 评分口径落点同步）。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -801,7 +821,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 **允许**：
 - DuckDB-WASM 数据库（OPFS）：导入明细的**唯一持久层**（浏览器内计算引擎自身存储，不出浏览器）；用户自建配置表 `budgets`（§6 A2，非账单明细、不出浏览器；写入路径限制「当月 + 未来 2 月」共 ≤3 月 × 13 行可编辑，历史月份只读）。
 - IndexedDB：`spendct:table:${runId}:${tableId}`（脱敏后阶段聚合产物）、`spendct:llmcache:${cacheKey}`（LLM 输出缓存）。
-- localStorage：`spendct:run:latest`（运行元数据：runId/datasetTxHash/阶段状态/卡列表——**不含任何行数据**）、UI 偏好、隐私开关；**A1 增补可重算状态与偏好键（不含任何行数据）**：`spendct:achievements:v1`（已解锁成就 ID + 解锁时间，≤2KB）、`spendct:fav:v1`（收藏卡 ID 列表，≤2KB）、`spendct:notif:v1`（通知文案缓存 + 已读状态，≤20KB）。
+- localStorage：`spendct:run:latest`（运行元数据：runId/datasetTxHash/阶段状态/卡列表——**不含任何行数据**）、UI 偏好、隐私开关；**A1 增补可重算状态与偏好键（不含任何行数据）**：`spendct:achievements:v1`（已解锁成就 ID + 解锁时间，≤2KB）、`spendct:fav:v1`（收藏卡 ID 列表，≤2KB）、`spendct:notif:v1`（通知文案缓存 + 已读状态，≤20KB）；**A17 增补**：`spendct:challenge:v1`（省钱挑战记录：类目/预算/起止日/打卡日期集，≤20KB）、`spendct:goals:v1`（攒钱目标列表：目标+存入记录，≤20KB）。
 - sessionStorage：`spendct:salt`（本次运行盐，会话结束即弃）。
 
 **禁止**：
@@ -819,6 +839,12 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - 导出文件（F12）：内存生成 → `<a download>`，不落盘、不经服务端。
 
 **理由**：§17 红线本意是「交易明细不重复落库、盐不跨会话、原始 CSV/截图不持久化」；用户自建配置与可重算状态同属「UI 偏好与元数据」范畴，明确写入允许项避免实现期争议。
+
+### 08 修订案 A17（2026-10-16）：可重算状态键增补
+
+**新裁决**：允许项再增两键——`spendct:challenge:v1`（省钱挑战记录：类目/每日预算/起止日/打卡日期集）与 `spendct:goals:v1`（攒钱目标列表：目标+存入记录），均 ≤20KB、**不含任何行数据**（挑战记录只存日期键与聚合值，目标只存用户自建数字）；其他允许/禁止项不变。两键与 A1 三键同属「可重算状态与偏好键」语义（挑战/目标删了都能重建，账单明细删了就没了——红线不破）。**零新增存储类型**（海报 PNG 走内存生成 `<a download>`，不落盘）。
+
+**理由**：A17 三新页（§14）的挑战打卡与攒钱目标需要在刷新后保留进度；两键均为用户主动操作产生的轻量状态，与 §17 红线「交易明细不重复落库」无关。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -985,6 +1011,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 17. 附录 A 环境变量补 `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`（本地大模型端点，§12 A14；双必填才生效、仅接管 chat 任务）；§3 目录树登记 `src/lib/chat/deep-analysis.ts`（深度分析查询与上下文组装）、`src/lib/llm/endpoint-config.ts`（本地端点解析）。
 18. §3 目录树/模块清单登记 A15 新模块：`src/lib/chat/targeted-detail.ts`（追问定向明细检索）、`src/lib/insights/calendar-aggregate.ts` + `calendar-demo.ts`（消费日历聚合/演示行）、`src/components/calendar/`（页面级日历组件）、`src/components/insights/subscription-view.tsx`（订阅视图迁入）；路由树按 §14 A15 更新（`/subscriptions` → 静态重定向、新增 `/calendar`）；/insights 视图数写「5 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计 / 订阅管理）」。
 19. §3 目录树/模块清单登记 2026-10-16 修订模块：`src/lib/insights/ledger-sql.ts`（账本汇总日期范围 SQL 模板纯函数）与 `src/components/insights/mini-table.tsx`（账本汇总 / 商户统计共用的两列表格载体，自 ledger-view 提取）；ledger-demo 演示行日期跨度扩至约 13 个月且向近期倾斜（各档日期筛选在演示动线下有可见样本差异）。
+20. §3 目录树/模块清单登记 A17 新模块：`src/app/challenge|goals|poster/` 三路由、`src/components/challenge|goals|poster/`（页面级组件 ChallengeView / GoalsView / PosterStudio）、`src/lib/insights/challenge-sql.ts` + `challenge-demo.ts` + `challenge-store.ts`、`src/lib/insights/goals-sql.ts` + `goals-store.ts`、`src/lib/report/poster-input.ts`（报告/海报共享口径 + dimScore 结余率修复）；路由树按 §14 A17 更新（+3 条）；顶栏 8 项、能力墙 12 卡。
 
 ### 02-data-privacy.md
 
@@ -1006,6 +1033,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 16. §8 可见性对照表**表头注记**补商户统计视图口径：全程浏览器内 DuckDB-WASM 白名单聚合（§14 A13），不新增任何网络出口，故不新增可见性行。
 17. §8 可见性对照表「追问在线兜底」行（第 24 行）口径扩深度分析：开启「深度分析」开关后同出口发送「全期白名单聚合统计（≤2400 字）+ 最近 150 笔明细」两条消息（§13 A14），**不新增可见性行**；§8 表头注记补 A14 句；§12 补本地大模型端点说明（`LLM_BASE_URL`+`LLM_MODEL` 同时配置时 chat 任务改发本地端点，账单数据不出本机，其余任务路由不变）；版本行升 v1.5。
 18. §8 可见性对照表「追问在线兜底」行口径再扩 A15：deep 档在统计与快照之间可追加「定向明细」段（与问题直接相关的 ≤200 笔明细、≤2500 字，§13 A15）——仍同一出口、同一行，**不新增可见性行**；明细快照口径句更新为「精确到秒 + 深夜标记」；版本行升 v1.6。
+19. §8 可见性对照表**表头注记**补 A17 口径：三新页（/challenge /goals /poster）全程浏览器内计算（白名单聚合 + 演示兜底，§14 A17），**零新网络出口、零新 LLM 可见数据面，不新增可见性行**；挑战/目标记录存 localStorage 两新键（§17 A17，不含任何行数据）；版本行升 v1.7。
 
 ### 03-agent-pipeline.md
 
@@ -1024,6 +1052,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 13. §11 组件引用补 `MerchantView`（页面级，§14 A13 口径）；/insights 视图枚举处补商户统计（4 视图）。
 14. 在线兜底路径补深度分析模式（§13 A14）：`analysisMode="deep"` 跳过闲聊分流/本地规则/本地案例直连在线兜底，上下文换成「全期白名单聚合统计 + 最近 150 笔明细」两条消息；use-chat-pipeline 的 submit/fallToOnline/runOnlineFallback 贯穿 deep 参数，ChatTurn.note 增 `"deep"`。
 15. deep 路径补定向明细段（§13 A15）：消息组装至多三条（统计 / 定向明细 / 明细快照），定向段由 `buildTargetedDetailPlan` + `buildTargetedDetailSql` + `buildTargetedDetailContext` 组成（商户名单来自 DB Top50、类目枚举白名单、月份/年份纯数字正则），失败静默省略；明细预算三扣（MESSAGE_BUDGET − 统计 − 定向 − 60）。
+16. A17（§14）与 LLM 管线零交集：三新页（/challenge /goals /poster）无新任务、无新提示词、无降级链变更，不经过六阶段流水线（直接浏览器内白名单聚合 + 演示兜底）。
 
 ### 04-rag-mcp.md
 
@@ -1044,6 +1073,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 15. 商户统计视图（§14 A13）与 RAG/MCP 零交集：不新增检索、工具调用与端点；若有「洞察页数据来源」类图补商户统计为本地白名单聚合。
 16. 追问深度分析（§13 A14）与 RAG/MCP 零交集：不新增检索、工具调用与端点（analysisMode 仅是 /api/followup 既有请求体的新字段）；本地端点接管仅发生在 chat 任务路由层（§12）。
 17. 定向明细检索（§13 A15）与 RAG/MCP 零交集：定向段是浏览器内 DuckDB 直连查询（常量 SQL + 可信参数），不是 RAG 检索，不新增工具与端点；消费日历（§14 A15）同为本地计算，零交集。
+18. A17 三新页（§14）与 RAG/MCP 零交集：挑战/攒钱/海报均为本地计算与本地绘制，不新增检索、工具调用与端点。
 
 ### 05-uiux.md
 
@@ -1066,6 +1096,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 17. §1.6 /insights 视图切换器补第 5 视图「订阅管理」（?view=subscriptions，§14 A15）；§2.2 组件总表登记页面级组件 `CalendarView` / `CalendarHeatmap` / `CalendarTimeline`（/calendar 页）与 `SubscriptionView`（自原 /subscriptions 页迁入，行为不变）；路由交互规范补 /calendar 页（热力图 + 时间轴流水 + 搜索/方向筛选 + 数据表切换）与 /subscriptions 静态重定向；商户统计视图章节补「去向排名 / 逐笔明细」双页签交互规范（§14 A15）。
 18. 年度报告章节补「通俗化」交互口径（§14 A15，落点 `src/lib/report/labels.ts` + report 页六维健康明细）：健康指数附大白话总评（「每 100 元消费里约 X 元用于…」）+ 六维状态标签；段位与成就百分比改口语化表述（保留数字小字）；四段数据故事改叙事文案。
 19. §1.6 账本汇总日期范围筛选语义修订（2026-10-16）：范围按钮（近 7/30/90 天、本月、全部）同步作用于类别 / 商户 / 明细三块——真实动线按 `date_iso >= 计算字面量` 拼入白名单 SQL 模板重查（模板纯函数收口于 `src/lib/insights/ledger-sql.ts`），演示动线按行日期过滤；「支出走势（月）」迁至 §1.7 商户统计排名图下方（`SQL_MONTHLY_TREND` + `DEMO_INSIGHTS.ins-4` 演示回退 + showSymbol 圆点锚点）；§3.6 折线规范补 showSymbol 可点击口径（ECharts 折线线体不带逐点索引，可点击锚点场景必须常显圆点）、热力图规范补 piecewise 五档图例口径（≤50 / 50-100 / 100-200 / 200-500 / >500 元，阈值固定不随数据自适应）；§2.2 组件总表补 `MiniTable`。
+20. §1.1 站点地图/路由表补三新页（/challenge /goals /poster，静态页 13 → 16，§14 A17）+ 顶栏 8 项入口与 md 断点宽度预算口径；§1.2 补三新页布局与四态（空/加载/错误/成功）；§2.2 组件总表登记页面级组件 `ChallengeView` / `GoalsView` / `PosterStudio`（§14 A7 两级注册口径）；交互规范要点——挑战三态（未开始选类目+定预算 / 进行中四宫格+今日卡+近 7 天柱条 / 完成总结）、攒钱（结余卡+类目 TOP、目标进度条+预计达成、两步删除确认）、海报（样式 aria-pressed 切换、标语 16 字计数、下载/系统分享/复制回退）；§7.2/7.4 演示动线可选动作补「/challenge 打卡一笔、/poster 下载一张」；能力墙 12 卡口径（含 §3.6 栅格）。
 
 ### 06-roadmap.md
 
@@ -1089,6 +1120,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 18. §6.1 README 大纲功能总览补「商户统计」视图（前端工程/可视化深度落点：全账单商户聚合排名图 + 数据表 + 追问联动，§14 A13）；PDF 大纲与分镜若有 /insights 视图枚举同步 4 视图。
 19. §6.1 README 大纲功能总览补「追问深度分析」行（大模型集成/隐私工程落点：面板开关 + 全期白名单聚合上下文 + 明细两条消息 + 本地端点 env，零新端点/零新路由，§13 A14）；测试数按最新全量更新（**单测 547 / e2e 47**，2026-10-16 实测）；§6.3 评分口径功能点清单与 PDF 大纲同步。
 20. §6.3 功能落点表补「消费日历」行（前端工程/可视化深度落点：日历热力图 + 时间轴流水，§14 A15；日历热力图原为 F03 省赛规划组件，提前于 T42 排期以独立页形态落地，可复用至账本汇总图表位）；订阅雷达落点改写为「洞察页第 5 视图」（内容全保留、评分证据不丢，独立页降级，§14 A15）；「追问深度分析」行口径扩「定向明细检索」（deep 档第三段上下文，§13 A15）；年度报告行补「通俗化」说明（§14 A15）；视图枚举同步 5 视图；PDF 大纲同步。
+21. §6.3 功能落点表补三行（§14 A17）：省钱挑战打卡（实用性/社会价值落点：类目预算+21 天打卡+节省统计）、攒钱目标中心（实用性落点：结余估算+预计达成+加速建议）、年度海报分享（UI/分享裂变落点：三模板+标语+本地合成 PNG）；§6.1 README 功能总览同步「12 大能力」+ 成就「13 枚」；测试数按最新全量更新（**单测 600 / e2e 54**，2026-10-16 全量回归实测为准）。
 
 ### 08-feature-expansion.md（修订案 A1-A7，2026-10-13，v1.1）
 
@@ -1111,10 +1143,11 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 | A13 | §14 | 商户统计视图：/insights 第 4 视图 tab（?view=merchants，路由数不变）；全账单商户聚合（两条白名单 SQL 常量、按位取值、LIMIT 50 + 截断如实标注）；占比分母 = direction 分组 expense 总额；追问锚点 merchant-view（无新工具）；共享演示行生成器与 ChartCard 提取；零新端点、零新 env |
 | A14 | §12/§13 | 追问深度分析：面板「深度分析」开关（显式同意，开启跳过本地三路直连在线兜底）；全期 10 组白名单聚合上下文（≤2400 字）+ 最近 150 笔明细两条消息；analysisMode 字段（zod 枚举）；deep 指令与 deep 脚注；mock deep 档（优先于 promo 档）；env +3（LLM_BASE_URL/LLM_MODEL 双必填才生效、仅接管 chat 任务，LLM_API_KEY 可选）；零新端点、零新路由、零新事件 |
 | A15 | §13/§14/§18 | 追问定向明细检索 + 明细快照升级：deep 档第三段「定向明细」上下文（月份/年份/商户 Top50 名单/类目枚举/深夜五类可信条件，LIMIT 200、≤2500 字）；明细快照七列投影（时分秒 + 深夜标记）；/subscriptions 降级为洞察页第 5 视图（内容全保留）+ 新路由 /calendar 消费日历（热力图 + 流水）；年度报告展示层通俗化（六维健康明细 + 大白话总评）；零新端点、零新路由、零新事件 |
+| A17 | §13/§14/§17 | 省钱挑战打卡 + 攒钱目标中心 + 年度海报分享：三新路由 /challenge /goals /poster（静态页 13 → 16、顶栏 8 项、能力墙 12 卡）；挑战/目标存 localStorage 两新键（不含任何行数据）；poster-input 报告/海报共享口径 + dimScore 结余率修复；成就 13 枚（challenge-streak）；零新端点、零新事件、零新 env |
 | — | §4 | ChartSpec 枚举不扩展；四大静态图表组件裁决（08 §④ 补记） |
 
-- **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）；修订案清单登记 A12（全局智能助理，2026-10-15），§11.2 工作量口径按 A12 补智能助理组件与语音输入；修订案清单登记 A13（商户统计视图，2026-10-15），§11.2 工作量口径按 A13 补 MerchantView 页面级组件；修订案清单登记 A14（追问深度分析，2026-10-16），§11.2 工作量口径按 A14 补面板开关 + 全期聚合上下文 + 本地端点 env（零新端点/零新路由）；修订案清单登记 A15（定向明细检索 + 消费日历 + 订阅降级 + 报告通俗化，2026-10-16），§11.2 工作量口径按 A15 补日历页组件（CalendarView/CalendarHeatmap/CalendarTimeline）、订阅视图迁入组件（SubscriptionView）、定向检索模块（targeted-detail.ts）与报告通俗化模块（report/labels.ts）。
+- **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）；修订案清单登记 A12（全局智能助理，2026-10-15），§11.2 工作量口径按 A12 补智能助理组件与语音输入；修订案清单登记 A13（商户统计视图，2026-10-15），§11.2 工作量口径按 A13 补 MerchantView 页面级组件；修订案清单登记 A14（追问深度分析，2026-10-16），§11.2 工作量口径按 A14 补面板开关 + 全期聚合上下文 + 本地端点 env（零新端点/零新路由）；修订案清单登记 A15（定向明细检索 + 消费日历 + 订阅降级 + 报告通俗化，2026-10-16），§11.2 工作量口径按 A15 补日历页组件（CalendarView/CalendarHeatmap/CalendarTimeline）、订阅视图迁入组件（SubscriptionView）、定向检索模块（targeted-detail.ts）与报告通俗化模块（report/labels.ts）。修订案清单登记 A17（省钱挑战打卡 + 攒钱目标中心 + 年度海报分享，2026-10-16），§11.2 工作量口径按 A17 补三页面级组件（ChallengeView/GoalsView/PosterStudio）、挑战/目标数据模块（challenge-sql/challenge-demo/challenge-store/goals-sql/goals-store）与报告海报共享口径模块（report/poster-input.ts）——A17 三功能已直接落地，不占用 W3-W5 负载账本行和。
 
 ---
 
-*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6（2026-10-15）起并入修订案 A12（全局智能助理上线收口：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18），v1.7（2026-10-15）起并入修订案 A13（商户统计视图上线收口：/insights 第 4 视图 tab、全账单商户聚合、追问锚点 merchant-view，§14），v1.8（2026-10-16）起并入修订案 A14（追问深度分析上线收口：面板显式同意开关、全期白名单聚合上下文 + 明细两条消息、analysisMode 字段、本地大模型端点 env、气泡深度分析脚注，§12/§13），v1.9（2026-10-16）起并入修订案 A15（追问定向明细检索 + 明细快照升级 + /subscriptions 降级为洞察页第 5 视图 + 新路由 /calendar 消费日历 + 年度报告通俗化，§13/§14/§18）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
+*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6（2026-10-15）起并入修订案 A12（全局智能助理上线收口：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18），v1.7（2026-10-15）起并入修订案 A13（商户统计视图上线收口：/insights 第 4 视图 tab、全账单商户聚合、追问锚点 merchant-view，§14），v1.8（2026-10-16）起并入修订案 A14（追问深度分析上线收口：面板显式同意开关、全期白名单聚合上下文 + 明细两条消息、analysisMode 字段、本地大模型端点 env、气泡深度分析脚注，§12/§13），v1.9（2026-10-16）起并入修订案 A15（追问定向明细检索 + 明细快照升级 + /subscriptions 降级为洞察页第 5 视图 + 新路由 /calendar 消费日历 + 年度报告通俗化，§13/§14/§18），v1.10（2026-10-16）起并入修订案 A17（省钱挑战打卡 + 攒钱目标中心 + 年度海报分享：三新路由 /challenge /goals /poster、poster-input 报告/海报共享口径与 dimScore 结余率修复、成就 13 枚、能力墙 12 卡、localStorage 两新键，§13/§14/§17）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
