@@ -28,6 +28,8 @@ export function RankBadge({ tier, className = "" }: RankBadgeProps) {
       </div>
       <p className="mt-3 text-2xl font-bold">{tier.name}</p>
       <p className="mt-1.5 text-sm leading-relaxed text-(--color-ink-secondary)">{tier.desc}</p>
+      {/* 达标线通俗解释：口径来自 rank.ts TIER_BANDS（RANK_TIERS.plain），小字展示 */}
+      <p className="mt-2 text-xs text-(--color-ink-muted)">达标线：{tier.plain}</p>
 
       {/* 五格档位条：点亮到当前档 */}
       <div className="mt-auto flex gap-1.5 pt-5" aria-hidden>

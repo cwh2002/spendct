@@ -88,6 +88,9 @@ export function AchievementWall({ unlockedIds, compact = false }: AchievementWal
                 {def.name}
               </span>
 
+              {/* 徽标下通俗解释（10 字内）：按真实解锁口径写，与悬停浮层的完整条件互补 */}
+              <span className="text-[11px] leading-snug text-(--color-ink-muted)">{def.plain}</span>
+
               {/* 锁定态悬停浮层：解锁条件。悬浮定位避免遮挡网格相邻徽章 */}
               {isUnlocked ? null : (
                 <span

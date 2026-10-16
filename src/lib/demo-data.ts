@@ -305,7 +305,7 @@ export const DEMO_REPORT = {
     { id: "hidden-subscription", name: "隐形订阅率", value: "3.2%", benchmark: null, delta: "+1.2 个百分点", status: "warn", explain: "订阅支出占总支出的比例（660/20,800）；暂无公开全国基准，重点看取消空间" },
     { id: "impulse", name: "冲动消费浓度", value: "7.3%", benchmark: null, delta: "-4.7 个百分点", status: "good", explain: "深夜与促销日集中消费占比（1,510/20,800）；暂无公开全国基准，越低越健康" },
     { id: "dining-share", name: "餐饮占比", value: "41%", benchmark: "29.3%", delta: "+11.7 个百分点", status: "serious", explain: "餐饮支出占总支出比例；全国平均 29.3%（国家统计局 2025 年居民消费构成·食品烟酒）" },
-    { id: "save-rate", name: "结余率", value: "13.3%", benchmark: "32.0%", delta: "+3.3 个百分点", status: "good", explain: "月均结余占收入的比例（3,200/24,000）；全国平均 32.0%（按国家统计局 2025 年人均收支数据推算）" },
+    { id: "save-rate", name: "结余率", value: "13.3%", benchmark: "32.0%", delta: "+3.3 个百分点", status: "risk", explain: "月均结余占收入的比例（3,200/24,000）；低于 15% 的注意线（与六维明细同口径），全国平均 32.0%（按国家统计局 2025 年人均收支数据推算）" },
   ],
   /** 六维健康分（0-100，顺序与维度名同 DEMO_REPORT 头注释的六维定义） */
   radarDims: [
@@ -316,12 +316,31 @@ export const DEMO_REPORT = {
     { name: "结余", value: 90 },
     { name: "大额脉冲", value: 100 },
   ],
+  /**
+   * 六维原始比率（%，近 12 月均值口径），与上方六维定义同源：
+   * 餐饮 40.9 / 订阅 3.2 / 冲动 7.3 / 深夜 1.7 / 结余 13.3 / 大额脉冲 5.6。
+   * 只供报告页六维明细的「状态标签 + 大白话 + 小字百分比」展示
+   * （src/lib/report/labels.ts 的 buildHealthDims），不参与健康分与段位计算
+   * （那两处仍按 radarDims / healthIndex 的原口径）。
+   */
+  healthRatios: {
+    foodRatio: 40.9,
+    subRatio: 3.2,
+    impulseRatio: 7.3,
+    nightRatio: 1.7,
+    surplusRatio: 13.3,
+    bigPulseRatio: 5.6,
+  },
   rank: { tier: 3, name: "进阶规划师", desc: "开始控制固定成本层，预算意识成型" },
+  /**
+   * 四段数据故事（通俗化版本）：标题不说干巴巴的百分比，叙事先结论后数字。
+   * chartData/chartLabels 与旧版完全一致，只改文案层。
+   */
   storySegments: [
-    { headline: "一年 793 笔，你在 12 类目里留下了轨迹", chartKind: "timeseries", chartData: [1549, 1439, 1741, 1650, 1668, 1818, 1814, 1702, 2124, 1387, 1751, 2158], chartLabels: ["10月", "11月", "12月", "1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月"], narrative: "月均支出 1,733 元，峰值出现在 9 月（开学季 2,158 元），谷值在 7 月（暑期返乡 1,387 元）。全年 20,800 元落在 1,744 元/月的预算线内。" },
-    { headline: "食堂与堂食是你的第一消费场景", chartKind: "donut", chartData: [78, 22], chartLabels: ["堂食/食堂", "外卖"], narrative: "堂食与食堂占餐饮支出的 78%，外卖 22%。学校食堂全年消费 1,111 元，是餐饮第一大商户。" },
-    { headline: "订阅层悄悄吃掉 660 元/年", chartKind: "bar", chartData: [18000, 18000, 30000], chartLabels: ["哔哩哔哩大会员", "网易云音乐黑胶", "腾讯视频 VIP"], narrative: "3 项连续订阅构成固定成本层，其中腾讯视频 VIP 近 90 天零使用，建议优先处理。" },
-    { headline: "体验型消费占大头：体验 44% · 实物 16% · 服务 40%", chartKind: "donut", chartData: [44, 16, 40], chartLabels: ["体验", "实物", "服务"], narrative: "体验类（娱乐、人情、堂食社交）占年度支出的 44%，超过实物购物（16%），其余为交通、居住、通讯等服务类日常支出。" },
+    { headline: "一年 793 笔，花销守住了预算线", chartKind: "timeseries", chartData: [1549, 1439, 1741, 1650, 1668, 1818, 1814, 1702, 2124, 1387, 1751, 2158], chartLabels: ["10月", "11月", "12月", "1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月"], narrative: "全年共花 20,800 元、793 笔，月均 1,733 元，没有超出每月 1,744 元的预算线。花得最多的是 9 月开学季（2,158 元），最少的是 7 月暑期返乡（1,387 元）。" },
+    { headline: "食堂和堂食是吃饭花销的大头", chartKind: "donut", chartData: [78, 22], chartLabels: ["堂食/食堂", "外卖"], narrative: "吃饭的钱大部分花在堂食和食堂（占 78%），外卖只占 22%。其中学校食堂全年 1,111 元，是餐饮第一大商户。" },
+    { headline: "3 个连续订阅，一年悄悄扣走 660 元", chartKind: "bar", chartData: [18000, 18000, 30000], chartLabels: ["哔哩哔哩大会员", "网易云音乐黑胶", "腾讯视频 VIP"], narrative: "最该处理的是腾讯视频 VIP：近 90 天一次都没用，却还在自动扣费。三个订阅一年合计 660 元，取消不用的就能省下这笔固定开销。" },
+    { headline: "你的钱大多花在「体验」上", chartKind: "donut", chartData: [44, 16, 40], chartLabels: ["体验", "实物", "服务"], narrative: "你更愿意为现场感和社交花钱：体验类（娱乐、人情、堂食社交）占 44%，其次是交通、居住、通讯等服务类日常 40%，实物购物最少（16%）。" },
   ],
 };
 

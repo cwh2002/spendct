@@ -57,15 +57,17 @@ export const ANNUAL_EXECUTOR: StageExecutor = {
     const lastAvgMonthly = numAt(last, 4);
     const lastSavings = numAt(last, 5);
 
+    // 文案走大白话（年度报告通俗化）：「结余率」改写为「存下收入的比例」，
+    // 叙事先结论（一共花多少/存下多少）后数字，方便用户一眼看懂
     inputs.push({
       cardId: makeCardId("annual", 1),
-      headline: `${lastYear} 年支出 ¥${fmtYuan(lastExpense)} · 结余率 ${lastSavings.toFixed(1)}%`,
+      headline: `${lastYear} 年支出 ¥${fmtYuan(lastExpense)} · 存下收入的 ${lastSavings.toFixed(1)}%`,
       narrative:
         `${lastYear} 年支出 ¥${fmtYuan(lastExpense)}，收入 ¥${fmtYuan(lastIncome)}，` +
-        `结余率 ${lastSavings.toFixed(1)}%，月均支出 ¥${fmtYuan(lastAvgMonthly)}，` +
-        `全年共 ${lastTx} 笔。年度收支结构已汇总，可与年度预算完成情况对比复盘。`,
+        `存下收入的 ${lastSavings.toFixed(1)}%，月均支出 ¥${fmtYuan(lastAvgMonthly)}，` +
+        `全年共 ${lastTx} 笔。收支已汇总，可以拿去和年度预算对比。`,
       confidence: 0.9,
-      significance: `${lastYear} 年样本 ${lastTx} 笔 · 结余率 ${lastSavings.toFixed(1)}%`,
+      significance: `${lastYear} 年样本 ${lastTx} 笔 · 存下收入的 ${lastSavings.toFixed(1)}%`,
       evidence: {
         chart: {
           tableId: "annual_summary",
@@ -77,7 +79,7 @@ export const ANNUAL_EXECUTOR: StageExecutor = {
         stats: [
           { label: "年支出", value: fmtYuan(lastExpense), unit: "元" },
           { label: "年收入", value: fmtYuan(lastIncome), unit: "元" },
-          { label: "结余率", value: `${lastSavings.toFixed(1)}%` },
+          { label: "存下收入", value: `${lastSavings.toFixed(1)}%` },
           { label: "月均支出", value: fmtYuan(lastAvgMonthly), unit: "元" },
         ],
       },
@@ -92,18 +94,19 @@ export const ANNUAL_EXECUTOR: StageExecutor = {
       const firstSavings = numAt(first, 5);
       const pct = ((lastExpense - firstExpense) / firstExpense) * 100;
       const pctText = Math.abs(pct).toFixed(1);
-      const direction = pct >= 0 ? "增长" : "回落";
+      // 大白话方向词：「增长/回落」改成「多花/少花」，同比口径与数字不变
+      const direction = pct >= 0 ? "多花" : "少花";
 
       inputs.push({
         cardId: makeCardId("annual", 2),
         headline: `${lastYear} 年支出较 ${firstYear} 年${direction} ${pctText}%`,
         narrative:
           `${firstYear} 年支出 ¥${fmtYuan(firstExpense)}，` +
-          `${lastYear} 年支出 ¥${fmtYuan(lastExpense)}，同比${direction} ${pctText}%。` +
-          `结余率由 ${firstSavings.toFixed(1)}% 变为 ${lastSavings.toFixed(1)}%。` +
-          `年度变化反映消费规模趋势，建议结合收入变动一起看。`,
+          `${lastYear} 年支出 ¥${fmtYuan(lastExpense)}，比 ${firstYear} 年${direction} ${pctText}%。` +
+          `存下收入的比例由 ${firstSavings.toFixed(1)}% 变为 ${lastSavings.toFixed(1)}%。` +
+          `花销规模在变，建议结合收入变化一起看。`,
         confidence: 0.8,
-        significance: `同比${direction} ${pctText}% · 两年样本 ${numAt(first, 3) + lastTx} 笔`,
+        significance: `${lastYear} 年较 ${firstYear} 年${direction} ${pctText}% · 两年样本 ${numAt(first, 3) + lastTx} 笔`,
         evidence: {
           chart: {
             tableId: "annual_summary",

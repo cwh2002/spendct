@@ -38,6 +38,13 @@ import { featureFlags } from "@/lib/feature-flags";
 import { fmtMonth, fmtYuan, numAt, valAt } from "@/lib/pipeline/stages/spec";
 import { usePipeline } from "@/lib/pipeline/store";
 import { saveRankTier, useRankTier } from "@/lib/rank";
+import {
+  buildHealthComment,
+  buildHealthDims,
+  healthRatingLabel,
+  type HealthRatingTone,
+  type RatioKey,
+} from "@/lib/report/labels";
 import type { InsightCard } from "@/lib/schema/insight-card";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 
@@ -77,6 +84,7 @@ function demoRadarDims(): RadarDim[] {
  * 结余率以全国平均 32.0% 作中间锚点（40% 以上满分、0% 以下零分）。
  */
 interface HealthDimDef {
+  /** RatioKey 类型来自 @/lib/report/labels（文案层与评分层共用同一组六维键） */
   key: RatioKey;
   name: string;
   /** lower = 占比越低越健康；higher = 越高越健康（仅结余率） */
@@ -86,9 +94,6 @@ interface HealthDimDef {
   /** 零分区边界：lower 维度高于 zeroAt 得 0 分；higher 维度低于 zeroAt 得 0 分 */
   zeroAt: number;
 }
-
-type RatioKey =
-  "foodRatio" | "subRatio" | "impulseRatio" | "nightRatio" | "surplusRatio" | "bigPulseRatio";
 
 const HEALTH_DIMS: readonly HealthDimDef[] = [
   { key: "foodRatio", name: "餐饮", direction: "lower", fullAt: 10, zeroAt: 50 },
@@ -255,6 +260,18 @@ const STATUS_META: Record<string, { label: string; icon: LucideIcon; chip: strin
     },
   };
 
+/**
+ * 健康指数评级徽标色（纯展示层）：labels.ts 的 healthRatingLabel 只输出 tone，
+ * 颜色在此按页面既有语义色令牌配对（优秀→good、良好→health、需关注→warning、
+ * 风险→critical），chip 写法与四指标卡 STATUS_META 保持一致。
+ */
+const RATING_TONE_META: Record<HealthRatingTone, { chip: string }> = {
+  good: { chip: "bg-(--color-good)/10 text-(--color-good-ink) dark:text-(--color-good)" },
+  health: { chip: "bg-(--color-health)/10 text-(--color-health)" },
+  warn: { chip: "bg-(--color-warning)/15 text-(--color-warning-ink) dark:text-(--color-warning)" },
+  serious: { chip: "bg-(--color-critical)/10 text-(--color-critical-ink) dark:text-(--color-critical)" },
+};
+
 /** hex 色值 → rgba：折线面积渐变需要半透明档，CSS 变量只给 hex */
 function hexToRgba(hex: string, alpha: number): string {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
@@ -333,6 +350,11 @@ interface ReportData {
   healthIndexReal: boolean;
   /** 雷达六维：真实模式为六个比率映射出的 0-100 分，demo 模式读 DEMO_REPORT.radarDims */
   radarDims: RadarDim[];
+  /**
+   * 六维原始比率（%，近 12 月均值口径）：只供六维明细的「状态标签 + 大白话 +
+   * 右侧小字百分比」展示（labels.ts buildHealthDims），不参与健康分与雷达计算。
+   */
+  healthRatios: Record<RatioKey, number>;
   /** 四指标（订阅率/冲动浓度/餐饮占比/结余率），真实与 demo 两动线共用基准常量 */
   namedMetrics: NamedMetric[];
   storySegments: ReportStorySegment[];
@@ -351,6 +373,7 @@ function demoReportData(): ReportData {
     healthIndex: DEMO_REPORT.healthIndex,
     healthIndexReal: false,
     radarDims: demoRadarDims(),
+    healthRatios: DEMO_REPORT.healthRatios,
     namedMetrics: buildDemoMetrics(),
     storySegments: DEMO_REPORT.storySegments,
   };
@@ -508,17 +531,33 @@ interface RealAggregates {
   categoryCents: CategoryCentsPoint[];
 }
 
-/** 近 12 月六比率均值 + F10 映射 → 健康指数与雷达六维分 */
-function computeHealthScore(health: HealthStats): { healthIndex: number; dims: RadarDim[] } {
+/**
+ * 近 12 月六比率均值 + F10 映射 → 健康指数与雷达六维分。
+ * ratios 为六维原始比率均值（%）：只随报告对象传给六维明细展示层
+ * （labels.ts），健康分与雷达口径不变。
+ */
+function computeHealthScore(health: HealthStats): {
+  healthIndex: number;
+  dims: RadarDim[];
+  ratios: Record<RatioKey, number>;
+} {
   const meanOf = (key: RatioKey) =>
     health.rows.reduce((sum, row) => sum + row[key], 0) / health.rows.length;
+  const ratios: Record<RatioKey, number> = {
+    foodRatio: meanOf("foodRatio"),
+    subRatio: meanOf("subRatio"),
+    impulseRatio: meanOf("impulseRatio"),
+    nightRatio: meanOf("nightRatio"),
+    surplusRatio: meanOf("surplusRatio"),
+    bigPulseRatio: meanOf("bigPulseRatio"),
+  };
   const scores = HEALTH_DIMS.map((def) => ({
     name: def.name,
-    value: dimScore(meanOf(def.key), def),
+    value: dimScore(ratios[def.key], def),
   }));
   // F10 合成：六维等权（各 1/6），取整为 0-100 整数
   const healthIndex = Math.round(scores.reduce((sum, dim) => sum + dim.value, 0) / scores.length);
-  return { healthIndex, dims: scores };
+  return { healthIndex, dims: scores, ratios };
 }
 
 /** 真实四指标：12 月均值做展示值，最近一月减上一月做环比（百分点，同源行内计算） */
@@ -657,9 +696,9 @@ function buildReportData(agg: RealAggregates, cards: InsightCard[]): ReportData 
     const peak = agg.monthly.reduce((a, b) => (b.expenseCents > a.expenseCents ? b : a));
     const trough = agg.monthly.reduce((a, b) => (b.expenseCents < a.expenseCents ? b : a));
     realTrendNarrative =
-      `近 ${agg.monthly.length} 个月共支出 ¥${fmtYuan(totalCents)}，` +
-      `月均 ¥${fmtYuan(avgCents)}；峰值出现在 ${peak.label}（¥${fmtYuan(peak.expenseCents)}），` +
-      `谷值在 ${trough.label}（¥${fmtYuan(trough.expenseCents)}）。`;
+      `近 ${agg.monthly.length} 个月一共花 ¥${fmtYuan(totalCents)}，月均 ¥${fmtYuan(avgCents)}。` +
+      `花得最多的是 ${peak.label}（¥${fmtYuan(peak.expenseCents)}），` +
+      `最少的是 ${trough.label}（¥${fmtYuan(trough.expenseCents)}）。`;
   }
 
   const trendSegment: ReportStorySegment =
@@ -710,6 +749,7 @@ function buildReportData(agg: RealAggregates, cards: InsightCard[]): ReportData 
     healthIndex: healthScore?.healthIndex ?? demo.healthIndex,
     healthIndexReal: healthScore !== null,
     radarDims: healthScore?.dims ?? demo.radarDims,
+    healthRatios: healthScore?.ratios ?? demo.healthRatios,
     namedMetrics: agg.health ? buildRealMetrics(agg.health) : demo.namedMetrics,
     storySegments: [trendSegment, foodSegment, merchantSegment, experienceSegment],
   };
@@ -1080,6 +1120,12 @@ export default function ReportPage() {
 
   const radarOption = useMemo(() => () => buildRadarOption(report.radarDims), [report.radarDims]);
 
+  // 六维明细行、评级与总评大白话：全部来自 labels.ts 纯函数，只改展示文案层
+  // （评级徽标、状态标签、措辞），健康分与段位的计算口径保持不变
+  const healthDims = useMemo(() => buildHealthDims(report.healthRatios), [report.healthRatios]);
+  const healthRating = healthRatingLabel(report.healthIndex);
+  const healthComment = useMemo(() => buildHealthComment(healthDims), [healthDims]);
+
   const handlePoster = useCallback(async () => {
     setPosterBusy(true);
     try {
@@ -1163,8 +1209,20 @@ export default function ReportPage() {
             height={272}
             ariaLabel={`消费健康指数仪表盘：${report.healthIndex} 分`}
           />
-          <p className="text-center text-xs text-(--color-ink-muted)">
-            综合六维消费健康分 · 满分 100
+          {/* 评级徽标 + 总分注释：评级只影响展示，不参与段位判定（段位走 rank.ts TIER_BANDS） */}
+          <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+            <span
+              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${RATING_TONE_META[healthRating.tone].chip}`}
+            >
+              {healthRating.label}
+            </span>
+            <p className="text-center text-xs text-(--color-ink-muted)">
+              综合六维消费健康分 · 满分 100
+            </p>
+          </div>
+          {/* 六维总评大白话：由六维状态规则生成，结论先行、点到为止 */}
+          <p className="mx-auto mt-2 max-w-72 text-center text-xs leading-relaxed text-(--color-ink-secondary)">
+            {healthComment}
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:col-span-3">
@@ -1202,6 +1260,48 @@ export default function ReportPage() {
                   ) : null}
                 </p>
                 <p className="mt-2 text-xs leading-relaxed text-(--color-ink-muted)">{m.explain}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* 六维明细：维度名 + 状态标签（健康/注意/风险）+ 一句大白话，
+          原百分比降为右侧小字（颜色随状态）。状态阈值与句式来自 labels.ts
+          （沿用四指标卡既有阈值），只做展示映射，不影响六维健康分计算 */}
+      <section aria-label="六维健康明细" className="mt-4 print:break-inside-avoid">
+        <h2 className="flex items-center gap-2 text-lg font-bold">
+          <CircleCheck className="size-5 text-(--color-primary)" aria-hidden />
+          六维健康明细
+        </h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {healthDims.map((row) => {
+            const meta = STATUS_META[row.status] ?? STATUS_META.warn!;
+            const StatusIcon = meta.icon;
+            return (
+              <div
+                key={row.key}
+                className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-3 shadow-(--shadow-sm)"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium">{row.name}</p>
+                  <div className="flex items-center gap-2">
+                    {/* 右侧小字：原始比率保留一位小数，颜色随状态 */}
+                    <span className={`text-xs tabular-nums ${meta.text}`}>
+                      {row.ratio.toFixed(1)}%
+                    </span>
+                    <span
+                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${meta.chip}`}
+                    >
+                      <StatusIcon className="size-3.5" aria-hidden />
+                      {row.statusLabel}
+                    </span>
+                  </div>
+                </div>
+                {/* 大白话短句：按「每 100 元」口径换算取整，数字不再是干巴巴的百分比 */}
+                <p className="mt-1.5 text-xs leading-relaxed text-(--color-ink-secondary)">
+                  {row.plain}
+                </p>
               </div>
             );
           })}

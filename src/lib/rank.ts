@@ -16,15 +16,17 @@ export interface RankTier {
   tier: number;
   name: string;
   desc: string;
+  /** 达标线通俗解释（10 字内）：按 TIER_BANDS 真实分档口径写，徽标下小字展示 */
+  plain: string;
 }
 
 /** 五档段位表：档位文案与报告页、个人中心共用，避免两处维护漂移 */
 export const RANK_TIERS: readonly RankTier[] = [
-  { tier: 1, name: "消费新手", desc: "体检之路刚刚开始，先完成一次全流程扫描" },
-  { tier: 2, name: "记账达人", desc: "消费记录连续积累，数据基础已经成型" },
-  { tier: 3, name: "进阶规划师", desc: "开始控制固定成本层，预算意识成型" },
-  { tier: 4, name: "理性消费者", desc: "冲动消费显著收敛，结余率超过全国平均" },
-  { tier: 5, name: "消费健康大师", desc: "全维度均衡，六维健康分全面达标" },
+  { tier: 1, name: "消费新手", desc: "体检之路刚刚开始，先完成一次全流程扫描", plain: "健康分不到 50" },
+  { tier: 2, name: "记账达人", desc: "消费记录连续积累，数据基础已经成型", plain: "健康分 50-64" },
+  { tier: 3, name: "进阶规划师", desc: "开始控制固定成本层，预算意识成型", plain: "健康分 65-79" },
+  { tier: 4, name: "理性消费者", desc: "冲动消费显著收敛，结余率超过全国平均", plain: "健康分 80-89" },
+  { tier: 5, name: "消费健康大师", desc: "全维度均衡，六维健康分全面达标", plain: "健康分 90 起" },
 ];
 
 /** 健康分 → 档位边界：与内置数据 DEMO_REPORT.healthIndex=78 → 3 档保持一致 */
