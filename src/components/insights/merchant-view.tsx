@@ -4,8 +4,10 @@ import type { ECElementEvent } from "echarts/core";
 import { ReceiptText, Search } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { EChart } from "@/components/charts/e-chart";
-import { buildBarOption, formatYuan } from "@/components/charts/option-builders";
+import { buildBarOption, buildLineOption, formatYuan } from "@/components/charts/option-builders";
 import { ChartCard } from "@/components/insights/chart-card";
+import { MiniTable } from "@/components/insights/mini-table";
+import { DEMO_INSIGHTS } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { generateLedgerDemoRows } from "@/lib/insights/ledger-demo";
 import {
@@ -58,6 +60,41 @@ const SQL_MERCHANT_TOTAL =
 
 const SQL_DIRECTION_TOTAL =
   "SELECT direction, SUM(amount_cents) FROM transactions WHERE status = 'paid' GROUP BY direction";
+
+/**
+ * 支出走势（月）：近 12 月月度支出序列（从账本汇总迁入，07 §6 同口径）。
+ * 与排名/总额查询一同预检执行；走势失败仅该模块回退演示 ins-4。
+ */
+const SQL_MONTHLY_TREND =
+  "SELECT month, SUM(expense_cents) FROM v_monthly_summary GROUP BY month ORDER BY month DESC LIMIT 12";
+
+/**
+ * DuckDB 聚合值兜底转数值：BIGINT → bigint、INTEGER → number、
+ * HUGEINT/SUM → 128 位大数对象（Number() 经 valueOf 转数值）。不可解析时兜底 0。
+ */
+function toCents(value: unknown): number {
+  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "number") return Math.round(value);
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.round(parsed) : 0;
+}
+
+/**
+ * DuckDB 月份维度 → YYYY-MM（本地口径，与管线 fmtMonth 一致）：
+ * 兼容 Date 对象、epoch 毫秒 number、字符串三种物化形态。
+ */
+function toMonthKey(value: unknown): string {
+  const date =
+    value instanceof Date
+      ? value
+      : typeof value === "number" && Number.isFinite(value)
+        ? new Date(value)
+        : typeof value === "string"
+          ? new Date(value)
+          : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
 
 // ─────────────────── 逐笔明细直连查询（A15 第二部分，仅本机展示） ───────────────────
 
@@ -127,15 +164,23 @@ interface RealMerchantData {
   totalCents: number;
   /** 商户排名的原始聚合行数（未过滤空商户名）：截断判定唯一依据 */
   merchantRowCount: number;
+  /** 近 12 月支出走势（升序，值已换算为元，与演示 ins-4 同口径）；失败回退演示 */
+  timeseries: { labels: string[]; values: number[] } | null;
 }
 
-const EMPTY_REAL_DATA: RealMerchantData = { entries: null, totalCents: 0, merchantRowCount: 0 };
+const EMPTY_REAL_DATA: RealMerchantData = {
+  entries: null,
+  totalCents: 0,
+  merchantRowCount: 0,
+  timeseries: null,
+};
 
 /**
  * 商户消费统计视图（08 修订案 A13，/insights?view=merchants）：
  * 按商户聚合上传账单的全量支出——每个商户的总额、笔数、占全账单比例与均笔金额。
  * 排名横向条形图（前 10 名）+ 全量数据表（上限 50 名，超出如实标注）+ 商户搜索；
- * 数据点点击进入追问面板（与账本汇总同一锚点协议）。
+ * 排名图下方挂「支出走势（月）」（近 12 月月度序列，从账本汇总迁入，
+ * 全账单口径不随排名搜索变化）；数据点点击进入追问面板（与账本汇总同一锚点协议）。
  * 数据动线：体检运行过（lastRun 存在）且 DuckDB 查询成功时展示真实账单聚合
  * （浏览器内计算，账单不出本地），查询失败或无体检结果则回退确定性演示行。
  */
@@ -153,20 +198,40 @@ export function MerchantView({ onAnchor }: MerchantViewProps) {
   const liveRealData = lastRun ? realData : EMPTY_REAL_DATA;
 
   // 真实数据装载：lastRun 存在时读 DuckDB（与体检同一单例连接、同一内存数据集）。
-  // 两条查询各自 try/catch：任一条失败整视图回退演示动线（占比口径依赖总额查询）
+  // 排名/总额任一失败整视图回退演示动线（占比口径依赖总额查询）；
+  // 走势查询独立降级：失败仅走势模块回退演示 ins-4，不拖累排名动线
   useEffect(() => {
     if (!lastRun) return; // 演示动线：不查库
     let cancelled = false;
     void (async () => {
+      let timeseries: RealMerchantData["timeseries"] = null;
       try {
         const conn = await getDuckDB();
+        try {
+          const result = await runWhitelistedAggregate(conn, SQL_MONTHLY_TREND);
+          const series = (result.rows as Record<string, unknown>[])
+            .map((row) => {
+              const values = Object.values(row);
+              return { monthKey: toMonthKey(values[0]), yuan: toCents(values[1]) / 100 };
+            })
+            .filter((row) => row.monthKey !== "")
+            .reverse(); // SQL 侧 month DESC → 升序展示
+          if (series.length > 0) {
+            timeseries = {
+              labels: series.map((row) => row.monthKey),
+              values: series.map((row) => row.yuan),
+            };
+          }
+        } catch {
+          // 走势查询失败 → timeseries 保持 null，回退演示 ins-4
+        }
         const ranking = await runWhitelistedAggregate(conn, SQL_MERCHANT_TOTAL);
         const direction = await runWhitelistedAggregate(conn, SQL_DIRECTION_TOTAL);
         if (cancelled) return;
         const totalCents = expenseTotalFromDirection(direction.rows);
         const entries = merchantsFromQuery(ranking.rows, totalCents);
         if (entries.length > 0) {
-          setRealData({ entries, totalCents, merchantRowCount: ranking.rowCount });
+          setRealData({ entries, totalCents, merchantRowCount: ranking.rowCount, timeseries });
         }
       } catch {
         // 白名单拒绝/查询失败/数据集缺失：保持 null 回退演示动线
@@ -292,6 +357,40 @@ export function MerchantView({ onAnchor }: MerchantViewProps) {
       ),
     [chartEntries],
   );
+
+  // 支出走势（从账本汇总迁入）：真实装载成功用近 12 月聚合；否则取
+  // DEMO_INSIGHTS.ins-4（demo 单一来源，缺位时留空由图表自然处理）。
+  // showSymbol 常显圆点：折线线体不带逐点索引，圆点携带 dataIndex 后
+  // 点击回调才能拿到月份与金额（追问锚点）
+  const ins4 = DEMO_INSIGHTS.find((insight) => insight.id === "ins-4");
+  const timeseries = useMemo(
+    () =>
+      liveRealData.timeseries ?? {
+        labels: ins4?.chartLabels ?? [],
+        values: ins4?.chartData ?? [],
+      },
+    [liveRealData.timeseries, ins4],
+  );
+
+  const lineOption = useMemo(
+    () => () =>
+      buildLineOption(timeseries, {
+        showSymbol: true,
+        // 千分位 + 固定两位小数：tooltip 与轴刻度（¥ 整数元）各自独立，避免小数位漂移
+        formatValue: (v) =>
+          v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        unit: " 元",
+        axisFormat: (v) => `¥${Math.round(v)}`,
+      }),
+    [timeseries],
+  );
+
+  function handleTimeseriesClick(params: ECElementEvent) {
+    onAnchor({
+      id: "merchant-timeseries",
+      label: `${String(params.name ?? "")} 支出 ${String(params.value ?? "")} 元`,
+    });
+  }
 
   function handleBarClick(params: ECElementEvent) {
     const cents = typeof params.value === "number" ? Math.round(params.value) : 0;
@@ -518,6 +617,35 @@ export function MerchantView({ onAnchor }: MerchantViewProps) {
                   </div>
                 ) : null}
               </div>
+            }
+          />
+
+          {/* 支出走势（月）：从账本汇总迁入（05 §1.6 图表锚点追问）——
+              全账单口径不随排名搜索变化，圆点点击进入追问面板 */}
+          <ChartCard
+            title="支出走势（月）"
+            caption={
+              liveRealData.timeseries ? "近 12 个月 · 点击圆点可以追问" : "内置数据 · 点击圆点可以追问"
+            }
+            chart={
+              <EChart
+                option={lineOption}
+                height={240}
+                ariaLabel="月度支出折线图"
+                onClick={handleTimeseriesClick}
+              />
+            }
+            table={
+              <MiniTable
+                headers={["月份", "支出（元）"]}
+                rows={timeseries.labels.map((label, i) => [
+                  label,
+                  `${(timeseries.values[i] ?? 0).toLocaleString("zh-CN", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2,
+                  })}`,
+                ])}
+              />
             }
           />
 

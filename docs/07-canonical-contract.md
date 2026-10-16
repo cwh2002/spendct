@@ -984,6 +984,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 16. §3 目录树/模块清单登记 `src/lib/insights`（ledger-demo / merchant-aggregate）与 `src/components/insights`（merchant-view / chart-card，§14 A13）；/insights 视图数写「4 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计）」。
 17. 附录 A 环境变量补 `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`（本地大模型端点，§12 A14；双必填才生效、仅接管 chat 任务）；§3 目录树登记 `src/lib/chat/deep-analysis.ts`（深度分析查询与上下文组装）、`src/lib/llm/endpoint-config.ts`（本地端点解析）。
 18. §3 目录树/模块清单登记 A15 新模块：`src/lib/chat/targeted-detail.ts`（追问定向明细检索）、`src/lib/insights/calendar-aggregate.ts` + `calendar-demo.ts`（消费日历聚合/演示行）、`src/components/calendar/`（页面级日历组件）、`src/components/insights/subscription-view.tsx`（订阅视图迁入）；路由树按 §14 A15 更新（`/subscriptions` → 静态重定向、新增 `/calendar`）；/insights 视图数写「5 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计 / 订阅管理）」。
+19. §3 目录树/模块清单登记 2026-10-16 修订模块：`src/lib/insights/ledger-sql.ts`（账本汇总日期范围 SQL 模板纯函数）与 `src/components/insights/mini-table.tsx`（账本汇总 / 商户统计共用的两列表格载体，自 ledger-view 提取）；ledger-demo 演示行日期跨度扩至约 13 个月且向近期倾斜（各档日期筛选在演示动线下有可见样本差异）。
 
 ### 02-data-privacy.md
 
@@ -1064,6 +1065,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 16. 追问面板章节补「深度分析」开关交互规范（§13 A14）：输入框上方 chip（aria-pressed 两态；开启提示「直接交给大模型分析，并发送账单统计与明细」、关闭提示「本地规则优先，答不了才转在线」）；开启后回答气泡脚注「深度分析 · 已发送账单统计与明细」（三态来源脚注 + 深度分析档；脚注按实际发送组合标注，缺一段只说发了的那段）。
 17. §1.6 /insights 视图切换器补第 5 视图「订阅管理」（?view=subscriptions，§14 A15）；§2.2 组件总表登记页面级组件 `CalendarView` / `CalendarHeatmap` / `CalendarTimeline`（/calendar 页）与 `SubscriptionView`（自原 /subscriptions 页迁入，行为不变）；路由交互规范补 /calendar 页（热力图 + 时间轴流水 + 搜索/方向筛选 + 数据表切换）与 /subscriptions 静态重定向；商户统计视图章节补「去向排名 / 逐笔明细」双页签交互规范（§14 A15）。
 18. 年度报告章节补「通俗化」交互口径（§14 A15，落点 `src/lib/report/labels.ts` + report 页六维健康明细）：健康指数附大白话总评（「每 100 元消费里约 X 元用于…」）+ 六维状态标签；段位与成就百分比改口语化表述（保留数字小字）；四段数据故事改叙事文案。
+19. §1.6 账本汇总日期范围筛选语义修订（2026-10-16）：范围按钮（近 7/30/90 天、本月、全部）同步作用于类别 / 商户 / 明细三块——真实动线按 `date_iso >= 计算字面量` 拼入白名单 SQL 模板重查（模板纯函数收口于 `src/lib/insights/ledger-sql.ts`），演示动线按行日期过滤；「支出走势（月）」迁至 §1.7 商户统计排名图下方（`SQL_MONTHLY_TREND` + `DEMO_INSIGHTS.ins-4` 演示回退 + showSymbol 圆点锚点）；§3.6 折线规范补 showSymbol 可点击口径（ECharts 折线线体不带逐点索引，可点击锚点场景必须常显圆点）、热力图规范补 piecewise 五档图例口径（≤50 / 50-100 / 100-200 / 200-500 / >500 元，阈值固定不随数据自适应）；§2.2 组件总表补 `MiniTable`。
 
 ### 06-roadmap.md
 
@@ -1085,7 +1087,7 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 16. §6.3 按 A11 更新：OCR 主供应商 deepseek-flash（V4.1 Flash 原生多模态）。
 17. §6.3 功能落点表补智能助理行（AI 深度：Agent 工作流 = 共享问答管线本地优先混合推理、大模型集成 = assistant-plan、RAG = 聊天案例路径、多模态 = 语音输入、AI 安全 = 输入闸门、MCP = 在线兜底工具层与计划联动）；§6.4 竞品对照表「锚点追问（非聊天窗）」行改写为「本地优先智能助理（非直连 API 聊天窗）」；PDF 大纲功能点清单同步。
 18. §6.1 README 大纲功能总览补「商户统计」视图（前端工程/可视化深度落点：全账单商户聚合排名图 + 数据表 + 追问联动，§14 A13）；PDF 大纲与分镜若有 /insights 视图枚举同步 4 视图。
-19. §6.1 README 大纲功能总览补「追问深度分析」行（大模型集成/隐私工程落点：面板开关 + 全期白名单聚合上下文 + 明细两条消息 + 本地端点 env，零新端点/零新路由，§13 A14）；测试数按最新全量更新（**单测 540 / e2e 45**，2026-10-16 实测）；§6.3 评分口径功能点清单与 PDF 大纲同步。
+19. §6.1 README 大纲功能总览补「追问深度分析」行（大模型集成/隐私工程落点：面板开关 + 全期白名单聚合上下文 + 明细两条消息 + 本地端点 env，零新端点/零新路由，§13 A14）；测试数按最新全量更新（**单测 547 / e2e 47**，2026-10-16 实测）；§6.3 评分口径功能点清单与 PDF 大纲同步。
 20. §6.3 功能落点表补「消费日历」行（前端工程/可视化深度落点：日历热力图 + 时间轴流水，§14 A15；日历热力图原为 F03 省赛规划组件，提前于 T42 排期以独立页形态落地，可复用至账本汇总图表位）；订阅雷达落点改写为「洞察页第 5 视图」（内容全保留、评分证据不丢，独立页降级，§14 A15）；「追问深度分析」行口径扩「定向明细检索」（deep 档第三段上下文，§13 A15）；年度报告行补「通俗化」说明（§14 A15）；视图枚举同步 5 视图；PDF 大纲同步。
 
 ### 08-feature-expansion.md（修订案 A1-A7，2026-10-13，v1.1）

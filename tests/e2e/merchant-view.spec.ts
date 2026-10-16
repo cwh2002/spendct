@@ -14,25 +14,36 @@ test.describe("商户统计视图（/insights?view=merchants）", () => {
     // 演示动线：图表按 aria-label 暴露语义
     await expect(page.getByRole("img", { name: "商户支出排名柱状图" })).toBeVisible();
     await expect(page.getByText(/内置数据 · 共 \d+ 个商户/)).toBeVisible();
+    // 支出走势（月）从账本汇总迁入，挂在排名图下方（2026-10-16 修订）
+    await expect(page.getByRole("heading", { name: "支出走势（月）" })).toBeVisible();
+    await expect(page.getByRole("img", { name: "月度支出折线图" })).toBeVisible();
+    await expect(page.getByText(/点击圆点可以追问/)).toBeVisible();
   });
 
   test("切换数据表：展示全量商户行（商户 / 总额 / 笔数 / 占比 / 均笔 / 追问）", async ({
     page,
   }) => {
     await page.goto("/insights?view=merchants");
-    await page.getByRole("button", { name: "切换到数据表视图" }).click();
-    await expect(page.getByRole("columnheader", { name: "商户 / 支付单位" })).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: "总额（元）" })).toBeVisible();
-    await expect(page.getByRole("columnheader", { name: "占全账单" })).toBeVisible();
+    // 视图内有两张图表卡（排名 + 走势），切换按钮需限定在排名卡内
+    const rankingCard = page.locator("section").filter({
+      has: page.getByRole("heading", { name: "商户支出排名" }),
+    });
+    await rankingCard.getByRole("button", { name: "切换到数据表视图" }).click();
+    await expect(rankingCard.getByRole("columnheader", { name: "商户 / 支付单位" })).toBeVisible();
+    await expect(rankingCard.getByRole("columnheader", { name: "总额（元）" })).toBeVisible();
+    await expect(rankingCard.getByRole("columnheader", { name: "占全账单" })).toBeVisible();
     // 演示商户池必含的商户行（exact：行内「追问」按钮的 cell 名是「追问美团外卖」）
-    await expect(page.getByRole("cell", { name: "美团外卖", exact: true })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "京东商城", exact: true })).toBeVisible();
+    await expect(rankingCard.getByRole("cell", { name: "美团外卖", exact: true })).toBeVisible();
+    await expect(rankingCard.getByRole("cell", { name: "京东商城", exact: true })).toBeVisible();
   });
 
   test("数据表行「追问」按钮与柱子点击同一锚点协议（键盘可达入口）", async ({ page }) => {
     await page.goto("/insights?view=merchants");
-    await page.getByRole("button", { name: "切换到数据表视图" }).click();
-    await page.getByRole("button", { name: "追问美团外卖" }).click();
+    const rankingCard = page.locator("section").filter({
+      has: page.getByRole("heading", { name: "商户支出排名" }),
+    });
+    await rankingCard.getByRole("button", { name: "切换到数据表视图" }).click();
+    await rankingCard.getByRole("button", { name: "追问美团外卖" }).click();
     // 追问面板出现锚点确认条，标签与图表锚点同口径（商户 + 合计 + 占比）
     await expect(page.getByText("已选中：", { exact: false })).toBeVisible();
     await expect(page.getByText(/美团外卖 合计 ¥\d+\.\d{2} · 占全账单 \d+(\.\d)?%/)).toBeVisible();
@@ -42,11 +53,14 @@ test.describe("商户统计视图（/insights?view=merchants）", () => {
 
   test("商户搜索过滤图表与数据表", async ({ page }) => {
     await page.goto("/insights?view=merchants");
-    await page.getByRole("button", { name: "切换到数据表视图" }).click();
+    const rankingCard = page.locator("section").filter({
+      has: page.getByRole("heading", { name: "商户支出排名" }),
+    });
+    await rankingCard.getByRole("button", { name: "切换到数据表视图" }).click();
     const search = page.getByRole("searchbox", { name: "搜索商户" });
     await search.fill("京东");
-    await expect(page.getByRole("cell", { name: "京东商城", exact: true })).toBeVisible();
-    await expect(page.getByRole("cell", { name: "美团外卖", exact: true })).toHaveCount(0);
+    await expect(rankingCard.getByRole("cell", { name: "京东商城", exact: true })).toBeVisible();
+    await expect(rankingCard.getByRole("cell", { name: "美团外卖", exact: true })).toHaveCount(0);
     // 无匹配时的空态提示
     await search.fill("不存在的商户");
     await expect(page.getByText("没有匹配的商户").first()).toBeVisible();

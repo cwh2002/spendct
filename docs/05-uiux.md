@@ -260,11 +260,10 @@ export const featureFlags = {
 - **布局分区**：
   ```
   ┌──────────────────────────────────────┐
-  │ 筛选行：日期预设(近7/30/90天·本月·自定义) │
+  │ 筛选行：日期预设(近7/30/90天·本月·全部)  │
   │         + 类别 combobox + 商户搜索      │
   ├──────────────────────────────────────┤
-  │ 主图：支出时间序列（可切换：日/周/月粒度） │
-  │ 次图：类别构成 donut · 商户排行 bar      │
+  │ 类别构成 donut · 商户排行 bar（两列栅格） │
   │ （全部内置 ChartAnchorLayer + 数据表切换）│
   ├──────────────────────────────────────┤
   │ 两大图表区（省赛，两列栅格，F03，懒挂载）：  │
@@ -277,6 +276,7 @@ export const featureFlags = {
   │ 明细表：虚拟滚动（10k 行），金额分箱显示   │
   └──────────────────────────────────────┘
   ```
+- **筛选语义（2026-10-16 修订）**：日期范围筛选同步作用到类别 / 商户 / 明细三块——真实动线按 `date_iso >= 'YYYY-MM-DD'`（日期字面量由本地时钟计算，VARCHAR 字典序即时间序）拼入白名单 SQL 模板重查，演示动线按行日期过滤；「支出走势（月）」从本视图迁出，挂到商户统计视图排名图下方（§1.7）。
 - **核心组件**：`ChartCard`、`ChartAnchorLayer`、`FilterRow`、`VirtualBillTable`、`AnchorConfirmBar`、`CalendarHeatmap`、`CategorySankey`、`HealthRadar`、`MerchantWordcloud`（四大静态图 = 省赛两图 + 国赛两图，渲染规范见 §3.6；数据源 = 既有视图 v_daily_expense / v_category_monthly / v_health_inputs / v_merchant_monthly，零新表，08 §④.2）。
 - **重构登记（08 修订案 A13）**：演示行生成器与 ChartCard 图表卡外壳已提取为共享模块（`src/lib/insights/ledger-demo.ts`、`src/components/insights/chart-card.tsx`），与商户统计视图共用；ledger-view 行为与演示口径不变。
 - **状态**：
@@ -298,19 +298,25 @@ export const featureFlags = {
   │ 数据表：全量排名（商户 / 支付单位 ·      │
   │   总额 · 笔数 · 占全账单 · 均笔，       │
   │   金额降序）                           │
+  │ 支出走势（月）：近 12 月月度序列（2026-   │
+  │   10-16 从账本汇总迁入，全账单口径不随    │
+  │   排名搜索变化；点击圆点 → 追问锚点）    │
   │ 脚注：数据来源（你的账单数据 / 内置数据） │
   │   + 截断说明（恰满 50 行标「商户较多，    │
   │     按金额取前 50 名」，不满标「全部展示」）│
   └──────────────────────────────────────┘
   ```
-- **数据口径（08 修订案 A13）**：按 `merchant` 聚合全账单（无时间窗）`direction='expense'` 支出；OCR 账单中 merchant 即账单上的支付单位名称（A10 入库口径）。真实动线两条白名单 SQL（页面代码常量，无用户输入，经 runWhitelistedAggregate 预检双保险；两条 SQL 已入白名单单测 tests/unit/whitelist.test.ts）：
+- **数据口径（08 修订案 A13，2026-10-16 补走势）**：按 `merchant` 聚合全账单（无时间窗）`direction='expense'` 支出；OCR 账单中 merchant 即账单上的支付单位名称（A10 入库口径）。真实动线三条白名单 SQL（页面代码常量，无用户输入，经 runWhitelistedAggregate 预检双保险；已入白名单单测 tests/unit/whitelist.test.ts）：
   ```sql
   -- 商户排名：聚合值按 SELECT 位置取值（07 §6 按位口径，白名单文法子集不支持 AS 别名）
   SELECT merchant, SUM(amount_cents), COUNT(*) FROM transactions
   WHERE direction = 'expense' GROUP BY merchant ORDER BY SUM(amount_cents) DESC LIMIT 50;
   -- 占比分母：取 expense 行
   SELECT direction, SUM(amount_cents) FROM transactions GROUP BY direction;
+  -- 支出走势（月）：近 12 月月度序列（自账本汇总迁入）
+  SELECT month, SUM(expense_cents) FROM v_monthly_summary GROUP BY month ORDER BY month DESC LIMIT 12;
   ```
+- **走势图交互（2026-10-16 修订）**：走势查询独立降级——失败仅该模块回退演示 `DEMO_INSIGHTS.ins-4`，不拖累排名动线；折线开 `showSymbol` 常显圆点（§3.6 line 规范），点击圆点 → 追问锚点（「某月支出 X 元」）。
 - **核心组件**：`MerchantView`（页面级，两级注册口径登记于 §2.2，不占可复用注册表名额）、`ChartCard`（共享图表卡外壳，提取自账本汇总，`src/components/insights/chart-card.tsx`）、`ChartAnchorLayer`；商户聚合映射纯函数在 `src/lib/insights/merchant-aggregate.ts`（aggregateMerchants / merchantsFromQuery / expenseTotalFromDirection）。
 - **状态**：
   - 空：无体检结果（lastRun 为空）→ 确定性演示行（`src/lib/insights/ledger-demo.ts`，seed 20261013、100 行，与账本汇总同一生成器）浏览器内聚合，零 API 调用（渲染期即回退，不查库）；
@@ -575,6 +581,7 @@ App
 | `ThinkingBubble` | `events`、`activeStage`、`paused`、`onPause/onResume` | streaming / idle / paused | SqlCodeBlock、ToolBadge、TypingCard |
 | `InsightCard` | `card: InsightCardData`（07 §4 insight-card@v1）、`onFeedback`、`onDrill` | draft / published / withheld（07 §4 三态）+ UI 覆盖态 confirmed / disputed / error | ChartCard、FeedbackButton、CitationCollapse、ConfidenceDots |
 | `ChartCard` | `spec: ChartSpec`（07 §4：tableId/chartType/title/dimField/measureFields/sortBy/topN/note，registry 渲染，LLM 不产出 ECharts option）、`withAnchor?`、`withTable?`、`loading?`、`error?`（共享图表卡外壳：提取自账本汇总，`src/components/insights/chart-card.tsx`，行为不变，08 修订案 A13） | loading / ready / error / table | ChartAnchorLayer、Skeleton、EmptyState |
+| `MiniTable` | `headers: [string, string]`、`rows: [string, string][]`（两列表格载体：账本汇总与商户统计的 ChartCard 数据表视图共用，`src/components/insights/mini-table.tsx`，2026-10-16 修订） | — | — |
 | `ChartAnchorLayer` | `chartRef`、`selection?`、`disabled?`、`onHover`、`onSelect`、`onCancel` | idle / hover / selected | AnchorHintChip |
 | `FollowUpPanel` | `turns`、`running`、`onSend`、`onRetry` | idle / planning / executing / answered | PlanStepTree、ChartCard（08 修订案 A12：内部走 use-chat-pipeline，不开本地案例路径，保持 PEO 协议） |
 | `PlanStepTree` | `steps: PlanStep[]`、`onRetry?` | 每步 pending/running/done/failed | — |
@@ -1108,10 +1115,10 @@ export function registerSpendctThemes() {
 | 图表 | 规范 |
 |---|---|
 | bar | `barMaxWidth: 28`；垂直柱圆角 `[3,3,0,0]`、水平柱 `[0,3,3,0]`（4px 圆角锚定基线）；堆叠段之间用 `itemStyle.borderColor: surface, borderWidth: 2` 造 2px 表面间隔；单系列不显示图例框（标题点名系列），≥2 系列必有图例 |
-| line | `lineWidth: 2`；`symbol: "circle", symbolSize: 8`，默认 `showSymbol: false` 仅悬停显示；面积填充渐变 opacity 0.08→0；≤4 系列加 `endLabel` 系列末端直接标签；坐标轴 tooltip（axis trigger）+ 十字准星 |
+| line | `lineWidth: 2`；`symbol: "circle", symbolSize: 8`，默认 `showSymbol: false` 仅悬停显示；**可点击锚点场景必须开 `showSymbol: true`**（圆点描边 surface、symbolSize 9——ECharts 折线线体/面积不携带逐点 dataIndex，不开圆点则点击回调收不到 name/value，锚点拼不出月份金额）；面积填充渐变 opacity 0.08→0；≤4 系列加 `endLabel` 系列末端直接标签；坐标轴 tooltip（axis trigger）+ 十字准星 |
 | pie/donut | `radius: ["62%","80%"]`；切片间 2px 表面描边；上限 5 片 + 「其他」；图例外置；每片直接标签（名称+百分比），关键片保留数值 |
 | scatter | 最多 3 系列（全对形式）；`symbolSize: 10`；每点悬停 tooltip；用于「商户金额×频次」象限图 |
-| heatmap | 只用 3.1.4 蓝 ramp；图例说明「浅=少」 |
+| heatmap | 只用 3.1.4 蓝 ramp；图例说明「浅=少」；**日历热力图（消费日历页）分段色阶**：`visualMap.type: "piecewise"` + `show: true` 常显图例，固定五档 `≤50 / 50-100 / 100-200 / 200-500 / >500 元`（阈值不随数据自适应——日常消费集中在几十到几百元，小金额段细分才能拉开深浅差异），同色系透明度 0.1→1.0 递增；calendar `bottom: 28` 给横向图例让位 |
 | gauge | 健康指数：`startAngle: 210, endAngle: -30`，进度色按 status 三件套；只画单值，不画多指针 |
 
 **四大静态图表组件渲染规范（08 §④.2，页面代码静态渲染，不走 ChartSpec 枚举）**——分档口径（08 §1.2）：**省赛落地 CalendarHeatmap / CategorySankey 两大图，HealthRadar / MerchantWordcloud 国赛窗口补齐**（组件规格仍按本节实现，不因档期降规格）。裁决理由见 08 §④.1（桑基三字段、雷达多维超出 measureFields 1-2 的契约形状；sankey 曾因 #72 从 07 §4 删除；固定形态产品无需 LLM 声明，确定性优先）：

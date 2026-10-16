@@ -20,8 +20,9 @@ interface CalendarHeatmapProps {
 /**
  * 消费日历的每日支出热力图卡（A15 第四部分）：
  * ECharts calendar 坐标系 heatmap，每个日期格子的颜色深浅 = 当日支出金额
- * 高低，图下附口径说明「颜色越深花得越多」。数据表视图（ChartCard 无障碍
- * 救济）按日期列出每日支出，与色块等价表达。
+ * 高低，分段图例按金额档标注（小额日常消费细分多档），图下附口径说明
+ * 「颜色越深花得越多」。数据表视图（ChartCard 无障碍救济）按日期列出
+ * 每日支出，与色块等价表达。
  */
 export function CalendarHeatmap({ points, real }: CalendarHeatmapProps) {
   // 数据点 → 构造器入参（分刻度原样传入，展示换算交给 formatValue）
@@ -49,7 +50,7 @@ export function CalendarHeatmap({ points, real }: CalendarHeatmapProps) {
           <div>
             <EChart option={heatmapOption} height={240} ariaLabel="消费日历热力图" />
             <p className="mt-2 text-xs text-(--color-ink-muted)">
-              颜色越深花得越多：每个色块代表一天的支出金额，颜色越深金额越高
+              颜色越深花得越多：图例按金额分档着色，几十到几百元的小额日常支出也细分多档，深浅差异一目了然
             </p>
           </div>
         ) : (

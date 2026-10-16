@@ -7,7 +7,9 @@
  *
  * 标签重叠策略（05 §3.6 全局规则 2 的落地口径）：
  * - 折线：x 轴标签 hideOverlap 自动抽稀；均值参考线（markLineAverage）供
- *   「可与预算对比」类卡叠加月均虚线；
+ *   「可与预算对比」类卡叠加月均虚线；showSymbol 常显圆点只给「可点击
+ *   锚点」场景开（ECharts 折线线体不带逐点索引，圆点携带 dataIndex 后
+ *   点击回调才能拿到月份与金额）；
  * - 环图：标签只写百分比（名称由图例承担）+ labelLayout.hideOverlap 压字隐藏 +
  *   minShowLabelAngle 拦掉贴边小瓣（labelLayout 仅 pie/funnel 运行时生效，此处合法）；
  * - 柱图：series.labelLayout 在 bar 上无效（LabelManager 只在 pie/funnel 执行），
@@ -37,6 +39,13 @@ interface LineOpts {
   axisFormat?: (v: number) => string;
   /** 均值参考线：数据均值处画虚线 markLine，label 为参考线名称（如「月均」） */
   markLineAverage?: { label: string };
+  /**
+   * 常显数据点圆点（默认关闭，仅悬停显示）。
+   * 可点击锚点场景（账本/商户走势图）必须开启：ECharts 折线的线体与面积
+   * 不携带逐点 dataIndex，点击回调收不到 name/value；圆点携带逐点数据，
+   * 点击才能拼出「某月支出 X 元」的追问锚点。
+   */
+  showSymbol?: boolean;
 }
 
 interface DonutOpts {
@@ -73,9 +82,21 @@ function withAlpha(hex: string, alpha: number): string {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
-/** 折线：lineWidth 2、symbol circle 8、默认不显示符号（仅悬停）、轴触发 tooltip + 十字准星 */
+/**
+ * 折线：lineWidth 2、symbol circle 8、默认不显示符号（仅悬停）、
+ * 轴触发 tooltip + 十字准星。showSymbol 常显圆点（加描边与线体区分），
+ * 供走势图点击追问场景使用（见 LineOpts.showSymbol 说明）。
+ */
 export function buildLineOption(data: SeriesData, opts: LineOpts = {}): ECOption {
-  const { colorIndex = 0, area = true, formatValue, unit = "", axisFormat, markLineAverage } = opts;
+  const {
+    colorIndex = 0,
+    area = true,
+    formatValue,
+    unit = "",
+    axisFormat,
+    markLineAverage,
+    showSymbol = false,
+  } = opts;
   const t = chartTokens();
   const color = t.palette[colorIndex] ?? "#2e7ce8";
   const fmt = (v: number) => `${formatValue ? formatValue(v) : v}${unit}`;
@@ -128,8 +149,10 @@ export function buildLineOption(data: SeriesData, opts: LineOpts = {}): ECOption
         smooth: true,
         lineStyle: { width: 2 },
         symbol: "circle",
-        symbolSize: 8,
-        showSymbol: false,
+        symbolSize: showSymbol ? 9 : 8,
+        showSymbol,
+        // 常显圆点加背景色描边：圆点与线体/面积视觉分层，明确「可点击」语义
+        ...(showSymbol ? { itemStyle: { borderColor: t.surface, borderWidth: 2 } } : {}),
         emphasis: { focus: "series" },
         // 均值参考线：silent 不响应交互，标签带格式化值（如「月均 1733.12 元」）
         ...(markLineAverage
@@ -262,8 +285,11 @@ interface HeatmapOpts {
 
 /**
  * 日历热力图（消费日历页）：ECharts calendar 坐标系 + heatmap 系列，
- * 每个日期格子按数值经 visualMap 连续映射颜色深浅——数值越大颜色越深
- * （口径说明「颜色越深花得越多」由卡面文案承担）。
+ * 每个日期格子按金额落档经 visualMap 分段着色——颜色越深花得越多。
+ * 分段阈值固定（非随数据自适应）：日常消费集中在几十到几百元，
+ * 小金额段（≤50 / 50-100 / 100-200 / 200-500 / >500 元）细分五档，
+ * 几十块与几百块的日子也能拉开明显色差；图例常显并标注各档金额区间，
+ * 深浅语义不再依赖卡面文案。
  * 无消费日不渲染数据点，由 calendar.itemStyle 的空格底色兜底，
  * 有支出的日子一眼可见。日期范围取数据点自身的 min/max 日期，
  * 跨年账单自动铺满整段区间；空数据回退当前年份（调用方通常只在非空时渲染）。
@@ -276,9 +302,6 @@ export function buildCalendarHeatmapOption(
   const t = chartTokens();
   const color = t.palette[0] ?? "#2e7ce8";
   const fmt = (v: number) => `${formatValue ? formatValue(v) : v}${unit}`;
-
-  // 值域：visualMap 从 0 起步，深色端取数据最大值；全 0 时给 1 防除零/整张白板
-  const visualMax = points.reduce((max, p) => Math.max(max, p.value), 0) || 1;
 
   // 日期范围：数据点最小/最大日期；无数据回退当前年份（占位渲染兜底）
   const dates = points
@@ -311,19 +334,33 @@ export function buildCalendarHeatmapOption(
       },
     },
     visualMap: {
-      // 色带隐藏：深浅语义由卡面口径说明承担（「颜色越深花得越多」），
-      // 不占日历版面；色阶为同色系三档透明度（浅 → 深）
-      show: false,
-      min: 0,
-      max: visualMax,
-      inRange: { color: [withAlpha(color, 0.08), withAlpha(color, 0.45), color] },
-      calculable: false,
+      // 分段色阶（05 §3.6 热力图修订）：阈值为金额档而非数据自适应，
+      // 小金额段细分让日常消费（几十～几百元）的深浅差异清晰可见；
+      // 图例常显，每档标注金额区间，替代原连续色带的模糊深浅
+      type: "piecewise",
+      show: true,
+      left: 32,
+      bottom: 0,
+      orient: "horizontal",
+      itemWidth: 12,
+      itemHeight: 12,
+      itemGap: 6,
+      textGap: 4,
+      textStyle: { color: t.inkSecondary, fontSize: 10 },
+      pieces: [
+        { gte: 0, lte: 5000, label: "≤50 元", color: withAlpha(color, 0.1) },
+        { gt: 5000, lte: 10000, label: "50-100 元", color: withAlpha(color, 0.28) },
+        { gt: 10000, lte: 20000, label: "100-200 元", color: withAlpha(color, 0.5) },
+        { gt: 20000, lte: 50000, label: "200-500 元", color: withAlpha(color, 0.75) },
+        { gt: 50000, label: ">500 元", color },
+      ],
     },
     calendar: {
       top: 24,
       left: 32,
       right: 16,
-      bottom: 4,
+      // 底部让位给分段图例（图例横向一行在 bottom 0）
+      bottom: 28,
       range: [rangeStart, rangeEnd],
       cellSize: ["auto", 15],
       splitLine: { show: false },

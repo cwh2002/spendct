@@ -25,7 +25,7 @@ function mulberry32(seed: number) {
   };
 }
 
-/** 类别权重（大学生消费口径）：餐饮约占 42%，与下方金额区间换算出的月均约 1,733 元吻合 */
+/** 类别权重（大学生消费口径）：餐饮约占 42%，与下方单笔金额区间共同逼近大学生月消费结构 */
 const CATEGORY_WEIGHTS: [string, number][] = [
   ["餐饮", 42],
   ["购物", 20],
@@ -44,7 +44,7 @@ const MERCHANT_POOL: Record<string, string[]> = {
   其他: ["微信读书", "顺丰速运", "大参林药房", "家乐福"],
 };
 
-/** 金额区间（分，大学生口径）：按类别设定，让 90 天合计贴近「月均 1,733 元」 */
+/** 金额区间（分，大学生单笔消费口径）：按类别设定，覆盖外卖小单到购物/居住大单 */
 const AMOUNT_RANGE: Record<string, [number, number]> = {
   餐饮: [800, 8000],
   购物: [1000, 15000],
@@ -68,6 +68,11 @@ function pickCategory(rand: () => number): string {
  * 生成 100 行演示明细（时间倒序）：仅作兜底动线——
  * 无体检结果（lastRun 为空）或 DuckDB 明细查询失败时使用；
  * 真实数据已接入（见各视图组件内装载 effect）。
+ *
+ * 日期分布：跨度约 13 个月且向近期倾斜（指数 1.5）——
+ * 日期范围筛选（近 7/30/90 天、本月）是账本汇总的核心交互，
+ * 演示数据必须让每一档筛完都有可见的样本差异（近 90 天约占四成），
+ * 否则筛选按钮在演示动线下看起来「没有效果」。
  */
 export function generateLedgerDemoRows(): LedgerDemoRow[] {
   const rand = mulberry32(20261013);
@@ -81,7 +86,7 @@ export function generateLedgerDemoRows(): LedgerDemoRow[] {
     const [min, max] = AMOUNT_RANGE[category] ?? [100, 5000];
     const amountCents = Math.round(min + rand() * (max - min));
     const date = new Date(today);
-    date.setDate(date.getDate() - Math.floor(rand() * 90));
+    date.setDate(date.getDate() - Math.floor(Math.pow(rand(), 1.5) * 390));
     rows.push({ id: i + 1, date, merchant, category, amountCents });
   }
   return rows.sort((a, b) => b.date.getTime() - a.date.getTime());

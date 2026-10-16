@@ -4,16 +4,18 @@ import { RotateCcw, Search } from "lucide-react";
 import type { ECElementEvent } from "echarts/core";
 import { useEffect, useMemo, useState } from "react";
 import { EChart } from "@/components/charts/e-chart";
-import {
-  buildBarOption,
-  buildDonutOption,
-  buildLineOption,
-  formatYuan,
-} from "@/components/charts/option-builders";
+import { buildBarOption, buildDonutOption, formatYuan } from "@/components/charts/option-builders";
 import { ChartCard } from "@/components/insights/chart-card";
-import { DEMO_ACCOUNT_META, DEMO_INSIGHTS } from "@/lib/demo-data";
+import { MiniTable } from "@/components/insights/mini-table";
+import { DEMO_ACCOUNT_META } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { generateLedgerDemoRows, type LedgerDemoRow } from "@/lib/insights/ledger-demo";
+import {
+  categorySql,
+  detailSql,
+  merchantSql,
+  type LedgerRange,
+} from "@/lib/insights/ledger-sql";
 import { usePipeline } from "@/lib/pipeline/store";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 import type { FollowUpAnchor } from "./follow-up-panel";
@@ -22,8 +24,6 @@ interface LedgerViewProps {
   /** 图表数据点点击 → 选中追问（05 §1.6 核心交互） */
   onAnchor(anchor: FollowUpAnchor): void;
 }
-
-type LedgerRange = "7d" | "30d" | "90d" | "month" | "all";
 
 const RANGES: { key: LedgerRange; label: string }[] = [
   { key: "7d", label: "近 7 天" },
@@ -40,38 +40,20 @@ type LedgerRow = LedgerDemoRow;
 
 // ─────────────────── 真实数据动线（07 §6 白名单文法） ───────────────────
 
-/**
- * 账本四块数据的聚合 SQL（代码常量，无任何用户输入）：
- * 仍统一经 runWhitelistedAggregate 预检执行作双保险（与 /report /budget 同口径）。
- * 明细查询按 date_iso/merchant/category 三列分组（白名单 GROUP BY 上限 3 列），
- * 同一商户同一天同类别合并成一行，正好对齐账本「流水汇总」而非逐笔的展示粒度。
- */
-const SQL_MONTHLY_TREND =
-  "SELECT month, SUM(expense_cents) FROM v_monthly_summary GROUP BY month ORDER BY month DESC LIMIT 12";
-
-const SQL_CATEGORY_TOTAL =
-  "SELECT category, SUM(expense_cents) FROM v_category_monthly GROUP BY category";
-
-const SQL_TOP_MERCHANTS =
-  "SELECT merchant, SUM(total_cents), SUM(tx_count) FROM v_top_merchants_90d GROUP BY merchant ORDER BY SUM(total_cents) DESC LIMIT 6";
-
-const SQL_RECENT_DETAIL =
-  "SELECT date_iso, merchant, category, SUM(amount_cents) FROM transactions WHERE direction = 'expense' GROUP BY date_iso, merchant, category ORDER BY date_iso DESC LIMIT 50";
+// 三块聚合 SQL 模板集中在 src/lib/insights/ledger-sql.ts（纯函数）：
+// 日期范围筛选同步作用到类别 / 商户 / 明细三块，范围按钮在真实动线下同样生效。
 
 /** 真实装载结果：null = 该模块查询失败或无数据，对应模块回退演示动线 */
 interface RealLedgerData {
-  /** 近 12 月支出走势（升序，值已换算为元，与演示 ins-4 同口径） */
-  timeseries: { labels: string[]; values: number[] } | null;
-  /** 类别支出总额（分），v_category_monthly 聚合结果 */
+  /** 所选时间范围的类别支出总额（分），金额降序前 6 */
   categories: { category: string; cents: number }[] | null;
-  /** 近 90 天商户排行（分 / 笔），已按金额降序 */
+  /** 所选时间范围的商户排行（分 / 笔），已按金额降序 */
   merchants: { merchant: string; cents: number; count: number }[] | null;
-  /** 最近 50 笔支出明细（时间倒序） */
+  /** 所选时间范围的最近 50 笔支出明细（时间倒序） */
   rows: LedgerRow[] | null;
 }
 
 const EMPTY_REAL_DATA: RealLedgerData = {
-  timeseries: null,
   categories: null,
   merchants: null,
   rows: null,
@@ -86,23 +68,6 @@ function toCents(value: unknown): number {
   if (typeof value === "number") return Math.round(value);
   const parsed = Number(value);
   return Number.isFinite(parsed) ? Math.round(parsed) : 0;
-}
-
-/**
- * DuckDB 月份维度 → YYYY-MM（本地口径，与管线 fmtMonth 一致）：
- * 兼容 Date 对象、epoch 毫秒 number、字符串三种物化形态。
- */
-function toMonthKey(value: unknown): string {
-  const date =
-    value instanceof Date
-      ? value
-      : typeof value === "number" && Number.isFinite(value)
-        ? new Date(value)
-        : typeof value === "string"
-          ? new Date(value)
-          : null;
-  if (!date || Number.isNaN(date.getTime())) return "";
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
 
 /** date_iso（YYYY-MM-DD VARCHAR）→ Date；非法值返回 null 由调用方过滤 */
@@ -125,37 +90,11 @@ function inRange(row: LedgerRow, range: LedgerRange, now: Date): boolean {
   return row.date.getFullYear() === now.getFullYear() && row.date.getMonth() === now.getMonth();
 }
 
-/** 简易两列表格：图表数据表的通用载体 */
-function MiniTable({ headers, rows }: { headers: [string, string]; rows: [string, string][] }) {
-  return (
-    <div className="h-[260px] overflow-y-auto rounded-(--radius-md) border border-(--color-border)">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-(--color-surface)">
-          <tr className="border-b border-(--color-border) text-left text-xs text-(--color-ink-muted)">
-            <th scope="col" className="px-3 py-2 font-medium">
-              {headers[0]}
-            </th>
-            <th scope="col" className="px-3 py-2 text-right font-medium">
-              {headers[1]}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map(([label, value]) => (
-            <tr key={label} className="border-b border-(--color-border) last:border-0">
-              <td className="px-3 py-1.5 text-(--color-ink-secondary)">{label}</td>
-              <td className="px-3 py-1.5 text-right font-medium tabular-nums">{value}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
 /**
  * 账本汇总视图（05 §1.6，原 /ledger 并入 /insights）：
- * 筛选行 + 支出走势 / 类别 donut / 商户排行三图（内置数据表切换与选中点击）+ 明细表。
+ * 筛选行 + 类别 donut / 商户排行两图（内置数据表切换与选中点击）+ 明细表。
+ * 日期范围筛选同步作用到全部图表与明细（真实动线由 SQL 日期下限过滤，
+ * 演示动线按行日期过滤）；支出走势（月）已迁至商户统计视图。
  * 数据动线：体检运行过（lastRun 存在）且 DuckDB 查询成功时展示真实账单聚合，
  * 任一模块查询失败或无体检结果则回退内置数据演示动线（generateLedgerDemoRows）。
  */
@@ -171,34 +110,18 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
   const liveRealData = lastRun ? realData : EMPTY_REAL_DATA;
 
   // 真实数据装载：lastRun 存在时读 DuckDB（与体检同一单例连接、同一内存数据集）。
-  // 四块数据各自 try/catch 模块级降级：哪块失败哪块回退演示，不阻断其余模块
+  // 日期范围变化时按新范围重查（真实动线的范围筛选，SQL 见模板函数注释）；
+  // 三块数据各自 try/catch 模块级降级：哪块失败哪块回退演示，不阻断其余模块
   useEffect(() => {
     if (!lastRun) return; // 演示动线：不查库
     let cancelled = false;
+    const now = new Date();
     void (async () => {
       const loaded: RealLedgerData = { ...EMPTY_REAL_DATA };
       try {
         const conn = await getDuckDB();
         try {
-          const result = await runWhitelistedAggregate(conn, SQL_MONTHLY_TREND);
-          const series = (result.rows as Record<string, unknown>[])
-            .map((row) => {
-              const values = Object.values(row);
-              return { monthKey: toMonthKey(values[0]), yuan: toCents(values[1]) / 100 };
-            })
-            .filter((row) => row.monthKey !== "")
-            .reverse(); // SQL 侧 month DESC → 升序展示
-          if (series.length > 0) {
-            loaded.timeseries = {
-              labels: series.map((row) => row.monthKey),
-              values: series.map((row) => row.yuan),
-            };
-          }
-        } catch {
-          // 走势查询失败 → timeseries 保持 null，回退演示 ins-4
-        }
-        try {
-          const result = await runWhitelistedAggregate(conn, SQL_CATEGORY_TOTAL);
+          const result = await runWhitelistedAggregate(conn, categorySql(range, now));
           const rows = (result.rows as Record<string, unknown>[])
             .map((row) => {
               const values = Object.values(row);
@@ -210,7 +133,7 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
           // 类别查询失败 → categories 保持 null，回退按演示行聚合
         }
         try {
-          const result = await runWhitelistedAggregate(conn, SQL_TOP_MERCHANTS);
+          const result = await runWhitelistedAggregate(conn, merchantSql(range, now));
           const rows = (result.rows as Record<string, unknown>[])
             .map((row) => {
               const values = Object.values(row);
@@ -226,7 +149,7 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
           // 商户查询失败 → merchants 保持 null，回退按演示行聚合
         }
         try {
-          const result = await runWhitelistedAggregate(conn, SQL_RECENT_DETAIL);
+          const result = await runWhitelistedAggregate(conn, detailSql(range, now));
           const rows = (result.rows as Record<string, unknown>[])
             .map((row, i) => {
               const values = Object.values(row);
@@ -252,7 +175,7 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [lastRun]);
+  }, [lastRun, range]);
 
   // 明细数据源：真实装载成功用最近 50 笔，否则回退确定性演示行（查询失败/无数据集）
   const allRows = useMemo(
@@ -278,7 +201,7 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
     [categoryRows, merchantQuery],
   );
 
-  // 类别聚合（真实：v_category_monthly 全量结果；演示：占所选时间范围的总支出份额）
+  // 类别聚合（真实：所选时间范围的聚合结果；演示：占所选时间范围的总支出份额）
   const categoryAgg = useMemo(() => {
     if (liveRealData.categories) {
       const total = liveRealData.categories.reduce((sum, c) => sum + c.cents, 0);
@@ -307,7 +230,7 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
     })).filter((entry) => entry.cents > 0);
   }, [liveRealData.categories, rangeRows]);
 
-  // 商户排行（真实：v_top_merchants_90d 前 6；演示：所选时间范围 + 类别内取前 6）
+  // 商户排行（真实：所选时间范围前 6；演示：所选时间范围 + 类别内取前 6）
   const merchantAgg = useMemo(() => {
     if (liveRealData.merchants) return liveRealData.merchants;
     const map = new Map<string, { cents: number; count: number }>();
@@ -323,29 +246,6 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
       .slice(0, 6);
   }, [liveRealData.merchants, categoryRows]);
 
-  // 支出时间序列：真实装载成功用近 12 月聚合；否则取 DEMO_INSIGHTS.ins-4
-  // （demo 单一来源，不再内置硬编码兜底数组，缺位时留空由图表自然处理）
-  const ins4 = DEMO_INSIGHTS.find((insight) => insight.id === "ins-4");
-  const timeseries = useMemo(
-    () =>
-      liveRealData.timeseries ?? {
-        labels: ins4?.chartLabels ?? [],
-        values: ins4?.chartData ?? [],
-      },
-    [liveRealData.timeseries, ins4],
-  );
-
-  const lineOption = useMemo(
-    () => () =>
-      buildLineOption(timeseries, {
-        // 千分位 + 固定两位小数：tooltip 与轴刻度（¥ 整数元）各自独立，避免小数位漂移
-        formatValue: (v) =>
-          v.toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
-        unit: " 元",
-        axisFormat: (v) => `¥${Math.round(v)}`,
-      }),
-    [timeseries],
-  );
   const donutOption = useMemo(
     () => () =>
       buildDonutOption(
@@ -377,10 +277,6 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
       ),
     [merchantAgg],
   );
-
-  function handleTimeseriesClick(params: ECElementEvent) {
-    onAnchor({ id: "ledger-timeseries", label: `${params.name ?? ""} 支出 ${String(params.value ?? "")} 元` });
-  }
 
   function handleDonutClick(params: ECElementEvent) {
     const percent = typeof params.percent === "number" ? `${params.percent}%` : "";
@@ -479,34 +375,6 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="md:col-span-2">
-          <ChartCard
-            title="支出走势（月）"
-            caption={
-              liveRealData.timeseries ? "近 12 个月 · 点击柱子可以追问" : "内置数据 · 点击柱子可以追问"
-            }
-            chart={
-              <EChart
-                option={lineOption}
-                height={260}
-                ariaLabel="月度支出折线图"
-                onClick={handleTimeseriesClick}
-              />
-            }
-            table={
-              <MiniTable
-                headers={["月份", "支出（元）"]}
-                rows={timeseries.labels.map((label, i) => [
-                  label,
-                  `${(timeseries.values[i] ?? 0).toLocaleString("zh-CN", {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}`,
-                ])}
-              />
-            }
-          />
-        </div>
         <ChartCard
           title="类别构成"
           caption={category === "all" ? "所选时间范围 · 点击扇区可以追问" : `高亮：${category}（其余扇区淡显）`}
@@ -547,8 +415,8 @@ export function LedgerView({ onAnchor }: LedgerViewProps) {
             <h3 className="text-sm font-semibold">明细表</h3>
             <p className="mt-0.5 text-xs text-(--color-ink-muted)">
               {liveRealData.rows
-                ? // 真实动线：明细查询 LIMIT 50，展示最近 50 笔
-                  `最近 ${liveRealData.rows.length} 笔${tableRows.length !== liveRealData.rows.length ? `（筛选后 ${tableRows.length} 笔）` : ""}`
+                ? // 真实动线：明细查询按所选范围过滤 + LIMIT 50
+                  `所选时间范围 · 最近 ${liveRealData.rows.length} 笔${tableRows.length !== liveRealData.rows.length ? `（筛选后 ${tableRows.length} 笔）` : ""}`
                 : // 演示动线：总数读 DEMO_ACCOUNT_META，避免文案与数据源脱钩
                   `共 ${DEMO_ACCOUNT_META.totalTransactions.toLocaleString("zh-CN")} 笔 · 展示最近 100 笔${tableRows.length !== 100 ? `（筛选后 ${tableRows.length} 笔）` : ""}`}
             </p>
