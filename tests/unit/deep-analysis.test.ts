@@ -162,4 +162,26 @@ describe("buildDeepAnalysisContext（全期聚合上下文组装）", () => {
     expect(text).toContain("深夜支出占比（近50个月） 1.5%");
     expect(text).not.toContain("全期深夜");
   });
+
+  it("逐月 month 列为 epoch 数字形态时也能正确格式化月份（回归：不再切成 7 位数字标签）", async () => {
+    // DuckDB 的 date_trunc('month', ts) 经箭头层物化为 epoch 毫秒数字；
+    // 修复前 fmtMonth 被包了 String() 走截断兜底，模型看到 1790812 这类垃圾标签
+    const monthMs = new Date(2026, 9, 1, 12, 0, 0).getTime();
+    const text = await buildDeepAnalysisContext(
+      fakeRunner([
+        [{ account_id: "a", n: 3, min: "2026-10-01", max: "2026-10-15" }],
+        [{ category: "餐饮", sum: 3000, count: 3 }],
+        [],
+        [{ month: monthMs, expense_cents: 3000, income_cents: 0, expense_tx: 3 }],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [{ direction: "expense", sum: 3000 }],
+      ]),
+    );
+    expect(text).toContain("2026-10 支出 ¥30.00 元（3 笔）");
+    expect(text).not.toContain(String(monthMs).slice(0, 7));
+  });
 });

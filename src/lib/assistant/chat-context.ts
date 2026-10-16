@@ -21,6 +21,9 @@ export const ONLINE_CONTEXT_PREFIX = "以下是我的账单数据（汇总统计
 /** 深度分析（A14）的全期统计消息前缀：与明细消息分开两条发送，各自语义完整 */
 export const DEEP_CONTEXT_PREFIX = "以下是我的账单全期统计（深度分析）：\n";
 
+/** 深度分析（A15）的定向明细消息前缀：按问题识别的月份/商户/类目/深夜条件查出的相关明细 */
+export const TARGETED_CONTEXT_PREFIX = "以下是账单中与问题直接相关的明细：\n";
+
 /** 深度分析（A14）的明细快照消息前缀（与普通兜底共用 A8 明细口径） */
 export const DETAIL_CONTEXT_PREFIX = "以下是我的账单最近明细：\n";
 

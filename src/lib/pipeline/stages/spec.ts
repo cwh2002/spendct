@@ -110,17 +110,40 @@ export function fmtYuan(cents: number): string {
 }
 
 /**
- * 月份维度 → YYYY-MM。兼容三种物化形态：Date 对象、epoch 毫秒 number
- * （DATE/TIMESTAMP 经箭头层的时间整数）、"YYYY-MM-DD" 字符串。
+ * 归一化时间值：把 DuckDB 时间列（date_trunc / TIMESTAMP 等）经箭头层物化后的
+ * 几种形态统一为 epoch 毫秒 number，归一失败返回 NaN（调用方回退字符串兜底）：
+ * - Date 对象：getTime() 直接给出毫秒；
+ * - number / bigint：按绝对值判断单位——1970 年至今的 epoch 毫秒值在 1e12~1e13
+ *   量级，微秒值在 1e14~1e15 量级（且要再过上万年才会落到 1e14 以下），
+ *   因此绝对值大于 1e14 视为微秒（先除 1000 再当毫秒），其余有限数值当毫秒；
+ * - bigint 转 number 后必须有限，超出 double 范围（Infinity）视为非法值；
+ * - 其余形态（字符串、null、对象等）一律归一失败，走调用方的字符串兜底。
+ */
+function toEpochMillis(value: unknown): number {
+  let num: number;
+  if (value instanceof Date) {
+    num = value.getTime();
+  } else if (typeof value === "bigint") {
+    num = Number(value);
+    if (!Number.isFinite(num)) return Number.NaN;
+  } else if (typeof value === "number") {
+    num = value;
+  } else {
+    return Number.NaN;
+  }
+  if (!Number.isFinite(num)) return Number.NaN;
+  return Math.abs(num) > 1e14 ? num / 1000 : num;
+}
+
+/**
+ * 月份维度 → YYYY-MM。兼容四种物化形态（归一逻辑见 toEpochMillis）：
+ * Date 对象、epoch 毫秒 number、epoch 微秒 number/bigint、"YYYY-MM-DD" 字符串；
+ * 归一失败（字符串等）回退字符串前 7 位截断兜底。
  * 时间值按本地钟表分量格式：导入的 ts 是无时区本地时间，UTC 格式化会漂移一天。
  */
 export function fmtMonth(value: unknown): string {
-  const date =
-    value instanceof Date
-      ? value
-      : typeof value === "number" && Number.isFinite(value)
-        ? new Date(value)
-        : null;
+  const millis = toEpochMillis(value);
+  const date = Number.isFinite(millis) ? new Date(millis) : null;
   if (date && !Number.isNaN(date.getTime())) {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
@@ -130,12 +153,8 @@ export function fmtMonth(value: unknown): string {
 
 /** 日期维度 → YYYY-MM-DD：物化形态与本地口径同 fmtMonth */
 export function fmtDate(value: unknown): string {
-  const date =
-    value instanceof Date
-      ? value
-      : typeof value === "number" && Number.isFinite(value)
-        ? new Date(value)
-        : null;
+  const millis = toEpochMillis(value);
+  const date = Number.isFinite(millis) ? new Date(millis) : null;
   if (date && !Number.isNaN(date.getTime())) {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;

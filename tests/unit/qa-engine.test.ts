@@ -735,45 +735,58 @@ describe("buildAggregateContext 汇总上下文", () => {
 // ─────────────────────────── 明细快照（08 修订案 A8） ───────────────────────────
 
 describe("buildDetailContext / DETAIL_SNAPSHOT_SQL", () => {
-  /** 假快照行：列序与 DETAIL_SNAPSHOT_SQL 的 SELECT 顺序一致 */
+  /** 假快照行：列序与 DETAIL_SNAPSHOT_SQL 的 SELECT 顺序一致（7 列） */
   function detailRow(over: Partial<Record<string, unknown>>): Record<string, unknown> {
     return {
       0: "2026-10-10",
-      1: "餐饮",
-      2: "美团",
-      3: 2560n,
-      4: "expense",
+      1: "2026-10-10 23:40:15",
+      2: "餐饮",
+      3: "美团",
+      4: 2560n,
+      5: "expense",
+      6: 0,
       ...over,
     };
   }
 
   const runDetail = (rows: Record<string, unknown>[]) => async () => rows;
 
-  it("按「日期 类目 商户 方向金额」拼行，行间以「；」连接，支出 / 收入标签正确", async () => {
+  it("按「日期时刻 类目 商户 方向金额」拼行，行间以「；」连接，支出 / 收入标签正确", async () => {
     const text = await buildDetailContext(
       runDetail([
         detailRow({}),
-        detailRow({ 0: "2026-10-09", 1: "通讯", 2: "中国移动", 3: 5000n, 4: "income" }),
+        detailRow({ 0: "2026-10-09", 1: "2026-10-09 09:05:00", 2: "通讯", 3: "中国移动", 4: 5000n, 5: "income" }),
       ]),
     );
     expect(text).toBe(
-      "2026-10-10 餐饮 美团 支出¥25.60 元；2026-10-09 通讯 中国移动 收入¥50.00 元",
+      "2026-10-10 23:40:15 餐饮 美团 支出¥25.60 元；2026-10-09 09:05:00 通讯 中国移动 收入¥50.00 元",
     );
   });
 
+  it("night_flag=1 的行末尾追加「（深夜）」标记", async () => {
+    const text = await buildDetailContext(runDetail([detailRow({ 6: 1 })]));
+    expect(text).toBe("2026-10-10 23:40:15 餐饮 美团 支出¥25.60 元（深夜）");
+  });
+
+  it("ts_text 为空时退回 date_iso 纯日期兜底", async () => {
+    const text = await buildDetailContext(runDetail([detailRow({ 1: null })]));
+    expect(text).toBe("2026-10-10 餐饮 美团 支出¥25.60 元");
+  });
+
   it("商户为空归并「未注明商户」，金额为负写 -¥ 前缀", async () => {
-    const text = await buildDetailContext(runDetail([detailRow({ 2: null, 3: -1234n })]));
-    expect(text).toBe("2026-10-10 餐饮 未注明商户 支出-¥12.34 元");
+    const text = await buildDetailContext(runDetail([detailRow({ 3: null, 4: -1234n })]));
+    expect(text).toBe("2026-10-10 23:40:15 餐饮 未注明商户 支出-¥12.34 元");
   });
 
   it("超 maxChars 时整行丢弃（不截断半个行），短预算下只保留放得下的行", async () => {
     const rows = [
-      detailRow({ 0: "2026-10-10", 2: "美团", 3: 2560n }),
-      detailRow({ 0: "2026-10-09", 2: "肯德基", 3: 4500n }),
+      detailRow({}),
+      detailRow({ 0: "2026-10-09", 1: "2026-10-09 09:05:00", 3: "肯德基", 4: 4500n }),
     ];
     // 第 1 行恰好放得下（预算 = 第 1 行长度），第 2 行加分隔符后必然超预算
-    const onlyFirst = await buildDetailContext(runDetail(rows), "2026-10-10 餐饮 美团 支出¥25.60 元".length);
-    expect(onlyFirst).toBe("2026-10-10 餐饮 美团 支出¥25.60 元");
+    const firstLine = "2026-10-10 23:40:15 餐饮 美团 支出¥25.60 元";
+    const onlyFirst = await buildDetailContext(runDetail(rows), firstLine.length);
+    expect(onlyFirst).toBe(firstLine);
     expect(onlyFirst).not.toContain("肯德基");
   });
 
@@ -784,10 +797,13 @@ describe("buildDetailContext / DETAIL_SNAPSHOT_SQL", () => {
 
   it("DETAIL_SNAPSHOT_SQL 固定口径：LIMIT 150、倒序、只收支行、零动态拼接", () => {
     expect(DETAIL_SNAPSHOT_SQL).toContain("FROM transactions");
-    expect(DETAIL_SNAPSHOT_SQL).toContain("ORDER BY date_iso DESC");
+    expect(DETAIL_SNAPSHOT_SQL).toContain("ORDER BY ts DESC");
     expect(DETAIL_SNAPSHOT_SQL).toContain("LIMIT 150");
     expect(DETAIL_SNAPSHOT_SQL).toContain("direction <> 'neutral'");
     expect(DETAIL_SNAPSHOT_SQL).toContain("status <> 'refunded'");
+    // A15 升级后的新投影：完整时刻 + 深夜标记（顺序即列序）
+    expect(DETAIL_SNAPSHOT_SQL).toContain("strftime('%Y-%m-%d %H:%M:%S', ts) AS ts_text");
+    expect(DETAIL_SNAPSHOT_SQL).toContain("AS night_flag");
     // 零动态拼接：固定语句里不允许出现模板插值痕迹
     expect(DETAIL_SNAPSHOT_SQL).not.toContain("${");
     // 直连语句不经聚合白名单，本测试不调用 precheckAggregateSql（该语句会被

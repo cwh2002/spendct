@@ -459,7 +459,8 @@ describe("runCheckup 完整六阶段流程", () => {
     expect(attribution.some((c) => c.headline.includes("环比回落"))).toBe(true);
 
     const annual = byStage.get("annual")!;
-    expect(annual.some((c) => c.headline.includes("结余率"))).toBe(true);
+    // 年度卡标题已通俗化：「结余率」改写为「存下收入的」（数字口径不变）
+    expect(annual.some((c) => c.headline.includes("存下收入的"))).toBe(true);
   });
 });
 

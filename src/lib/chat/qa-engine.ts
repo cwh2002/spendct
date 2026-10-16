@@ -58,9 +58,7 @@ export interface QaIntent {
 export type SqlRunner = (sql: string) => Promise<unknown[]>;
 
 /** 本地回答：data 为按查询结果作答，no-data 为无数据的两种确定文案，unhandled 转在线兜底 */
-export type LocalAnswer =
-  | { kind: "data" | "no-data"; text: string }
-  | { kind: "unhandled" };
+export type LocalAnswer = { kind: "data" | "no-data"; text: string } | { kind: "unhandled" };
 
 // ─────────────────────────── 词表（确定性判定） ───────────────────────────
 
@@ -105,15 +103,36 @@ const WINDOW_WORDS: readonly { window: TimeWindow; words: readonly string[] }[] 
  */
 const BALANCE_WORDS = ["结余", "盈余", "收入", "存了"] as const;
 const SUBSCRIPTION_WORDS = ["订阅", "会员", "续费"] as const;
-const TOP_MERCHANT_WORDS = ["哪家", "哪店", "哪个商户", "花最多", "最贵", "商家", "排行", "排名"] as const;
-const MOM_COMPARE_WORDS = ["为什么", "涨了", "涨", "降了", "变多", "变少", "增加", "减少", "环比", "变化"] as const;
+const TOP_MERCHANT_WORDS = [
+  "哪家",
+  "哪店",
+  "哪个商户",
+  "花最多",
+  "最贵",
+  "商家",
+  "排行",
+  "排名",
+] as const;
+const MOM_COMPARE_WORDS = [
+  "为什么",
+  "涨了",
+  "涨",
+  "降了",
+  "变多",
+  "变少",
+  "增加",
+  "减少",
+  "环比",
+  "变化",
+] as const;
 const NIGHT_SPEND_WORDS = ["深夜", "凌晨", "半夜", "夜宵"] as const;
 const BUDGET_WORDS = ["预算", "超支", "超标", "还剩"] as const;
 const OVERVIEW_WORDS = ["概况", "总结", "总体", "整体", "体检", "健康"] as const;
 const MONTH_TOTAL_WORDS = ["花了", "总共", "一共", "支出", "花费", "多少钱"] as const;
 
 /** 数据集为空的统一文案（有数据但某维度为空时用另一套按意图区分的文案）。导出供面板做「未导入即答」短路 */
-export const DATASET_EMPTY_TEXT = "还没有账单数据，先到「上传账单」导入一份账单，我就能回答这些问题了。";
+export const DATASET_EMPTY_TEXT =
+  "还没有账单数据，先到「上传账单」导入一份账单，我就能回答这些问题了。";
 
 /** 时间窗的答案措辞 */
 const WINDOW_NAMES: Record<TimeWindow, string> = {
@@ -771,7 +790,9 @@ function buildAnswerText(
       const budgetIdx = isYear ? 1 : 2;
       const actualIdx = isYear ? 2 : 3;
       const remainTail = (budget: number, actual: number): string =>
-        budget - actual >= 0 ? `还剩 ${yuanText(budget - actual)}` : `已超支 ${yuanText(actual - budget)}`;
+        budget - actual >= 0
+          ? `还剩 ${yuanText(budget - actual)}`
+          : `已超支 ${yuanText(actual - budget)}`;
 
       if (intent.category) {
         const row = primary[0];
@@ -789,7 +810,9 @@ function buildAnswerText(
       if (totalRow) {
         const budget = numAt(totalRow, budgetIdx);
         const actual = numAt(totalRow, actualIdx);
-        lines.push(`${win}总预算 ${yuanText(budget)}，已支出 ${yuanText(actual)}，${remainTail(budget, actual)}`);
+        lines.push(
+          `${win}总预算 ${yuanText(budget)}，已支出 ${yuanText(actual)}，${remainTail(budget, actual)}`,
+        );
       }
       for (const row of primary) {
         const name = String(valAt(row, catIdx) ?? "");
@@ -797,7 +820,9 @@ function buildAnswerText(
         if (numAt(row, budgetIdx) <= 0) continue;
         const budget = numAt(row, budgetIdx);
         const actual = numAt(row, actualIdx);
-        lines.push(`·「${name}」预算 ${yuanText(budget)}，已支出 ${yuanText(actual)}，${remainTail(budget, actual)}`);
+        lines.push(
+          `·「${name}」预算 ${yuanText(budget)}，已支出 ${yuanText(actual)}，${remainTail(budget, actual)}`,
+        );
       }
       if (lines.length === 0) return `${win}没有设置预算记录。`;
       return lines.join("\n");
@@ -811,11 +836,17 @@ function buildAnswerText(
         const income = incomeRow ? numAt(incomeRow, 1) : 0;
         const tx = expenseRow ? numAt(expenseRow, 2) : 0;
         let text = `${win}共支出 ${yuanText(expense)}（${tx} 笔）`;
-        text += income > 0 ? `，收入 ${yuanText(income)}，结余 ${yuanText(income - expense)}` : "，没有收入记录";
+        text +=
+          income > 0
+            ? `，收入 ${yuanText(income)}，结余 ${yuanText(income - expense)}`
+            : "，没有收入记录";
         const tops = (secondary[0] ?? []).filter((row) => numAt(row, 1) > 0).slice(0, 5);
         if (tops.length > 0) {
           text += `。支出最多的类目：${tops
-            .map((row) => `「${String(valAt(row, 0) ?? "")}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔）`)
+            .map(
+              (row) =>
+                `「${String(valAt(row, 0) ?? "")}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔）`,
+            )
             .join("、")}`;
         }
         return `${text}。`;
@@ -824,11 +855,17 @@ function buildAnswerText(
       const income = sumAt(primary, 2);
       const tx = sumAt(primary, 3);
       let text = `${win}共支出 ${yuanText(expense)}（${tx} 笔）`;
-      text += income > 0 ? `，收入 ${yuanText(income)}，结余 ${yuanText(income - expense)}` : "，没有收入记录";
+      text +=
+        income > 0
+          ? `，收入 ${yuanText(income)}，结余 ${yuanText(income - expense)}`
+          : "，没有收入记录";
       const tops = (secondary[0] ?? []).filter((row) => numAt(row, 1) > 0).slice(0, 5);
       if (tops.length > 0) {
         text += `。支出最多的类目：${tops
-          .map((row) => `「${String(valAt(row, 0) ?? "")}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔）`)
+          .map(
+            (row) =>
+              `「${String(valAt(row, 0) ?? "")}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔）`,
+          )
           .join("、")}`;
       }
       return `${text}。`;
@@ -959,7 +996,8 @@ export async function buildAggregateContext(runSql: SqlRunner): Promise<string> 
   const categoryRows = at(2);
   if (categoryRows.length > 0) {
     const parts = categoryRows.map(
-      (row) => `「${String(valAt(row, 0) ?? "")}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔）`,
+      (row) =>
+        `「${String(valAt(row, 0) ?? "")}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔）`,
     );
     lines.push(`· 本月类目 Top5：${parts.join("、")}`);
   }
@@ -968,7 +1006,8 @@ export async function buildAggregateContext(runSql: SqlRunner): Promise<string> 
   const merchantRows = at(3);
   if (merchantRows.length > 0) {
     const parts = merchantRows.map(
-      (row) => `「${merchantName(valAt(row, 0))}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔）`,
+      (row) =>
+        `「${merchantName(valAt(row, 0))}」${yuanText(numAt(row, 1))}（${numAt(row, 2)} 笔）`,
     );
     lines.push(`· 近90天商户 Top5：${parts.join("、")}`);
   }
@@ -1019,17 +1058,22 @@ export async function buildAggregateContext(runSql: SqlRunner): Promise<string> 
 /**
  * 明细快照 SQL：在线兜底时随汇总统计一并发送给大模型的最近明细（≤150 笔）。
  *
- * 口径（与聚合白名单「明细列禁投影」互为边界，唯一明细出口，见 08 修订案 A8）：
+ * 口径（与聚合白名单「明细列禁投影」互为边界，直连明细出口之一，见 08 修订案 A8；
+ * 另一个直连明细出口是按问题定向检索的 targeted-detail.ts，见 08 修订案 A15）：
  * - 固定语句、零动态拼接：无时间窗参数、无用户输入，不可能注入；
  * - 只 SELECT 收支方向的行（neutral 理财行 / refunded 退款行不进快照）；
- * - LIMIT 150 按日期倒序 = 最近 150 笔，体积不随数据集规模增长；
+ * - LIMIT 150 按交易时刻倒序 = 最近 150 笔，体积不随数据集规模增长；
+ * - 投影 7 列（顺序即列序，formatDetailLine 按位置取值）：
+ *   0 date_iso 日期；1 ts_text 完整时刻（YYYY-MM-DD HH:MM:SS）；
+ *   2 category 类目；3 merchant 商户；4 amount_cents 金额（分）；
+ *   5 direction 收支方向；6 night_flag 深夜标记（23:00-05:00 记为 1）；
  * - 只经浏览器内 DuckDB 直连执行，服务端接触不到本条语句。
  */
 export const DETAIL_SNAPSHOT_SQL = [
-  "SELECT date_iso, category, merchant, amount_cents, direction",
+  "SELECT date_iso, strftime('%Y-%m-%d %H:%M:%S', ts) AS ts_text, category, merchant, amount_cents, direction, CASE WHEN EXTRACT(HOUR FROM ts) >= 23 OR EXTRACT(HOUR FROM ts) < 5 THEN 1 ELSE 0 END AS night_flag",
   "FROM transactions",
   "WHERE direction <> 'neutral' AND status <> 'refunded'",
-  "ORDER BY date_iso DESC",
+  "ORDER BY ts DESC",
   "LIMIT 150",
 ].join("\n");
 
@@ -1040,6 +1084,24 @@ export function createDuckDbDetailSnapshot(): () => Promise<Record<string, unkno
     const result = await conn.query(DETAIL_SNAPSHOT_SQL);
     return result.toArray() as unknown as Record<string, unknown>[];
   };
+}
+
+/**
+ * 明细行文本拼装（A8 明细快照与 A15 定向明细共用的行格式），按 SELECT 位置取值：
+ *   0 date_iso（日期兜底）｜1 ts_text（YYYY-MM-DD HH:MM:SS，优先展示）
+ *   2 category｜3 merchant｜4 amount_cents｜5 direction｜6 night_flag（0/1）
+ * 输出「YYYY-MM-DD HH:MM:SS 类目 商户 支出/收入¥X.XX 元」，
+ * night_flag 为 1 的行末尾追加「（深夜）」。导出供 targeted-detail（A15）共用。
+ */
+export function formatDetailLine(row: Record<string, unknown>): string {
+  const timeText = String(valAt(row, 1) ?? "").trim();
+  // ts 为空时（理论上不存在，防御性兜底）退回 date_iso 纯日期
+  const time = timeText !== "" ? timeText : String(valAt(row, 0) ?? "");
+  const category = String(valAt(row, 2) ?? "");
+  const merchant = merchantName(valAt(row, 3));
+  const direction = String(valAt(row, 5) ?? "") === "income" ? "收入" : "支出";
+  const nightSuffix = numAt(row, 6) === 1 ? "（深夜）" : "";
+  return `${time} ${category} ${merchant} ${direction}${yuanText(numAt(row, 4))}${nightSuffix}`;
 }
 
 /**
@@ -1071,8 +1133,7 @@ export function createDuckDbSchemaSnapshot(
       const firstRow =
         rowCount > 0
           ? ((await (await conn.query("SELECT * FROM transactions LIMIT 1")).toArray())[0] as
-              | Record<string, unknown>
-              | undefined)
+              Record<string, unknown> | undefined)
           : undefined;
       const schema = columnRows.map((row) => {
         const name = String(row.column_name);
@@ -1093,7 +1154,13 @@ export function createDuckDbSchemaSnapshot(
         ).toArray();
         const amount = amountRows[0];
         if (amount) {
-          const stat: { column: string; min?: number; max?: number; mean?: number; distinct?: number } = {
+          const stat: {
+            column: string;
+            min?: number;
+            max?: number;
+            mean?: number;
+            distinct?: number;
+          } = {
             column: "amount_cents",
           };
           const mn = Number(amount.mn);
@@ -1129,7 +1196,8 @@ export function createDuckDbSchemaSnapshot(
 }
 
 /**
- * 明细快照文本：把快照行拼成「日期 类目 商户 方向金额」文本块，总长 ≤maxChars
+ * 明细快照文本：把快照行拼成「YYYY-MM-DD HH:MM:SS 类目 商户 支出/收入¥X.XX」
+ * 文本块（深夜行末尾带「（深夜）」标记），行间以「；」连接，总长 ≤maxChars
  * （超长按行截断，整行丢弃保证单条语义完整）。runDetail 入参注入便于单测用假行驱动。
  */
 export async function buildDetailContext(
@@ -1146,11 +1214,7 @@ export async function buildDetailContext(
   const lines: string[] = [];
   let used = 0;
   for (const row of rows) {
-    const date = String(valAt(row, 0) ?? "");
-    const category = String(valAt(row, 1) ?? "");
-    const merchant = merchantName(valAt(row, 2));
-    const direction = String(valAt(row, 4) ?? "") === "income" ? "收入" : "支出";
-    const line = `${date} ${category} ${merchant} ${direction}${yuanText(numAt(row, 3))}`;
+    const line = formatDetailLine(row);
     if (used + line.length > maxChars) break;
     lines.push(line);
     used += line.length + 1;

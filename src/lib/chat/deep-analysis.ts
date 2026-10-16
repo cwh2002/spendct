@@ -103,13 +103,16 @@ export async function buildDeepAnalysisContext(runSql: SqlRunner): Promise<strin
   }
 
   // 组 4：逐月收支趋势（文本层只保留最近 12 个月，查询返回的旧月份省略）
+  // month 列是 date_trunc('month', ts) 出的 TIMESTAMP，经箭头层物化为 epoch
+  // 数字（毫秒/微秒），必须把原始值交给 fmtMonth 归一，不能再包 String()——
+  // 包了字符串会被当成日期文本走截断兜底，切成 7 位 epoch 数字（如 1790812）
   const monthlyRows = at(3);
   if (monthlyRows.length > 0) {
     const parts = monthlyRows
       .slice(0, TREND_MONTHS_IN_TEXT)
       .map(
         (row) =>
-          `${fmtMonth(String(valAt(row, 0) ?? ""))} 支出 ${yuanText(numAt(row, 1))}（${numAt(row, 3)} 笔）、收入 ${yuanText(numAt(row, 2))}`,
+          `${fmtMonth(valAt(row, 0))} 支出 ${yuanText(numAt(row, 1))}（${numAt(row, 3)} 笔）、收入 ${yuanText(numAt(row, 2))}`,
       );
     push(`· 逐月收支（近${Math.min(TREND_MONTHS_IN_TEXT, monthlyRows.length)}个月）：${parts.join("；")}`);
   }

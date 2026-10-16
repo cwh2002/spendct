@@ -20,12 +20,13 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { buildHistoryMessages, DEEP_CONTEXT_PREFIX, DETAIL_CONTEXT_PREFIX, MESSAGE_BUDGET, MESSAGE_MAX_LENGTH, ONLINE_CONTEXT_PREFIX } from "@/lib/assistant/chat-context";
+import { buildHistoryMessages, DEEP_CONTEXT_PREFIX, DETAIL_CONTEXT_PREFIX, MESSAGE_BUDGET, MESSAGE_MAX_LENGTH, ONLINE_CONTEXT_PREFIX, TARGETED_CONTEXT_PREFIX } from "@/lib/assistant/chat-context";
 import { checkChatInput, GUARD_BLOCKED_REPLY } from "@/lib/assistant/input-guard";
 import { streamFollowup, type FollowupPlanStep } from "@/lib/assistant/stream-followup";
 import {
   analyzeQuestion,
   answerLocalQuestion,
+  asRowList,
   buildAggregateContext,
   buildDetailContext,
   createDuckDbDetailSnapshot,
@@ -34,10 +35,19 @@ import {
   DATASET_EMPTY_TEXT,
   EXAMPLE_QUESTIONS,
   type QaIntent,
+  type SqlRunner,
 } from "@/lib/chat/qa-engine";
 import { buildDeepAnalysisContext } from "@/lib/chat/deep-analysis";
+import {
+  buildTargetedDetailContext,
+  buildTargetedDetailPlan,
+  buildTargetedDetailSql,
+  createTargetedDetailRunner,
+} from "@/lib/chat/targeted-detail";
+import { getDuckDB } from "@/lib/duckdb/service";
 import { searchLocalCases } from "@/lib/assistant/local-cases";
 import { classifySmallTalk, SMALL_TALK_ANSWER } from "@/lib/llm/small-talk";
+import { valAt } from "@/lib/pipeline/stages/spec";
 import { usePipeline } from "@/lib/pipeline/store";
 import type { SessionSchema } from "@/lib/schema/session-schema";
 import { getToolLabel } from "@/lib/tools/registry";
@@ -75,7 +85,7 @@ export interface ChatTurn {
   note?: "local" | "cases" | "live" | "deep";
   /** 在线回答实际发送了账单统计段（live/deep 脚注按组合标注实际发送内容） */
   sentStats?: boolean;
-  /** 在线回答实际发送了账单明细分（与 sentStats 组合决定脚注文案） */
+  /** 在线回答实际发送了账单明细分（与 sentStats 组合决定脚注文案；定向明细 A15 归入明细分） */
   sentDetails?: boolean;
   /** 闲聊定稿回答（打招呼/询问身份）：不挂任何来源脚注 */
   smallTalk?: boolean;
@@ -104,6 +114,22 @@ export interface ChatPipelineOptions {
 function onlineFallbackTipText(): string {
   const lines = EXAMPLE_QUESTIONS.slice(0, 3).map((question) => `· ${question}`);
   return `这个问题需要连接在线服务才能回答。可以先试试下面这些问题：\n${lines.join("\n")}`;
+}
+
+/**
+ * 商户 Top50 名单查询（08 修订案 A15）：固定白名单聚合 SQL，经 runWhitelistedAggregate
+ * 预检执行。商户名单是定向明细里唯一的用户参数来源——名单只来自数据库查询，
+ * 绝不直接取用户原文当参数。
+ */
+const TOP_MERCHANT_NAMES_SQL =
+  "SELECT merchant, SUM(amount_cents) FROM transactions WHERE direction = 'expense' AND status = 'paid' GROUP BY merchant ORDER BY SUM(amount_cents) DESC LIMIT 50";
+
+/** 查询支出 Top50 商户名单，取出名字字符串数组供定向明细做可信商户匹配 */
+async function fetchTopMerchantNames(runSql: SqlRunner): Promise<string[]> {
+  const rows = asRowList(await runSql(TOP_MERCHANT_NAMES_SQL));
+  return rows
+    .map((row) => String(valAt(row, 0) ?? "").trim())
+    .filter((name) => name.length > 0);
 }
 
 /** 在线请求超时（毫秒）：超时即中止并落本地提示，避免思考态卡死面板 */
@@ -177,7 +203,8 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
   /**
    * 整段流结束后挂上在线来源脚注（深度分析挂 deep 脚注，其余挂 live），
    * 并记录实际发送的账单数据段组合：统计/明细按各自查询结果条件发送，
-   * 脚注必须如实标注「已发送账单统计」「已发送账单明细」或两者都在时的合称
+   * 脚注必须如实标注「已发送账单统计」「已发送账单明细」或两者都在时的合称。
+   * 定向明细（A15）归入明细分：发送了定向段或快照段都算「已发送账单明细」
    */
   function markTurnOnline(
     turnId: number,
@@ -205,8 +232,9 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
    *   - plan：思考计划挂气泡（A12）；
    *   - text-delta：回答文本增量，累积回填最后一条回答气泡；
    *   - complete / error / abort：流收尾。
-   * deep（A14）：上下文换为全期统计（buildDeepAnalysisContext），与明细快照
-   * 分成两条消息发送，各自不超过单条 4000 字上限；回答挂 deep 来源脚注。
+   * deep（A14/A15）：上下文换为全期统计（buildDeepAnalysisContext），另按问题
+   * 识别检索条件直连查询定向明细（A15），与最近明细快照（A8）分成三条消息
+   * 发送，各自不超过单条 4000 字上限；回答挂 deep 来源脚注。
    * 请求失败 / 流异常时落到本地提示气泡；组件卸载触发的中止直接静默返回。
    */
   async function runOnlineFallback(question: string, deep = false) {
@@ -241,19 +269,40 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       } catch {
         context = "";
       }
+      // 定向明细（08 修订案 A15，仅 deep 档）：按问题识别月份/年份/商户/类目/
+      // 深夜条件，直连查询与问题直接相关的明细，让追问真正读取原始账单数据；
+      // 任何一步失败静默跳过该段，不阻断主链路
+      let targeted = "";
+      if (deep) {
+        try {
+          const merchantNames = await fetchTopMerchantNames(getRunner());
+          const plan = buildTargetedDetailPlan(question, merchantNames);
+          const sql = buildTargetedDetailSql(plan);
+          if (sql) {
+            const text = await buildTargetedDetailContext(createTargetedDetailRunner(getDuckDB), plan);
+            if (text.length > 0) targeted = text;
+          }
+        } catch {
+          targeted = "";
+        }
+      }
       // 明细快照：最近 150 笔收支明细（08 修订案 A8），读不到则省略该段。
-      // deep 模式统计与明细分两条消息发送，明细可占满单条 4000 字预算
+      // deep 模式统计 / 定向明细 / 明细分三条消息发送；明细预算扣除统计段与
+      // 定向段，保证三条消息总长不超接口预算（统计 ≤2400、定向 ≤2500）
       let details = "";
       try {
         const detailBudget = deep
-          ? MESSAGE_MAX_LENGTH - 100
+          ? Math.min(
+              MESSAGE_MAX_LENGTH - 100,
+              MESSAGE_BUDGET - context.length - targeted.length - 60,
+            )
           : Math.max(0, MESSAGE_MAX_LENGTH - 100 - context.length);
         details = await buildDetailContext(createDuckDbDetailSnapshot(), detailBudget);
       } catch {
         details = "";
       }
       if (bailIfStopped()) return;
-      const combined = [context, details].filter(Boolean).join("\n");
+      const combined = [context, targeted, details].filter(Boolean).join("\n");
       // 统计与明细都拿不到（未导入账单或引擎读不到数据）：不空手转在线
       if (!combined) {
         setThinking(null);
@@ -297,9 +346,12 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
 
       const messages: { role: "user" | "assistant"; content: string }[] = [];
       if (deep) {
-        // 深度分析：全期统计与明细快照分两条消息，各自语义完整（A14）
+        // 深度分析：全期统计 / 定向明细（A15）/ 明细快照分三条消息，各自语义完整
         if (context) {
           messages.push({ role: "user", content: `${DEEP_CONTEXT_PREFIX}${context}` });
+        }
+        if (targeted) {
+          messages.push({ role: "user", content: `${TARGETED_CONTEXT_PREFIX}${targeted}` });
         }
         if (details) {
           messages.push({ role: "user", content: `${DETAIL_CONTEXT_PREFIX}${details}` });
@@ -396,7 +448,10 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         // 流正常收尾：最终文本与徽章落定，挂在线来源脚注与案例参考
         updateTurnText(turnId, accumulated);
         flushBadges();
-        markTurnOnline(turnId, deep, { stats: context.length > 0, details: details.length > 0 });
+        markTurnOnline(turnId, deep, {
+          stats: context.length > 0,
+          details: details.length > 0 || targeted.length > 0,
+        });
         if (ragCases.length > 0) {
           setTurns((prev) =>
             prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)),
@@ -420,7 +475,10 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       }
       updateTurnText(turnId, accumulated);
       flushBadges();
-      markTurnOnline(turnId, deep, { stats: context.length > 0, details: details.length > 0 });
+      markTurnOnline(turnId, deep, {
+        stats: context.length > 0,
+        details: details.length > 0 || targeted.length > 0,
+      });
       if (ragCases.length > 0) {
         setTurns((prev) =>
           prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)),
