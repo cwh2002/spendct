@@ -7,7 +7,7 @@ import { UploadWorkspace } from "./upload-workspace";
 
 export const metadata: Metadata = {
   title: "上传账单",
-  description: "上传微信 / 支付宝账单文件，本地识别去重，开始全流程 AI 体检。",
+  description: "上传微信 / 支付宝账单文件，本地解析清洗，开始全流程 AI 体检。",
 };
 
 /**

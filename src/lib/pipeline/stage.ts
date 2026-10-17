@@ -29,7 +29,7 @@ export type PipelineStatus =
 
 /** 展示名（UI/材料唯一用词），序号从 1 开始 */
 export const STAGE_DISPLAY_NAMES: Record<StageId, { name: string; subtitle: string; order: number }> = {
-  clean: { name: "清洗", subtitle: "解析与去重", order: 1 },
+  clean: { name: "清洗", subtitle: "解析与清洗", order: 1 },
   profile: { name: "消费画像", subtitle: "类目·时段·渠道", order: 2 },
   anomaly: { name: "异常检测", subtitle: "冲动·退款·深夜", order: 3 },
   subscription: { name: "订阅陷阱扫描", subtitle: "扣费刺客", order: 4 },

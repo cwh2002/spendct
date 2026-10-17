@@ -48,7 +48,7 @@
 // src/lib/pipeline/stage.ts —— 全仓唯一（07 §0.4），其他文件只 import 不复制
 export const SIX_STAGES = ['clean', 'profile', 'anomaly', 'subscription', 'attribution', 'annual'] as const;
 export type StageId = (typeof SIX_STAGES)[number];
-// 展示名（07 §1 唯一序号表）：clean 清洗（副题：解析与去重）/ profile 消费画像 / anomaly 异常检测 /
+// 展示名（07 §1 唯一序号表）：clean 清洗（副题：解析与清洗）/ profile 消费画像 / anomaly 异常检测 /
 // subscription 订阅陷阱扫描（P1 功能，位于第 4 阶段）/ attribution 环比归因 / annual 年度报告（序号 1-6）
 
 export type StageStatus = 'pending' | 'running' | 'succeeded' | 'skipped' | 'failed';

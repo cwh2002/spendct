@@ -42,7 +42,7 @@ export interface StageEvidenceDrawerProps {
 
 /** 各步骤的结论式说明模板：动词句 + 数量单位，数字取自本步骤证据（不再展示 SQL 原文） */
 const STAGE_CONCLUSION: Record<string, { lead: string; unit: string }> = {
-  clean: { lead: "整理账单并去除重复，共核对", unit: "条记录" },
+  clean: { lead: "整理账单，共核对", unit: "条记录" },
   profile: { lead: "按类别汇总账单，共核对", unit: "条记录" },
   anomaly: { lead: "排查深夜消费与退款异常，查出", unit: "个疑点" },
   subscription: { lead: "排查规律性连续扣费，查出", unit: "笔可疑扣费" },

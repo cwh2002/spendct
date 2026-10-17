@@ -197,7 +197,7 @@ describe("重复行检测与去重", () => {
 
   it("同 (日期,金额,商户) 的重复计入 warnings", () => {
     const result = parseBillCsv(csv, "微信账单.csv");
-    expect(result.warnings).toContain("检测到 2 条疑似重复记录，导入时将去重");
+    expect(result.warnings).toContain("检测到 2 条疑似重复记录，导入时会自动跳过");
     expect(result.rows).toHaveLength(4);
   });
 

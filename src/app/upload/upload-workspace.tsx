@@ -9,7 +9,7 @@
  * 管线数据集装配（cleanBillRows → 与最近一次导入行 mergeCleanBatches 追加合并去重 →
  * hashCleanRows → initDataset → usePipeline.setDataset）→
  * registerImportedBook（账本登记 + 激活键）→ saveImportedDataset（刷新恢复落库）→
- * 跳转体检。追加导入只增不减：已有行保序在前，重复行跳过并计入成功提示。
+ * 跳转体检。追加导入只增不减：已有行保序在前，重复行跳过，成功提示只报新增笔数。
  *
  * 两个外部约束：
  * 1. 本文件读 useSearchParams（?sample=1 自动演示、?next= 回跳），
@@ -158,8 +158,6 @@ interface UploadState {
   result: ParseResult | null;
   /** 本次导入实际新增的行数（追加合并去重后） */
   importedCount: number;
-  /** 本次导入跳过的疑似重复行数（与已有行/本批已收行同键） */
-  skippedCount: number;
   importStatus: ImportStatus;
   importError: string;
 }
@@ -170,7 +168,6 @@ const INITIAL_STATE: UploadState = {
   fileName: "",
   result: null,
   importedCount: 0,
-  skippedCount: 0,
   importStatus: "idle",
   importError: "",
 };
@@ -275,7 +272,7 @@ function RejectedPreview({ warnings, onReselect }: { warnings: string[]; onResel
   );
 }
 
-function SuccessPreview({ count, skipped }: { count: number; skipped: number }) {
+function SuccessPreview({ count }: { count: number }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -285,8 +282,7 @@ function SuccessPreview({ count, skipped }: { count: number; skipped: number }) 
     >
       <CheckCircle2 className="size-14 text-(--color-good)" aria-hidden />
       <p className="text-lg font-semibold text-(--color-ink)">
-        新增 {count.toLocaleString("zh-CN")} 笔、跳过疑似重复 {skipped.toLocaleString("zh-CN")}{" "}
-        笔，开始体检
+        已导入 {count.toLocaleString("zh-CN")} 笔，开始体检
       </p>
       <p className="flex items-center gap-2 text-sm text-(--color-ink-muted)">
         <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -683,9 +679,8 @@ export function UploadWorkspace() {
       await auth.hydrate().catch(() => {});
       const userId = useAuth.getState().user?.id ?? null;
 
-      // 新增/跳过计数：装配失败时按预览表导入数兜底（跳过 0），保持成功口径
+      // 新增计数：装配失败时按预览表导入数兜底，保持成功口径
       let addedCount = imported.rowCount;
-      let skippedCount = 0;
 
       // 管线数据集装配（07 §3 完整 schema + WP4 追加合并去重）。
       // 两层导入职责不同、表名相同是设计意图：importBillCsv 用 read_csv_auto
@@ -709,7 +704,6 @@ export function UploadWorkspace() {
         }
         const merged = mergeCleanBatches(existingRows, cleaned);
         addedCount = merged.added;
-        skippedCount = merged.skipped;
         // 成就联动（WP8 §8c）：本次跳过条数累计进进度并全量校正（cleaner）
         if (merged.skipped > 0) {
           recordProgressEvent({ type: "dedupe-skipped", count: merged.skipped });
@@ -743,7 +737,6 @@ export function UploadWorkspace() {
         ...prev,
         stage: "success",
         importedCount: addedCount,
-        skippedCount,
         importStatus: "idle",
       }));
       navTimerRef.current = setTimeout(() => router.push(nextPath), SUCCESS_NAV_DELAY_MS);
@@ -789,7 +782,6 @@ export function UploadWorkspace() {
     fileName,
     progressText,
     importedCount,
-    skippedCount,
     importStatus,
     importError,
   } = state;
@@ -919,7 +911,7 @@ export function UploadWorkspace() {
                     <ParsingPreview text={progressText} fileName={fileName} />
                   ) : null}
                   {stage === "success" ? (
-                    <SuccessPreview count={importedCount} skipped={skippedCount} />
+                    <SuccessPreview count={importedCount} />
                   ) : null}
                   {stage === "preview" && result ? (
                     rejected ? (

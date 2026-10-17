@@ -78,8 +78,6 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
   const [importError, setImportError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
-  /** 跳过疑似重复行数（与已有数据集同键，WP4 追加合并去重） */
-  const [skippedCount, setSkippedCount] = useState(0);
 
   /** 单元格编辑（人工确认）：值合法才落行，行无论如何都标记已确认 */
   const handleEdit = useCallback((rowIndex: number, field: EditableOcrField, value: string) => {
@@ -209,7 +207,6 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
       // 换数据集后旧视图侧成就缓存作废：与 CSV 路径同口径（saver 等判定不吃旧月表）
       resetRecheckOverrides();
       setImportedCount(merged.added);
-      setSkippedCount(merged.skipped);
       setDone(true);
       onImported(merged.added);
     } catch {
@@ -219,14 +216,13 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
     }
   }, [rows, channel, fileName, onImported]);
 
-  // 成功视图：与 CSV 路径同款确认感（新增 + 跳过疑似重复），工作台负责延时跳转
+  // 成功视图：与 CSV 路径同款确认感（只报新增笔数），工作台负责延时跳转
   if (done) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
         <CheckCircle2 className="size-14 text-(--color-good)" aria-hidden />
         <p className="text-lg font-semibold text-(--color-ink)">
-          已导入 {importedCount.toLocaleString("zh-CN")} 笔，跳过疑似重复{" "}
-          {skippedCount.toLocaleString("zh-CN")} 笔，开始体检
+          已导入 {importedCount.toLocaleString("zh-CN")} 笔，开始体检
         </p>
         <p className="flex items-center gap-2 text-sm text-(--color-ink-muted)">
           <Loader2 className="size-4 animate-spin" aria-hidden />

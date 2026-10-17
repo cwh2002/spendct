@@ -1,12 +1,11 @@
 /**
  * 上传追加合并去重（WP4 §4b）端到端：同一内置账单重复导入第二次时，
  * 新行按 (日期|金额|商户) 键与已有数据集全量命中 → 成功视图报
- * 「新增 0 笔、跳过疑似重复 N 笔」，N = 首次导入落库的合并后完整行数；
- * 刷新页面后会话恢复（IndexedDB → DuckDB）重建的数据集笔数保持 N，
- * 不翻倍、不丢失。
+ * 「已导入 0 笔」；刷新页面后会话恢复（IndexedDB → DuckDB）重建的
+ * 数据集笔数保持 N，不翻倍、不丢失。
  *
- * 断言链：首次导入 → 跳 /checkup → 第二次导入（捕获全量跳过数 N）→
- * /settings「当前账本」笔数 = N（IndexedDB 元数据）→ 导出弹窗
+ * 断言链：首次导入 → 跳 /checkup → 第二次导入（断言「已导入 0 笔」）→
+ * /settings「当前账本」读出数据集笔数 N（IndexedDB 元数据）→ 导出弹窗
  * 「本次将导出 N 条账单」（有数据集时直读 DuckDB transactions 明细，
  * 不走内置样本回退）→ 刷新后再验两者。
  *
@@ -38,10 +37,9 @@ test("重复导入同一内置账单：第二次全量跳过，刷新后数据�
   await page.getByRole("button", { name: "开始体检" }).click();
   await expect(page).toHaveURL(/\/checkup/, { timeout: 120_000 });
 
-  // 2) 第二次导入同一 sample：与第一次相同数据 → 全量命中去重键。
-  //    成功视图文案为「新增 0 笔、跳过疑似重复 N 笔，开始体检」，只停留 1s
-  //    再跳体检，用 waitForFunction 兜住停留窗口（rAF 轮询 + 真值 resolve，
-  //    直接返回匹配段落的 innerText 供提取）
+  // 2) 第二次导入同一 sample：与第一次相同数据 → 全量命中去重键，成功视图
+  //    报「已导入 0 笔，开始体检」，只停留 1s 再跳体检，用 waitForFunction
+  //    兜住停留窗口（rAF 轮询 + 真值 resolve，直接返回匹配段落的 innerText）
   await page.goto("/upload?sample=1");
   await page.getByRole("button", { name: "开始体检" }).click();
   const successText = await page
@@ -50,7 +48,7 @@ test("重复导入同一内置账单：第二次全量跳过，刷新后数据�
         const paragraphs = Array.from(document.querySelectorAll("p"));
         for (const paragraph of paragraphs) {
           const text = paragraph.innerText.trim();
-          if (/新增 0 笔、跳过疑似重复 [\d,]+ 笔，开始体检/.test(text)) {
+          if (/已导入 0 笔，开始体检/.test(text)) {
             return text;
           }
         }
@@ -60,22 +58,22 @@ test("重复导入同一内置账单：第二次全量跳过，刷新后数据�
       { timeout: 120_000 },
     )
     .then((handle) => handle.jsonValue() as Promise<string>);
-  const skippedText = successText.match(/跳过疑似重复 ([\d,]+) 笔/)?.[1] ?? "";
-  expect(skippedText).not.toBe("");
-  // 全量跳过时 skipped = 数据集完整行数（首次导入合并后落库的完整行）
-  const datasetRows = Number(skippedText.replace(/,/g, ""));
-  expect(datasetRows).toBeGreaterThan(0);
+  expect(successText).toBeTruthy();
   await expect(page).toHaveURL(/\/checkup/, { timeout: 120_000 });
 
   // 3) 账本登记笔数：settings「当前账本」= 合并后完整行。每次导入都登记账本，
   //    第二次导入的账本被置为当前（registerImportedBook 写 active-book 键），
   //    rowCount 即 merged.rows.length；页面里「已导入」行有两个（当前账本卡 +
-  //    账本列表，两次导入的 rowCount 同为 N），first() 取 DOM 靠前的当前账本行
+  //    账本列表，两次导入的 rowCount 同为 N），first() 取 DOM 靠前的当前账本行。
+  //    N 从这里读出：第二次导入新增 0 笔，账本仍是首次导入的合并后完整行数
   await page.goto("/settings");
   const bookLine = page.getByText(/已导入 [\d,]+ 条账单/).first();
-  await expect(bookLine).toHaveText(new RegExp(`已导入 ${datasetRows} 条账单`), {
-    timeout: 15_000,
-  });
+  await expect(bookLine).toBeVisible({ timeout: 15_000 });
+  const bookText = await bookLine.innerText();
+  const bookMatch = bookText.match(/已导入 ([\d,]+) 条账单/);
+  expect(bookMatch).not.toBeNull();
+  const datasetRows = Number((bookMatch?.[1] ?? "").replace(/,/g, ""));
+  expect(datasetRows).toBeGreaterThan(0);
 
   // 4) 数据集真实行数：导出弹窗在数据集落库时直读 DuckDB transactions 明细计数
   //    （读不到才回退内置样本，样本行数与 N 不同，断言不通过即暴露回退/翻倍）

@@ -58,7 +58,7 @@ test("OCR 截图识别走通 入口 → 合规确认 → 识别 → 二次复核
   //    120s 初始化预算给足断言窗口（与 CSV 路径 pipeline.spec 同口径）
   await page.getByRole("button", { name: "确认导入" }).click();
   await expect(
-    page.getByText(/已导入 [\d,]+ 笔，跳过疑似重复 [\d,]+ 笔，开始体检/),
+    page.getByText(/已导入 [\d,]+ 笔，开始体检/),
   ).toBeVisible({ timeout: 120_000 });
   await expect(page).toHaveURL(/\/checkup/, { timeout: 120_000 });
 

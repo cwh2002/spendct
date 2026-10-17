@@ -1,6 +1,6 @@
 /**
- * 阶段 1 clean 清洗：行数/去重数/总额总览（07 §3 注册表 clean_overview）。
- * 输出「共 N 笔 · 去重后 N · 总额 ¥X」卡；0 行时抛 EmptyDatasetError，
+ * 阶段 1 clean 清洗：行数/总额总览（07 §3 注册表 clean_overview）。
+ * 输出「共 N 笔 · 总额 ¥X」卡；0 行时抛 EmptyDatasetError，
  * 引擎映射 EMPTY_DATASET（不可重试），该阶段 failed 后继续后续阶段（降级原则）。
  */
 import {
@@ -35,10 +35,8 @@ export const CLEAN_EXECUTOR: StageExecutor = {
     if (totalRows <= 0) {
       throw new EmptyDatasetError();
     }
-    const duplicateRows = overview.rows.reduce((sum, row) => sum + numAt(row, 2), 0);
     const activeDays = overview.rows.reduce((sum, row) => sum + numAt(row, 3), 0);
     const refundRows = overview.rows.reduce((sum, row) => sum + numAt(row, 4), 0);
-    const distinctRows = totalRows - duplicateRows;
 
     const totalOut = monthly.rows.reduce((sum, row) => sum + numAt(row, 1), 0);
     const totalIn = monthly.rows.reduce((sum, row) => sum + numAt(row, 2), 0);
@@ -48,14 +46,14 @@ export const CLEAN_EXECUTOR: StageExecutor = {
 
     const input: TemplateCardInput = {
       cardId: makeCardId("clean", 1),
-      headline: `共 ${totalRows} 笔账单 · 去重后 ${distinctRows} 笔 · 支出总额 ¥${fmtYuan(totalOut)}`,
+      headline: `共 ${totalRows} 笔账单 · 支出总额 ¥${fmtYuan(totalOut)}`,
       narrative:
-        `本次体检解析账单 ${totalRows} 笔，去重后保留 ${distinctRows} 笔，` +
+        `本次体检解析账单 ${totalRows} 笔，` +
         `覆盖 ${activeDays} 个自然日（${firstMonth} 至 ${lastMonth}）；` +
         `支出合计 ¥${fmtYuan(totalOut)}，收入合计 ¥${fmtYuan(totalIn)}，含退款 ${refundRows} 笔。` +
         `后续五个阶段均基于该清洗结果分析。`,
       confidence: 0.95,
-      significance: `样本 ${totalRows} 笔，去重后 ${distinctRows} 笔`,
+      significance: `样本 ${totalRows} 笔`,
       evidence: {
         chart: {
           tableId: "clean_overview",
@@ -66,7 +64,6 @@ export const CLEAN_EXECUTOR: StageExecutor = {
         },
         stats: [
           { label: "总笔数", value: String(totalRows) },
-          { label: "去重后笔数", value: String(distinctRows) },
           { label: "支出总额", value: fmtYuan(totalOut), unit: "元" },
           { label: "覆盖天数", value: String(activeDays) },
         ],

@@ -253,7 +253,7 @@ export async function runWhitelistedAggregate(
 ```ts
 // src/lib/pipeline/stage.ts —— 全仓唯一（07 §1）：SIX_STAGES / StageId / StageStatus / PipelineStatus。
 // 本文件只 import 不复制。六阶段 = clean/profile/anomaly/subscription/attribution/annual；
-// 展示名（UI/材料唯一用词）：清洗（解析与去重）/消费画像/异常检测/订阅陷阱扫描（P1 功能，第 4 阶段）/环比归因/年度报告。
+// 展示名（UI/材料唯一用词）：清洗（解析与清洗）/消费画像/异常检测/订阅陷阱扫描（P1 功能，第 4 阶段）/环比归因/年度报告。
 // 反思自检（reflect）是 annual 之后的「发布前闸门」（T7），不是第七阶段（07 §1/§20）。
 // 流式事件唯一来源：07 §2 spendct协议@2（src/lib/protocol/events.ts，21 类事件——第 21 类 = plan 思考计划，08 修订案 A12），本文件不自造事件名。
 // 状态机合法迁移表在 src/lib/pipeline/state-machine.ts（W1D4 定稿，T5），非法迁移拒绝单测覆盖。

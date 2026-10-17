@@ -65,7 +65,7 @@ export type PipelineStatus = "idle" | "running" | "reflecting" | "completed" | "
 
 | StageId | 展示名（UI/材料唯一用词） | 序号 |
 | --- | --- | --- |
-| clean | 清洗（副题：解析与去重） | 1 |
+| clean | 清洗（副题：解析与清洗） | 1 |
 | profile | 消费画像 | 2 |
 | anomaly | 异常检测 | 3 |
 | subscription | 订阅陷阱扫描（P1 功能，位于第 4 阶段） | 4 |
@@ -767,7 +767,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 
 - **路由与守卫**：见上守卫口径——AuthGuard 登录墙覆盖 11 个数据功能页，游客重定向 `/login?next=`（next 连查询串，`/upload?sample=1` 登录后继续生效；实现为 window.location 读取 pathname+search，usePathname 不含查询串，属落实本裁决的必要改动）；公开页仅 / /login /register /learn /privacy 五页。路由数不变（仍 11 条静态路由口径，§13 收口注记）。
 - **图形验证码（登录/注册表单）**：canvas 自绘（`src/lib/auth/captcha.ts` 纯函数 + `CaptchaField` 组件，逻辑 120×40 按 dpr 缩放、±25° 随机旋转、干扰曲线 + 噪点、字符集去 0/O/1/I/L）；校验为客户端本机比对——本地账户架构无服务端用户数据，验证码与密码同属浏览器内校验层，拦截误触与无脑填充，不宣称防御真实机器人；失败自动换图 + 清空输入，错误走字段内 error 行（不产生表单红色横幅）；DEMO_MODE=mock 留空即过（e2e 与零密钥演示），live dev / Vercel 无该变量即真校验。零网络请求、零新端点、零新 env。
-- **跨批次合并去重（上传两路径）**：CSV 与 OCR 路径统一 `mergeCleanBatches`——已有行取最近一次导入落库的完整行（getLatestDataset），incoming 逐行按 `(date_iso | amount_cents | merchant)` 键比对（与 parse-csv duplicateKey 同口径），重复计 skipped、新行追加，装配 = 替换整表重建为合并后完整行（不覆盖已有行）；成功视图如实报「新增 X 笔、跳过疑似重复 Y 笔」。datasets store（A18）每次保存后剪枝只留最新快照（旧快照为全量重复行数据的死重，不剪枝随导入次数近平方膨胀；books store 账本元数据不剪，账本历史语义保留）。
+- **跨批次合并去重（上传两路径）**：CSV 与 OCR 路径统一 `mergeCleanBatches`——已有行取最近一次导入落库的完整行（getLatestDataset），incoming 逐行按 `(date_iso | amount_cents | merchant)` 键比对（与 parse-csv duplicateKey 同口径），重复计 skipped、新行追加，装配 = 替换整表重建为合并后完整行（不覆盖已有行）；成功视图如实报「已导入 X 笔」。datasets store（A18）每次保存后剪枝只留最新快照（旧快照为全量重复行数据的死重，不剪枝随导入次数近平方膨胀；books store 账本元数据不剪，账本历史语义保留）。
 - **挑战页手动记今日支出**：今日卡金额输入行（inputMode=decimal + 保存；已有记录显示「已记 ¥X · 修改」），写与预算页同键的 `spendct:manual-entries` 账本（A3 口径：expense 覆盖 / income 不参与）；合并发生在渲染期派生（`mergeChallengePoints` 手动点叠加账单点，不重查 DuckDB）；累计节省两处补口径脚注「累计节省 = Σ max(0, 基线 − 当日实际支出)，基线为挑战开始前 30 天该类目日均支出（当日支出含手动记录）」。
 - **成就引擎真实化**：13 枚徽章全部按真实行为判定（`src/lib/achievements/` defs/rules/progress/sync 四模块 + storage barrel），演示回退删除——无本地记录一律空集，新访客成就墙全锁是正常初始态。判定口径（复审收口后）：sub-hunter 排除年付周期订阅（年付回填天然 >90 天间隔属正常扣费）；saver 基线 = 最早采纳月，账单月表未覆盖时回退到采纳月后第一个有数据月，比较取不高于基线 95% 整数分运算；budget-master 文案改「最近 3 个月」（实现口径本为最近 3 条月记录，不要求物理相邻）；视图侧缓存换数据集失效（resetRecheckOverrides，防旧数据集月表继续判定）；解锁持久化收敛 commitUnlockedIds 单一落盘路径。体检次数真实化：真实管线完整跑完才自增（demo 播放器不计），键 `spendct:checkup-count:v1` / `spendct:last-checkup-hour:v1`。
 - **模块登记**：`src/lib/auth/captcha.ts`、`src/components/auth/captcha-field.tsx`（CaptchaField，可复用组件，登记进 05 §2.2 组件总表）、`src/lib/import/merge-batches.ts`、`src/lib/challenge/manual-day-merge.ts`、`src/lib/achievements/`（defs/rules/progress/sync 四模块，achievements.ts 为存储层 + barrel）；行为进度键 `spendct:achievement-progress:v1`（adopt/activate-benefit/dedupe-skipped/followup 四类事件，§17 A19 允许项）。

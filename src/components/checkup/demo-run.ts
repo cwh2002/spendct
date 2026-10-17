@@ -75,7 +75,7 @@ const DEMO_HITS: Record<string, number> = {
 const DEMO_CARDS: Record<string, { title: string; ok: boolean }[]> = {
   clean: [
     { title: "账单整理摘要 · 793 条全部识别成功", ok: true },
-    { title: "去重统计 · 移除 2 条重复记录", ok: true },
+    { title: "样本总览 · 793 条账单全部可用", ok: true },
   ],
   profile: [
     { title: "餐饮是最大支出类目，占年度支出 41%", ok: true },
@@ -149,7 +149,7 @@ const PROGRESS_TEXT: Record<string, string> = {
 
 /** 各步骤跑完后的结论式说明（页面不再展示 SQL 原文，只给一句人话结论） */
 const DEMO_SQL_NOTES: Record<string, string> = {
-  clean: "已整理账单并去重，共核对 793 条记录",
+  clean: "已整理账单，共核对 793 条记录",
   profile: "已按类别汇总账单，共核对 793 条记录",
   anomaly: "已排查深夜消费与退款异常，查出 23 个疑点",
   subscription: "已排查规律性连续扣费，查出 36 笔可疑扣费",
@@ -159,7 +159,7 @@ const DEMO_SQL_NOTES: Record<string, string> = {
 
 /** 流式叙事文本（demo 为整段下发，打字机逐字揭示；真实管线为逐 token 增长） */
 const NARRATIVES: Record<string, string> = {
-  clean: "整理完成：793 条账单全部识别成功，自动去重移除 2 条重复记录。",
+  clean: "整理完成：793 条账单全部识别成功。",
   profile: "你的消费画像成型：餐饮是最大支出类目，占年度支出 41%，其中堂食与食堂占 78%、外卖 22%。",
   anomaly: "发现 23 笔深夜消费，其中游戏充值与直播打赏占 84%，建议设置夜间支付冷静期。",
   subscription: "发现 3 项连续订阅扣费，年化合计 660 元，其中 1 项近 90 天完全没用过，属于典型的沉默订阅。",

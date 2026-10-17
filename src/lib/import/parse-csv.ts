@@ -488,7 +488,7 @@ export function parseBillCsv(text: string, fileName: string): ParseResult {
 
   const duplicateCount = countDuplicates(rows);
   if (duplicateCount > 0) {
-    warnings.push(`检测到 ${duplicateCount} 条疑似重复记录，导入时将去重`);
+    warnings.push(`检测到 ${duplicateCount} 条疑似重复记录，导入时会自动跳过`);
   }
 
   let confidence: ParseResult["confidence"] = "high";

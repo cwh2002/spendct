@@ -100,8 +100,8 @@ export const ACHIEVEMENT_DEFS: readonly AchievementDef[] = [
   {
     id: "cleaner",
     name: "一尘不染",
-    desc: "累计清理 100 条重复记录",
-    plain: "清理 100 条重复",
+    desc: "多次导入账单，账本依旧干净（累计 100 条）",
+    plain: "导入账单不乱账",
     icon: Sparkles,
   },
   {
