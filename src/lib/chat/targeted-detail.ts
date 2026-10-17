@@ -21,9 +21,10 @@
 
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
+import { fmtDate } from "@/lib/pipeline/stages/spec";
 import { CATEGORY_CODES } from "@/lib/schema/bill";
 
-import { formatDetailLine } from "./qa-engine";
+import { formatDetailLine, hasUnsupportedMonthPhrase } from "./qa-engine";
 
 /** 定向明细文本块上限（字）：超长按行整条丢弃，保证单条语义完整 */
 export const TARGETED_CONTEXT_MAX_LENGTH = 2500;
@@ -58,11 +59,14 @@ const NIGHT_WORDS = ["深夜", "半夜", "凌晨", "夜宵", "熬夜"] as const;
 
 /**
  * 相对月份词：本月 / 这个月 → 当前月；上个月 / 上月 → 前一月；
- * 上上个月 / 前两个月 → 前两月（长词先于短词：「上上个月」含子串「上个月」，
- * 必须先声明，否则会被错配成前一月）。
+ * 上上个月 / 上上月 / 大上个月 / 大上月 → 前两月（长词先于短词：
+ * 「上上个月」「大上个月」含子串「上个月」、「上上月」「大上月」含
+ * 子串「上月」，必须先声明，否则会被错配成前一月）。
+ * 歧义与含糊的时间说法（「前两个月」等）不进词表：由 qa-engine 的
+ * hasUnsupportedMonthPhrase 在识别前作废整个计划。
  */
 const RELATIVE_MONTH_WORDS = [
-  { words: ["上上个月", "前两个月"], offset: -2 },
+  { words: ["上上个月", "上上月", "大上个月", "大上月"], offset: -2 },
   { words: ["上个月", "上月"], offset: -1 },
   { words: ["这个月", "本月"], offset: 0 },
 ] as const;
@@ -106,6 +110,14 @@ function relativeMonthMm(now: Date, offset: number): string {
  *   出现在问题里的商户名，最长匹配优先（「蜜雪冰城」优先于「蜜雪」），
  *   等长时按名单顺序（支出金额降序）取先出现的。
  *
+ * 时间短语超出词表范围（「上上上个月」「前两个月」等含糊写法）时整段
+ * 弃权返回全空计划（A18 热修复）：只跳过相对词会让类目等槽位照常命中、
+ * 生成无月份条件的全期明细，反而引导模型把全期数据当成「直接相关」，
+ * 不如整体作废让上层转在线兜底。
+ * 「最近三个月/近三个月」不在弃权之列（qa-engine 有 last_90d 窗才放行、
+ * 本模块没有 90 天窗）：按本地时钟换算成显式日期范围（今天-90天～今天），
+ * 既保精确又不弃权。
+ *
  * 可信来源原则：商户参数只从 DB 名单匹配、类目只来自常量词表，绝不直接
  * 把用户原文片段拼进 SQL。
  */
@@ -114,6 +126,12 @@ export function buildTargetedDetailPlan(
   merchantNames: string[],
 ): TargetedDetailPlan {
   const text = question.trim();
+
+  // 含糊/超范围时间短语：作废整个计划（含日期范围、年份、类目、商户等
+  // 所有槽位），上层转在线兜底
+  if (hasUnsupportedMonthPhrase(text)) {
+    return { month: null, year: null, dateRange: null, merchant: null, category: null, nightOnly: false };
+  }
 
   // 显式日期范围（「2026-01-01到2026-05-30」）：正则整体匹配两个合法
   // YYYY-MM-DD 与中间的分隔词，命中时年月槽位让位（日期范围更精确）
@@ -126,6 +144,15 @@ export function buildTargetedDetailPlan(
     const end = rangeMatch[2] ?? "";
     // 起止颠倒（如「05-30到01-01」）视为无效，不进 SQL
     if (start <= end) dateRange = { start, end };
+  }
+  // 「最近三个月/近三个月」：本模块没有 90 天窗，按本地时钟换算成显式
+  // 日期范围（今天-90天 起、今天 止），与显式范围同槽位——既保精确又不弃权
+  if (dateRange === null && /(?:最近|近)三个月/.test(text)) {
+    const now = new Date();
+    dateRange = {
+      start: fmtDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90)),
+      end: fmtDate(now),
+    };
   }
 
   // 月份：相对词 > 阿拉伯数字 > 中文数字（日期范围命中时跳过）

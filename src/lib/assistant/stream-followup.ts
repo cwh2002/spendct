@@ -8,6 +8,9 @@
  *   - stage:thinking：回答文本增量；
  *   - plan：思考计划（修订案 A12 新增事件，协议 §2 第 21 类）；
  *   - run:complete / error / abort：流收尾；
+ *   - keepalive：服务端注释心跳帧（「: keepalive」）映射成的事件，面板借此
+ *     重置流内停滞计时——LLM 首 token / 工具等待可能超过 30s 停滞窗，
+ *     心跳帧证明链路仍活跃（A18 热修复四轮）；
  *   - 坏帧静默跳过，不阻断后续事件；流结束仍有未分帧余量时按整帧兜底。
  *
  * 纯逻辑模块：不依赖 React；中止信号由调用方传入 fetch，reader.read()
@@ -32,7 +35,8 @@ export type FollowupStreamEvent =
   | { type: "plan"; goal: string; steps: FollowupPlanStep[] }
   | { type: "complete"; degraded?: string[]; elapsedMs?: number }
   | { type: "error"; code?: string; message?: string }
-  | { type: "abort" };
+  | { type: "abort" }
+  | { type: "keepalive" };
 
 /** 单帧事件 → 流事件：不认识的帧返回 null（调用方跳过） */
 function mapEvent(event: Record<string, unknown>): FollowupStreamEvent | null {
@@ -93,6 +97,8 @@ function mapEvent(event: Record<string, unknown>): FollowupStreamEvent | null {
 
 /** 单帧文本 → 流事件（坏 JSON / 不认识的帧返回 null，由调用方静默跳过） */
 function parseFrame(frame: string): FollowupStreamEvent | null {
+  // SSE 注释帧（以「:」开头）：服务端心跳，映射成 keepalive 事件
+  if (frame.trimStart().startsWith(":")) return { type: "keepalive" };
   const dataLine = frame.split("\n").find((line) => line.startsWith("data: "));
   if (!dataLine) return null;
   try {

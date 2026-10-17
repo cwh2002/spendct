@@ -3,8 +3,10 @@
  *
  * 覆盖：
  * 1. buildTargetedDetailPlan 槽位识别：阿拉伯数字 / 中文数字 / 相对月份
- *    （含上上个月）、年份、深夜关键词、12 类目词表、商户最长匹配
- *    （含长度 <2 跳过）、显式日期范围（A18）；
+ *    （含上上个月与大上个月）、三阶及以上月份与含糊多月说法作废整个计划
+ *    （A18 热修复）、「最近三个月/近三个月」映射为显式 90 天日期范围、
+ *    年份、深夜关键词、12 类目词表、商户最长匹配（含长度 <2 跳过）、
+ *    显式日期范围（A18）；
  * 2. buildTargetedDetailSql：计划全空返回 null、条件拼装、SQL 注入防护
  *    （商户名单含单引号名称、非法月份/年份/类目/超长商户/非法日期范围
  *    不产生非法 SQL）；
@@ -71,9 +73,52 @@ describe("buildTargetedDetailPlan（检索条件识别）", () => {
     expect(buildTargetedDetailPlan("本月花了多少", []).month).toBe("10");
     expect(buildTargetedDetailPlan("上个月深夜消费", []).month).toBe("09");
     expect(buildTargetedDetailPlan("上月花了多少", []).month).toBe("09");
-    // A18：长词先于短词，「上上个月」不再被错配成前一月
+    // A18：长词先于短词，「上上个月」不再被错配成前一月；
+    // 「上上月」「大上月」含子串「上月」、「大上个月」含子串「上个月」，
+    // 同样靠先声明 -2 词条取胜
     expect(buildTargetedDetailPlan("上上个月交通花了多少", []).month).toBe("08");
-    expect(buildTargetedDetailPlan("前两个月交通花了多少", []).month).toBe("08");
+    expect(buildTargetedDetailPlan("上上月交通花了多少", []).month).toBe("08");
+    expect(buildTargetedDetailPlan("大上个月交通花了多少", []).month).toBe("08");
+    expect(buildTargetedDetailPlan("大上月交通花了多少", []).month).toBe("08");
+  });
+
+  it("A18 三阶以上月份与含糊多月说法作废整个计划：全槽位为空（转在线兜底）", () => {
+    const empty: TargetedDetailPlan = {
+      month: null,
+      year: null,
+      dateRange: null,
+      merchant: null,
+      category: null,
+      nightOnly: false,
+    };
+    // 「上上上个月」含子串「上上个月」：弃权守卫先于词表，绝不猜成前两月
+    expect(buildTargetedDetailPlan("上上上个月交通花了多少", [])).toEqual(empty);
+    expect(buildTargetedDetailPlan("上上上月交通花了多少", [])).toEqual(empty);
+    expect(buildTargetedDetailPlan("上两个月交通花了多少", [])).toEqual(empty);
+    expect(buildTargetedDetailPlan("前几个月交通花了多少", [])).toEqual(empty);
+    // 「前两个月」语义有歧义：一律弃权转在线，不本地猜
+    expect(buildTargetedDetailPlan("前两个月交通花了多少", [])).toEqual(empty);
+    // 弃权作废整个计划：问题里另有明确月份（阿拉伯数字）也不猜——
+    // 只跳过相对词会留下「上上上个月」与「5月」的矛盾，直接转在线兜底
+    expect(buildTargetedDetailPlan("上上上个月5月交通花了多少", [])).toEqual(empty);
+    // 类目等槽位同样清空：不生成无月份条件的全期明细
+    expect(buildTargetedDetailPlan("上上上个月餐饮花了多少", [])).toEqual(empty);
+    // 「大上上」变体：与「上上上个月」同样弃权，不被 -2 词条吞成前两月
+    expect(buildTargetedDetailPlan("大上上个月交通花了多少", [])).toEqual(empty);
+    expect(buildTargetedDetailPlan("大上上月交通花了多少", [])).toEqual(empty);
+  });
+
+  it("「最近三个月/近三个月」映射为显式 90 天日期范围（本模块无 90 天窗）", () => {
+    // 固定时钟 2026-10-14：范围 = 今天-90天（2026-07-16）起、今天止，
+    // 与 qa-engine 的 last_90d 窗口径对齐；类目等其余槽位照常识别
+    const plan = buildTargetedDetailPlan("最近三个月交通花了多少", []);
+    expect(plan.dateRange).toEqual({ start: "2026-07-16", end: "2026-10-14" });
+    expect(plan.month).toBeNull();
+    expect(plan.year).toBeNull();
+    expect(plan.category).toBe("交通");
+    const plan2 = buildTargetedDetailPlan("近三个月餐饮花了多少", []);
+    expect(plan2.dateRange).toEqual({ start: "2026-07-16", end: "2026-10-14" });
+    expect(plan2.category).toBe("餐饮");
   });
 
   it("年份识别：只认「YYYY 年」写法，裸数字不误判", () => {

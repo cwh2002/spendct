@@ -12,6 +12,10 @@
  *     宽松发射，不经过协议校验）；
  *   - error / abort：异常与客户端中止。
  *
+ * 心跳：live 档 LLM 首 token / 工具等待可能超过客户端 30s 流内停滞窗，
+ * 服务端周期性发 SSE 注释心跳帧（「: keepalive」），客户端映射为 keepalive
+ * 事件重置停滞计时——注释帧对浏览器标准解析器不可见，不污染协议事件流。
+ *
  * 流程：
  *   0. 发射 plan 事件（mock 两档脚本 / live 结构化生成，失败静默跳过）；
  *   1. 若 body 带 sessionSchema 快照（07 §18 协议演示工具），先确定性调用
@@ -82,6 +86,9 @@ function isPromoQuestion(question: string): boolean {
 /** live 思考计划生成超时（毫秒）：计划是展示层增强，超时即放弃、不拖慢主回答流 */
 const PLAN_GENERATE_TIMEOUT_MS = 8_000;
 
+/** 心跳帧间隔（毫秒）：远小于客户端 30s 流内停滞窗，留足网络抖动余量 */
+const KEEPALIVE_INTERVAL_MS = 10_000;
+
 /** 计划步骤可引用的工具名（模型可调用的 MCP 三工具；与 mcp.ts MCP_TOOL_NAMES 同源） */
 const PLAN_TOOL_HINT = "get_school_calendar（校历）、get_weather（城市天气）、get_promo_calendar（大促日历）";
 
@@ -112,6 +119,10 @@ export async function POST(request: Request) {
   const runId = `fup-${randomUUID().slice(0, 8)}`;
   const startedAt = Date.now();
   const now = () => Date.now();
+  // 心跳与关闭标记提升到流对象外层：cancel()（客户端断开）也要能停掉心跳，
+  // start 内所有收尾路径统一走 closeStream() 保证心跳定时器不泄漏
+  let streamClosed = false;
+  let heartbeat: ReturnType<typeof setTimeout> | null = null;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -119,6 +130,27 @@ export async function POST(request: Request) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
       };
       const degraded: string[] = [];
+      /** 统一收尾：标记关闭并清掉心跳，再关闭流（只执行一次） */
+      function closeStream() {
+        if (streamClosed) return;
+        streamClosed = true;
+        if (heartbeat !== null) clearTimeout(heartbeat);
+        controller.close();
+      }
+      /** 心跳帧自续期调度：流未关闭且客户端未中止时每 10s 发一帧注释心跳 */
+      function scheduleHeartbeat() {
+        if (streamClosed || request.signal.aborted) return;
+        heartbeat = setTimeout(() => {
+          if (streamClosed || request.signal.aborted) return;
+          try {
+            controller.enqueue(encoder.encode(": keepalive\n\n"));
+          } catch {
+            return; // 流已关闭：enqueue 抛错即停，不再续期
+          }
+          scheduleHeartbeat();
+        }, KEEPALIVE_INTERVAL_MS);
+      }
+      scheduleHeartbeat();
       // 单次回答内工具调用的起止计时：key = toolCallId（live）或工具名（确定性调用）
       const timings = new Map<string, ToolCallTiming>();
 
@@ -179,7 +211,7 @@ export async function POST(request: Request) {
             ]);
             if (request.signal.aborted) {
               send({ t: "abort", ts: now(), runId, reason: "client-aborted" });
-              controller.close();
+              closeStream();
               return;
             }
             send({ t: "plan", ts: now(), runId, goal: plan.goal, steps: plan.steps });
@@ -251,7 +283,7 @@ export async function POST(request: Request) {
               ...(degraded.length > 0 ? { degraded } : {}),
             });
           }
-          controller.close();
+          closeStream();
           return;
         }
 
@@ -269,7 +301,7 @@ export async function POST(request: Request) {
         for await (const part of parts) {
           if (request.signal.aborted) {
             send({ t: "abort", ts: now(), runId, reason: "client-aborted" });
-            controller.close();
+            closeStream();
             return;
           }
           if (part.type === "tool-call") {
@@ -299,7 +331,7 @@ export async function POST(request: Request) {
               message: "在线服务流中断",
               retryable: true,
             });
-            controller.close();
+            closeStream();
             return;
           }
         }
@@ -311,7 +343,7 @@ export async function POST(request: Request) {
           elapsedMs: now() - startedAt,
           ...(degraded.length > 0 ? { degraded } : {}),
         });
-        controller.close();
+        closeStream();
       } catch (error) {
         if (request.signal.aborted) {
           send({ t: "abort", ts: now(), runId, reason: "client-aborted" });
@@ -343,11 +375,14 @@ export async function POST(request: Request) {
             retryable: true,
           });
         }
-        controller.close();
+        closeStream();
       }
     },
     cancel() {
-      // 客户端中止（面板卸载或超时）：start 内通过 request.signal 感知并收尾
+      // 客户端中止（面板卸载或超时）：清掉心跳定时器并标记关闭，
+      // start 内通过 request.signal 感知并收尾
+      streamClosed = true;
+      if (heartbeat !== null) clearTimeout(heartbeat);
     },
   });
 

@@ -46,6 +46,8 @@ import {
 } from "@/lib/chat/targeted-detail";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { searchLocalCases } from "@/lib/assistant/local-cases";
+import { createStallTimer } from "@/lib/assistant/stall-timer";
+import { restorePipelineSnapshot } from "@/lib/persistence/pipeline-persistence";
 import { classifySmallTalk, SMALL_TALK_ANSWER } from "@/lib/llm/small-talk";
 import { valAt } from "@/lib/pipeline/stages/spec";
 import { usePipeline } from "@/lib/pipeline/store";
@@ -132,8 +134,36 @@ async function fetchTopMerchantNames(runSql: SqlRunner): Promise<string[]> {
     .filter((name) => name.length > 0);
 }
 
-/** 在线请求超时（毫秒）：超时即中止并落本地提示，避免思考态卡死面板 */
-const ONLINE_TIMEOUT_MS = 30_000;
+/**
+ * 流内停滞超时（毫秒）：响应首字节到达后，距上一次收到任何流事件超过
+ * 该时长即中止。用停滞而非固定总时限——流式输出持续到达时计时不断重置，
+ * 慢而健康的回答（deep 档计划生成 + 工具调用 + 长生成）不会被总时限误杀；
+ * 只有服务完全沉默才中止，避免思考态卡死面板（A18 实测 30s 总时限曾把
+ * 首击编译的正常回答误杀成「需连接在线服务」提示）。
+ */
+const ONLINE_STALL_TIMEOUT_MS = 30_000;
+
+/**
+ * 响应前停滞超时（毫秒）：从发起在线兜底到响应首字节之间的等待上限。
+ * 该阶段没有任何事件可证明活跃（本地上下文构建、RAG 检索、schema 快照、
+ * 主 fetch 含 Next dev 首击编译），共用同一窗口，所以用比流内更宽的
+ * 120s——覆盖 A18 实测超 30s 的首击编译，又不让 fetch 永久悬挂卡死
+ * 思考态。首字节到达后由 reset 收紧到 ONLINE_STALL_TIMEOUT_MS。
+ */
+const ONLINE_PRE_RESPONSE_TIMEOUT_MS = 120_000;
+
+/** 中断回答的补注文案：流已收到内容时追加，区别于「服务不可达」的整段提示 */
+const INTERRUPTED_NOTE = "\n\n（回答中断：等待在线服务响应超时，请再问一次。）";
+
+/**
+ * 提问前等待会话恢复的上限（毫秒）：IndexedDB 与 DuckDB 初始化异常悬挂时，
+ * 提问不会永久卡死——超时后按未恢复口径继续走管线（本地规则答「还没有
+ * 账单数据」或在线兜底按空统计处理），恢复任务在后台自行落定。
+ * 上限必须盖过健康路径的恢复耗时：刷新后 DuckDB-WASM 冷启动 + 行数据重放
+ * 实测约 26s（dev 模式，首击编译更慢），上限设 60s——健康恢复永远在限内
+ * 落定、问题答对；只有真悬挂（IndexedDB 损坏等）才走超时降级口径。
+ */
+const RESTORE_WAIT_MS = 60_000;
 
 export interface ChatPipeline {
   turns: ChatTurn[];
@@ -241,18 +271,38 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
     setThinking("live");
     const controller = new AbortController();
     abortRef.current = controller;
-    // 超时保险：接口或上游长时间不响应时主动中止，防止思考态卡死面板
-    let timedOut = false;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
+    // 停滞超时保险：响应前阶段（本地上下文构建 / RAG / schema / 主 fetch 含
+    // dev 首击编译）无事件可证明活跃，用 120s 长窗口；首字节到达后 reset
+    // 收紧到 30s 流内停滞窗口（每收到事件再重置，慢而健康的回答不会被
+    // 总时限误杀）；服务完全沉默时中止，防止思考态卡死面板
+    const stallTimer = createStallTimer(ONLINE_PRE_RESPONSE_TIMEOUT_MS, () => {
       controller.abort();
-    }, ONLINE_TIMEOUT_MS);
+    });
+    // 中止收尾的共享状态：内容与占位气泡跨阶段使用，收尾只执行一次
+    let finished = false;
+    let accumulated = "";
+    let turnId: number | null = null;
 
-    // 中止原因分流：组件卸载 → 静默返回；超时中止 → 补一条本地提示
+    /** 停滞超时的统一收尾：已有内容保留并追加中断补注；无内容撤占位补整段提示 */
+    function finishAborted() {
+      if (finished) return;
+      finished = true;
+      if (!aliveRef.current) return;
+      if (accumulated.trim() !== "" && turnId !== null) {
+        updateTurnText(turnId, `${accumulated}${INTERRUPTED_NOTE}`);
+      } else if (turnId !== null) {
+        setTurns((prev) => prev.filter((turn) => turn.id !== turnId));
+        appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+      } else {
+        appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+      }
+    }
+
+    // 中止原因分流：组件卸载 → 静默返回；停滞超时 → finishAborted 统一收尾
     function bailIfStopped(): boolean {
       if (!aliveRef.current) return true;
       if (controller.signal.aborted) {
-        if (timedOut) appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+        finishAborted();
         return true;
       }
       return false;
@@ -384,11 +434,17 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         appendTurn({ role: "assistant", text: onlineFallbackTipText() });
         return;
       }
+      // 响应已到：停滞计时从首字节重新起算，并把窗口从响应前的 120s 长窗
+      // 收紧到流内 30s（响应前的本地上下文 / RAG / 首击编译等共享 120s 预算）
+      stallTimer.reset(ONLINE_STALL_TIMEOUT_MS);
 
-      // 先追加一条空的回答气泡，随分片累积更新文本，流结束后再挂在线来源脚注
+      // 先追加一条空的回答气泡，随分片累积更新文本，流结束后再挂在线来源脚注。
+      // bubbleId 是占位气泡创建后的非空引用：外层 finishAborted 继续用可空的
+      // turnId 判空收尾，此处往后的正常流分支都改用 bubbleId 保证类型收窄
       seqRef.current += 1;
-      const turnId = seqRef.current;
-      setTurns((prev) => [...prev, { id: turnId, role: "assistant", text: "" }]);
+      turnId = seqRef.current;
+      const bubbleId = turnId;
+      setTurns((prev) => [...prev, { id: bubbleId, role: "assistant", text: "" }]);
 
       // 工具徽章：badges 为已完结调用，pending 为进行中；同名工具按后进先出配对
       const badges: ChatToolBadge[] = [];
@@ -396,14 +452,15 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       let badgeSeq = 0;
       const flushBadges = () => {
         setTurns((prev) =>
-          prev.map((turn) => (turn.id === turnId ? { ...turn, toolBadges: [...badges, ...pending] } : turn)),
+          prev.map((turn) => (turn.id === bubbleId ? { ...turn, toolBadges: [...badges, ...pending] } : turn)),
         );
       };
 
-      let accumulated = "";
       let outcome: "complete" | "error" | "abort" | null = null;
       for await (const event of streamFollowup(response)) {
         if (bailIfStopped()) return;
+        // 每收到一个事件就重置停滞计时：持续产出的慢流永远不会被误杀
+        stallTimer.reset();
         if (event.type === "tool-start") {
           badgeSeq += 1;
           pending.push({
@@ -427,10 +484,10 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
             flushBadges();
           }
         } else if (event.type === "plan") {
-          setTurnPlan(turnId, { goal: event.goal, steps: event.steps });
+          setTurnPlan(bubbleId, { goal: event.goal, steps: event.steps });
         } else if (event.type === "text-delta") {
           accumulated += event.text;
-          updateTurnText(turnId, accumulated);
+          updateTurnText(bubbleId, accumulated);
         } else if (event.type === "complete") {
           outcome = "complete";
           break;
@@ -446,15 +503,15 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       if (outcome === "abort") return; // 服务端已感知中止：静默返回
       if (outcome === "complete") {
         // 流正常收尾：最终文本与徽章落定，挂在线来源脚注与案例参考
-        updateTurnText(turnId, accumulated);
+        updateTurnText(bubbleId, accumulated);
         flushBadges();
-        markTurnOnline(turnId, deep, {
+        markTurnOnline(bubbleId, deep, {
           stats: context.length > 0,
           details: details.length > 0 || targeted.length > 0,
         });
         if (ragCases.length > 0) {
           setTurns((prev) =>
-            prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)),
+            prev.map((turn) => (turn.id === bubbleId ? { ...turn, ragRefs: ragCases } : turn)),
           );
         }
         return;
@@ -462,39 +519,43 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       if (outcome === "error") {
         // 服务端显式报错：无内容撤掉占位气泡补本地提示；已有内容保留不挂脚注
         if (accumulated.trim() === "") {
-          setTurns((prev) => prev.filter((turn) => turn.id !== turnId));
+          setTurns((prev) => prev.filter((turn) => turn.id !== bubbleId));
           appendTurn({ role: "assistant", text: onlineFallbackTipText() });
         }
         return;
       }
       // 流干净收尾但没等到 run:complete：按已收内容兜底；零内容则撤占位气泡
       if (accumulated.trim() === "") {
-        setTurns((prev) => prev.filter((turn) => turn.id !== turnId));
+        setTurns((prev) => prev.filter((turn) => turn.id !== bubbleId));
         appendTurn({ role: "assistant", text: onlineFallbackTipText() });
         return;
       }
-      updateTurnText(turnId, accumulated);
+      updateTurnText(bubbleId, accumulated);
       flushBadges();
-      markTurnOnline(turnId, deep, {
+      markTurnOnline(bubbleId, deep, {
         stats: context.length > 0,
         details: details.length > 0 || targeted.length > 0,
       });
       if (ragCases.length > 0) {
         setTurns((prev) =>
-          prev.map((turn) => (turn.id === turnId ? { ...turn, ragRefs: ragCases } : turn)),
+          prev.map((turn) => (turn.id === bubbleId ? { ...turn, ragRefs: ragCases } : turn)),
         );
       }
     } catch {
-      // 组件卸载触发的中止 → 静默返回；超时中止 → 补一条本地提示气泡（只补一次）；
-      // 其余网络异常 / 流中断 → 同样补本地提示；空占位气泡一并撤掉
+      // 组件卸载触发的中止 → 静默返回；停滞超时 → finishAborted 统一收尾
+      // （已有内容保留并追加中断补注、无内容撤占位补整段提示，只执行一次）；
+      // 其余网络异常 / 流中断 → 撤掉空占位气泡并补本地提示
       if (!aliveRef.current) return;
-      if (controller.signal.aborted && !timedOut) return;
+      if (controller.signal.aborted) {
+        finishAborted();
+        return;
+      }
       setTurns((prev) =>
         prev.filter((turn) => !(turn.role === "assistant" && turn.text === "" && !turn.note)),
       );
       appendTurn({ role: "assistant", text: onlineFallbackTipText() });
     } finally {
-      clearTimeout(timeoutId);
+      stallTimer.clear();
       if (aliveRef.current) setThinking(null);
     }
   }
@@ -532,18 +593,42 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       }
     }
 
+    // 闲聊分流在恢复等待之前：打招呼 / 询问身份是零数据依赖的同步定稿回复，
+    // 不需要等会话恢复，也不置位思考态（恢复悬挂时闲聊绝不无谓等待 15s）。
+    // deep 档除外：A14 契约是「跳过闲聊分流/本地规则/本地案例直连在线兜底」
+    // （07 §13），开启深度分析时即使是闲聊也按用户显式选择交给大模型
+    const smallTalkKind = classifySmallTalk(text);
+    if (smallTalkKind && !options?.deep) {
+      appendTurn({ role: "assistant", text: SMALL_TALK_ANSWER[smallTalkKind], smallTalk: true });
+      return;
+    }
+
+    // 刷新后的会话恢复可能在飞行中（IndexedDB → DuckDB 重建）：本地规则、
+    // 深度分析与在线兜底的上下文都依赖数据集，先等恢复落定再走管线，
+    // 避免「恢复未完成 → 本地答不了 → 误转在线」的瞬态错答（A18 实测）。
+    // 内存态已有数据集时是零成本 no-op；恢复失败保持未导入口径，不阻断提问。
+    //
+    // 思考态前置到恢复等待之前：UI 闸门（disabled={thinking !== null}）在恢复
+    // 飞行期间同样生效，防止并发提交造成管线交错（A18 审查结论）。等待设
+    // RESTORE_WAIT_MS 上限——IndexedDB 与 DuckDB 初始化异常悬挂时提问不会
+    // 永久卡死，超时后按未恢复口径继续走管线（本地规则答「还没有账单数据」
+    // 或在线兜底按空统计处理），恢复任务在后台自行落定。
+    setThinking("data");
+    try {
+      await Promise.race([
+        restorePipelineSnapshot(),
+        new Promise<void>((resolve) => setTimeout(resolve, RESTORE_WAIT_MS)),
+      ]);
+    } catch {
+      // 恢复模块自身已吞错，这里仅防御未来签名变化
+    }
+    if (!aliveRef.current) return;
+
     if (options?.deep) {
       await fallToOnline(text, true);
       return;
     }
 
-    const smallTalkKind = classifySmallTalk(text);
-    if (smallTalkKind) {
-      appendTurn({ role: "assistant", text: SMALL_TALK_ANSWER[smallTalkKind], smallTalk: true });
-      return;
-    }
-
-    setThinking("data");
     let intent: QaIntent | null = null;
     try {
       intent = analyzeQuestion(text, anchor);

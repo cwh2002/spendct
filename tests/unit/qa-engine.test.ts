@@ -273,13 +273,107 @@ describe("analyzeQuestion 意图解析", () => {
       category: "交通",
       window: "two_months_ago",
     });
-    expect(analyzeQuestion("前两个月花了多少", null)).toEqual({
-      kind: "month_total",
+    // 「上上月」含子串「上月」：词表先声明 two_months_ago 词条，不落进 last_month
+    expect(analyzeQuestion("上上月打车花了多少", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
       window: "two_months_ago",
     });
     expect(analyzeQuestion("最近7天花了多少", null)).toEqual({
       kind: "month_total",
       window: "last_7d",
+    });
+  });
+
+  it("A18 三个月档：近三个月/最近三个月 → last_90d（「前三个月」有歧义改弃权）", () => {
+    expect(analyzeQuestion("近三个月花了多少", null)).toEqual({
+      kind: "month_total",
+      window: "last_90d",
+    });
+    expect(analyzeQuestion("最近三个月花了多少", null)).toEqual({
+      kind: "month_total",
+      window: "last_90d",
+    });
+  });
+
+  it("A18 三阶以上月份与含糊多月说法不猜月：放弃本地识别返回 null（转在线兜底）", () => {
+    // 「上上上个月」含子串「上上个月」、「上上上月」含子串「上上月」：
+    // 弃权正则先于 WINDOW_WORDS 生效，绝不吞子串猜成前两月（A18 实测
+    // 「上上月」曾被错配成上个月）
+    expect(analyzeQuestion("上上上个月打车花了多少", null)).toBeNull();
+    expect(analyzeQuestion("上上上月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("上两个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("上三个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("上四个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("上两月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("上3个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("前几个月花了多少", null)).toBeNull();
+    // 「前两个月/前三个月」语义有歧义（最近两个月？当年首三个月？——
+    // 「今年前三个月」实测歧义成立）：一律弃权转在线，不本地猜
+    expect(analyzeQuestion("前两个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("前三个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("前两月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("前三月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("前四个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("今年前三个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("2026年前三个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("账单前三个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("前3个月花了多少", null)).toBeNull();
+    // 「最近N月/近N月」只保留三个月一档进词表，其余（含无「个」写法
+    // 「最近三月」，会被特定月份识别截成「三月」）一律转在线；
+    // 复合数字（十一/十二，否则被 detectSpecificMonth 截成 11/12 月）
+    // 与「几」同样弃权
+    expect(analyzeQuestion("最近3个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("近3个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("最近两个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("最近两月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("最近三月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("最近十二月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("近十一月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("最近几月花了多少", null)).toBeNull();
+    // 「几」的无「个」变体
+    expect(analyzeQuestion("前几月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("上几月花了多少", null)).toBeNull();
+    // 词表只收「最近三个月/近三个月」两个精确成员：「最近几个月/近几个月」
+    // 不是成员，「接近三个月」更不是（宁可转在线也不猜 90 天窗）
+    expect(analyzeQuestion("最近几个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("近几个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("接近三个月花了多少", null)).toBeNull();
+    // 半字时长没有对应窗口：「一个半月/半个月/半月」一律弃权
+    expect(analyzeQuestion("一个半月前花了多少", null)).toBeNull();
+    expect(analyzeQuestion("最近一个半月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("半个月花了多少", null)).toBeNull();
+    // 「大上上」变体同理：会被 -2 词条吞成前两月，与「上上上个月」一样弃权
+    expect(analyzeQuestion("大上上个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("大上上月花了多少", null)).toBeNull();
+    // 倒装与裸时长说法同样转在线
+    expect(analyzeQuestion("三个月前花了多少", null)).toBeNull();
+    expect(analyzeQuestion("两个月前花了多少", null)).toBeNull();
+    expect(analyzeQuestion("3个月前花了多少", null)).toBeNull();
+    expect(analyzeQuestion("五个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("两个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("12个月花了多少", null)).toBeNull();
+    expect(analyzeQuestion("这几个月花了多少", null)).toBeNull();
+    // 「大上个月」「大上月」同指上上个月，是词表成员不受弃权影响
+    expect(analyzeQuestion("大上个月打车花了多少", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "two_months_ago",
+    });
+    expect(analyzeQuestion("大上月打车花了多少", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "two_months_ago",
+    });
+    // 二阶明确写法不受弃权影响
+    expect(analyzeQuestion("上个月打车花了多少", null)).toEqual({
+      kind: "category_spend",
+      category: "交通",
+      window: "last_month",
+    });
+    expect(analyzeQuestion("最近90天花了多少", null)).toEqual({
+      kind: "month_total",
+      window: "last_90d",
     });
   });
 

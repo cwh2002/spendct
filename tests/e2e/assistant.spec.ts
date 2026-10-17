@@ -19,8 +19,14 @@
  */
 import { expect, test, type Page } from "@playwright/test";
 
-// 桌面 1440×900：抽屉在桌面为右下固定面板，直接可见；关闭动画干扰
-test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
+// 桌面 1440×900：抽屉在桌面为右下固定面板，直接可见；关闭动画干扰；
+// 时区固定上海：相对月份问法（这个月）按本地时钟换算，跑在不同时区的
+// 机器上也得出同一份账单归属
+test.use({
+  viewport: { width: 1440, height: 900 },
+  reducedMotion: "reduce",
+  timezoneId: "Asia/Shanghai",
+});
 
 /** 页面访问期间的 console error 收集器：只统计 error 级，聚合到用例尾部断言 */
 function collectConsoleErrors(page: Page): string[] {
@@ -81,6 +87,11 @@ test("空数据集：空态示例问题、本地案例检索、输入闸门与�
 
 test("真实账单：本地引擎回答 + 在线兜底的思考计划与工具徽章（mock 演示流）", async ({ page }) => {
   const errors = collectConsoleErrors(page);
+
+  // 钉住浏览器时钟到 2026-10-14（只设起始时刻，计时照常推进）：「这个月
+  // 花了多少」按本地时钟换算相对月份，内置账单时间锚是 2026-10-13，
+  // 测试日期漂过 2026-10 后当月无数据、金额断言必然挂掉
+  await page.clock.install({ time: new Date("2026-10-14T12:00:00+08:00") });
 
   // 1) 与 pipeline.spec 全动线一致的账单装配：先落库，确保本地引擎有数据
   await page.goto("/upload?sample=1");
