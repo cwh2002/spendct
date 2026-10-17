@@ -38,6 +38,10 @@ import { featureFlags } from "@/lib/feature-flags";
 import { buildCleanCsv } from "@/lib/import/parse-csv";
 import type { BillRow } from "@/lib/import/types";
 import { readNotifStorage, writeNotifSettings, type NotifSettings } from "@/lib/notifications";
+import {
+  discardDatasetForBook,
+  discardInMemoryDataset,
+} from "@/lib/persistence/pipeline-persistence";
 import { usePipeline } from "@/lib/pipeline/store";
 
 const ACTIVE_BOOK_KEY = "spendct:active-book";
@@ -696,6 +700,9 @@ function SettingsContent() {
     setDeleteBookBusy(true);
     try {
       await deleteBook(target.id);
+      // 账本删除即数据删除（08 修订案 A18）：与个人中心同口径联动清除持久化
+      // 数据集，防止刷新后 restorePipelineSnapshot 把已删数据复活
+      await discardDatasetForBook(target.id);
       if (activeBookId === target.id) {
         try {
           localStorage.removeItem(ACTIVE_BOOK_KEY);
@@ -703,6 +710,8 @@ function SettingsContent() {
           /* 忽略 */
         }
         setActiveBookId(null);
+        // 内存联动：当前账本被删，其他数据页无需刷新即回到演示/空态
+        await discardInMemoryDataset();
       }
       setDeleteBookTarget(null);
       setDeleteBookBusy(false);

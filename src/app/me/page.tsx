@@ -47,7 +47,10 @@ import type { BookRecord, UserRecord } from "@/lib/account/types";
 import { DEMO_ACCOUNT_META } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { featureFlags } from "@/lib/feature-flags";
-import { discardDatasetForBook } from "@/lib/persistence/pipeline-persistence";
+import {
+  discardDatasetForBook,
+  discardInMemoryDataset,
+} from "@/lib/persistence/pipeline-persistence";
 import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
 import { useRankTier } from "@/lib/rank";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
@@ -735,6 +738,9 @@ function MeContent() {
           /* 忽略 */
         }
         setActiveBookId(null);
+        // 内存联动：当前账本被删，清掉管线 store 与 DuckDB 内存表，
+        // 其他数据页（洞察/日历/预算等）无需刷新即回到演示/空态
+        await discardInMemoryDataset();
       }
       setDeleteBookTarget(null);
       setDeleteBookBusy(false);

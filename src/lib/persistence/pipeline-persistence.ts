@@ -27,7 +27,7 @@ import {
   putDataset,
 } from "@/lib/account/db";
 import type { BookRecord, PersistedDatasetRecord } from "@/lib/account/types";
-import { initDataset } from "@/lib/duckdb/dataset";
+import { dropDataset, initDataset } from "@/lib/duckdb/dataset";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
 import type { CleanTransaction } from "@/lib/schema/bill";
@@ -66,12 +66,21 @@ export async function saveImportedDataset(input: {
 let restorePromise: Promise<boolean> | null = null;
 
 /**
+ * 内存数据集删除的版本闸门：discardInMemoryDataset 每次递增。
+ * restorePipelineSnapshot 写回前比对入口版本，版本前进说明恢复
+ * 期间用户删除了账本，必须放弃写回（否则已删数据复活）。
+ */
+let discardVersion = 0;
+
+/**
  * 刷新后恢复：内存态已有数据集则 no-op；否则读最近一次导入记录，
  * 把行数据重放进 DuckDB 并重建管线内存态（含体检结果）。
  * 返回是否完成恢复（false = 没有可恢复的记录或恢复失败）。
  */
 export function restorePipelineSnapshot(): Promise<boolean> {
   if (usePipeline.getState().datasetTxHash !== null) return Promise.resolve(true);
+  // 入口版本：恢复期间若删除账本联动了内存清理，写回前据此放弃
+  const version = discardVersion;
   restorePromise ??= (async () => {
     try {
       if (typeof indexedDB === "undefined") return false;
@@ -79,8 +88,18 @@ export function restorePipelineSnapshot(): Promise<boolean> {
       if (!record || record.rows.length === 0) return false;
       // 等待期间用户可能已完成新导入：内存态优先，绝不覆盖
       if (usePipeline.getState().datasetTxHash !== null) return true;
+      // 等待期间删除了账本（版本闸门已前进）：放弃写回，防止已删数据复活
+      if (discardVersion !== version) return false;
       const conn = await getDuckDB();
       await initDataset(conn, record.rows);
+      // initDataset 的长窗口内同样可能发生删除联动：版本前进说明刚重建的
+      // 表是已删账本的数据，回滚 drop 后放弃写回（防「恢复在途」竞态复活）。
+      // 新导入落在这个窗口里则不再动表与 store（导入侧自己会重建并写回）
+      if (discardVersion !== version) {
+        await dropDataset(conn);
+        return false;
+      }
+      if (usePipeline.getState().datasetTxHash !== null) return false;
       usePipeline.getState().setDataset(record.txHash, record.source);
       if (record.lastRun) usePipeline.getState().setRun(record.lastRun);
       return true;
@@ -132,5 +151,41 @@ export async function discardDatasetForBook(bookId: string): Promise<void> {
     await deleteDataset(bookId);
   } catch {
     // 删除失败只留一条无主记录，不影响账本删除动线
+  }
+  // 账本已删光（库里再无数据集记录）：内存态一并清空。覆盖「删的不是
+  // 当前账本」的路径——删完最后一本，数据页同样无需刷新即回演示/空态
+  try {
+    if ((await getLatestDataset()) === undefined) {
+      await discardInMemoryDataset();
+    }
+  } catch {
+    // 读库失败按最坏情况不清内存：IndexedDB 异常时恢复同样不可用，刷新即归一
+  }
+}
+
+/**
+ * 删除账本时的内存联动（08 修订案 A18）：只清内存态数据集——管线 store
+ * 复位 + DuckDB-WASM 内存表全量 drop——不动 IndexedDB，持久化删除仍由
+ * discardDatasetForBook 负责。清空后所有数据页（洞察/日历/预算等）不再
+ * 依赖刷新，立即回到未导入动线（演示/空态）。
+ *
+ * 竞态防护：先递增版本闸门再清态，在途的 restorePipelineSnapshot 写回前
+ * 发现版本前进会放弃写回；同时作废恢复缓存，让后续恢复按最新持久化状态
+ * 重读，防止已删数据在本会话内复活。
+ */
+export async function discardInMemoryDataset(): Promise<void> {
+  discardVersion += 1;
+  const version = discardVersion;
+  restorePromise = null;
+  usePipeline.getState().clear();
+  if (typeof indexedDB === "undefined") return;
+  try {
+    const conn = await getDuckDB();
+    // 等待 DuckDB 期间又删了一次账本（清理交给最新一次调用）或新导入已落库
+    // （新数据集不能被旧清理误删）：本调用退出，清理由对应调用负责
+    if (version !== discardVersion || usePipeline.getState().datasetTxHash !== null) return;
+    await dropDataset(conn);
+  } catch {
+    // DuckDB 未初始化或清理失败：store 已清，数据页一律走演示/空态，不阻断删除动线
   }
 }
