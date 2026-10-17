@@ -64,7 +64,7 @@ pnpm dev              # http://localhost:3000
 ```bash
 pnpm typecheck       # tsgo 全量类型检查
 pnpm lint            # ESLint
-pnpm test            # Vitest 单测（631 用例）
+pnpm test            # Vitest 单测（658 用例）
 pnpm test:e2e        # Playwright 端到端（全路由冒烟 + 关键动线，55 用例）
 pnpm build           # 生产构建（20 路由：13 静态页 + 6 API + not-found）
 ```

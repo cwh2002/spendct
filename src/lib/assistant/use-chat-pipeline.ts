@@ -20,8 +20,10 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { buildHistoryMessages, DEEP_CONTEXT_PREFIX, DETAIL_CONTEXT_PREFIX, MESSAGE_BUDGET, MESSAGE_MAX_LENGTH, ONLINE_CONTEXT_PREFIX, TARGETED_CONTEXT_PREFIX } from "@/lib/assistant/chat-context";
+import { buildCaseRefsText, buildHistoryMessages, computeDetailBudget, DEEP_CONTEXT_PREFIX, DETAIL_CONTEXT_PREFIX, DETAIL_MIN_LENGTH, MESSAGE_BUDGET, ONLINE_CONTEXT_PREFIX, TARGETED_CONTEXT_PREFIX } from "@/lib/assistant/chat-context";
 import { checkChatInput, GUARD_BLOCKED_REPLY } from "@/lib/assistant/input-guard";
+import { isBillQuestion } from "@/lib/assistant/bill-signal";
+import { mapErrorCode, onlineErrorNote, onlineFailureTipText } from "@/lib/assistant/online-failure-text";
 import { streamFollowup, type FollowupPlanStep } from "@/lib/assistant/stream-followup";
 import {
   analyzeQuestion,
@@ -33,7 +35,7 @@ import {
   createDuckDbRunner,
   createDuckDbSchemaSnapshot,
   DATASET_EMPTY_TEXT,
-  EXAMPLE_QUESTIONS,
+  ENGINE_READ_ERROR_TEXT,
   type QaIntent,
   type SqlRunner,
 } from "@/lib/chat/qa-engine";
@@ -112,12 +114,6 @@ export interface ChatPipelineOptions {
   enableGuard?: boolean;
 }
 
-/** 在线兜底失败时的本地提示：说明需要在线服务，并列出本地可回答的问题建议 */
-function onlineFallbackTipText(): string {
-  const lines = EXAMPLE_QUESTIONS.slice(0, 3).map((question) => `· ${question}`);
-  return `这个问题需要连接在线服务才能回答。可以先试试下面这些问题：\n${lines.join("\n")}`;
-}
-
 /**
  * 商户 Top50 名单查询（08 修订案 A15）：固定白名单聚合 SQL，经 runWhitelistedAggregate
  * 预检执行。商户名单是定向明细里唯一的用户参数来源——名单只来自数据库查询，
@@ -160,10 +156,12 @@ const INTERRUPTED_NOTE = "\n\n（回答中断：等待在线服务响应超时�
  * 提问不会永久卡死——超时后按未恢复口径继续走管线（本地规则答「还没有
  * 账单数据」或在线兜底按空统计处理），恢复任务在后台自行落定。
  * 上限必须盖过健康路径的恢复耗时：刷新后 DuckDB-WASM 冷启动 + 行数据重放
- * 实测约 26s（dev 模式，首击编译更慢），上限设 60s——健康恢复永远在限内
- * 落定、问题答对；只有真悬挂（IndexedDB 损坏等）才走超时降级口径。
+ * 实测约 26s（dev 模式，首击编译更慢）。热修复五轮把上限从 60s 提到
+ * 150s——它还必须盖过 duckdb/service 的 DUCKDB_INIT_TIMEOUT_MS（120s），
+ * 否则慢设备上恢复跑到 90s+ 时会被 60s 竞速误杀，健康数据集被误答
+ * 「还没有账单数据」。
  */
-const RESTORE_WAIT_MS = 60_000;
+const RESTORE_WAIT_MS = 150_000;
 
 export interface ChatPipeline {
   turns: ChatTurn[];
@@ -283,7 +281,7 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
     let accumulated = "";
     let turnId: number | null = null;
 
-    /** 停滞超时的统一收尾：已有内容保留并追加中断补注；无内容撤占位补整段提示 */
+    /** 停滞超时的统一收尾：已有内容保留并追加中断补注；无内容撤占位补超时分档提示 */
     function finishAborted() {
       if (finished) return;
       finished = true;
@@ -292,9 +290,15 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         updateTurnText(turnId, `${accumulated}${INTERRUPTED_NOTE}`);
       } else if (turnId !== null) {
         setTurns((prev) => prev.filter((turn) => turn.id !== turnId));
-        appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+        appendTurn({
+          role: "assistant",
+          text: onlineFailureTipText("TIMEOUT"),
+        });
       } else {
-        appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+        appendTurn({
+          role: "assistant",
+          text: onlineFailureTipText("TIMEOUT"),
+        });
       }
     }
 
@@ -336,32 +340,11 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
           targeted = "";
         }
       }
-      // 明细快照：最近 150 笔收支明细（08 修订案 A8），读不到则省略该段。
-      // deep 模式统计 / 定向明细 / 明细分三条消息发送；明细预算扣除统计段与
-      // 定向段，保证三条消息总长不超接口预算（统计 ≤2400、定向 ≤2500）
-      let details = "";
-      try {
-        const detailBudget = deep
-          ? Math.min(
-              MESSAGE_MAX_LENGTH - 100,
-              MESSAGE_BUDGET - context.length - targeted.length - 60,
-            )
-          : Math.max(0, MESSAGE_MAX_LENGTH - 100 - context.length);
-        details = await buildDetailContext(createDuckDbDetailSnapshot(), detailBudget);
-      } catch {
-        details = "";
-      }
-      if (bailIfStopped()) return;
-      const combined = [context, targeted, details].filter(Boolean).join("\n");
-      // 统计与明细都拿不到（未导入账单或引擎读不到数据）：不空手转在线
-      if (!combined) {
-        setThinking(null);
-        appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
-        return;
-      }
-
-      // RAG 检索：取与问题相关的案例参考（检索层产出，非模型生成，防幻觉引用）；
-      // 失败/超时静默跳过，不阻断在线兜底主链路
+      // RAG 检索提前到明细快照之前（热修复五轮）：案例参考段长度必须计入
+      // 快照预算——此前 refs 从不入预算，deep 档满配上下文 + 案例参考可把
+      // 消息总长推到 8000 以上触发接口 400（A18 实测 8242 字被参数校验
+      // 拒绝，用户只看到笼统的「需要连接在线服务」）。检索层产出、非模型
+      // 生成，防幻觉引用；失败/超时静默跳过，不阻断在线兜底主链路
       let ragCases: ChatCaseRef[] = [];
       try {
         const ragResponse = await fetch("/api/rag", {
@@ -381,6 +364,36 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         ragCases = [];
       }
       if (bailIfStopped()) return;
+      const refs = buildCaseRefsText(ragCases);
+
+      // 明细快照：最近 150 笔收支明细（08 修订案 A8），读不到则省略该段。
+      // deep 模式统计 / 定向明细 / 明细分三条消息发送；明细预算按总预算
+      // 扣除统计段、定向段、案例参考段、前缀、本轮问题与历史预留后取剩余，
+      // 保证全部消息总长不超接口预算（统计 ≤2400、定向 ≤2500）；预算低于
+      // DETAIL_MIN_LENGTH 时省略快照段（气泡脚注按实际发送标注）
+      let details = "";
+      const detailBudget = computeDetailBudget({ deep, context, targeted, refs, question });
+      if (detailBudget >= DETAIL_MIN_LENGTH) {
+        try {
+          details = await buildDetailContext(createDuckDbDetailSnapshot(), detailBudget);
+        } catch {
+          details = "";
+        }
+      }
+      if (bailIfStopped()) return;
+      const combined = [context, targeted, details].filter(Boolean).join("\n");
+      // 统计与明细都拿不到（未导入账单或引擎读不到数据）：不空手转在线。
+      // 数据集在但上下文查询全部失败时答「读取异常」，不误指「还没有账单数据」
+      if (!combined) {
+        setThinking(null);
+        const hasDataset = usePipeline.getState().datasetTxHash !== null;
+        appendTurn({
+          role: "assistant",
+          text: hasDataset ? ENGINE_READ_ERROR_TEXT : DATASET_EMPTY_TEXT,
+          note: "local",
+        });
+        return;
+      }
 
       // sessionSchema 聚合快照（07 §18 协议演示工具回执）：只含列元数据与统计
       const txHash = usePipeline.getState().datasetTxHash;
@@ -409,11 +422,15 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       } else if (combined) {
         messages.push({ role: "user", content: `${ONLINE_CONTEXT_PREFIX}${combined}` });
       }
-      if (ragCases.length > 0) {
-        const refs = ragCases.map((c) => `案例参考（${c.title}：${c.snippet}）`).join("\n");
+      if (refs) {
         messages.push({ role: "user", content: refs });
       }
-      const budget = MESSAGE_BUDGET - messages.reduce((sum, m) => sum + m.content.length, 0);
+      // 历史预算必须扣掉本轮问题长：buildHistoryMessages 恒在末尾追加问题、
+      // 不占预算（用户刚输入的内容不能被裁掉），不在这里先扣就会溢出
+      const budget =
+        MESSAGE_BUDGET -
+        messages.reduce((sum, m) => sum + m.content.length, 0) -
+        question.length;
       messages.push(...buildHistoryMessages(turns, question, budget));
 
       const response = await fetch("/api/followup", {
@@ -430,8 +447,25 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       });
 
       if (!response.ok) {
-        // 503（服务不可用）/ 502（上游异常）/ 400（参数校验）→ 本地提示气泡
-        appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+        // 503（服务不可用）/ 502（上游异常）/ 400（参数校验）→ 按原因分档的
+        // 本地提示气泡：code 决定分档，detail 只带 HTTP 状态码。服务端
+        // message（400 时含 zod 校验细节）是排障字段，只进控制台不上气泡
+        let code: string | undefined;
+        try {
+          const body = (await response.json()) as { code?: string; message?: string };
+          code = body.code;
+          if (body.message) console.warn("[followup]", response.status, body.message);
+        } catch {
+          // 非 JSON 响应体（网关错误页等）：只按 HTTP 状态提示
+        }
+        const kind = code ? mapErrorCode(code) : "HTTP_ERROR";
+        appendTurn({
+          role: "assistant",
+          text: onlineFailureTipText(
+            kind === "UNKNOWN" ? "HTTP_ERROR" : kind,
+            String(response.status),
+          ),
+        });
         return;
       }
       // 响应已到：停滞计时从首字节重新起算，并把窗口从响应前的 120s 长窗
@@ -457,6 +491,9 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       };
 
       let outcome: "complete" | "error" | "abort" | null = null;
+      // SSE error 事件的 code/message（热修复五轮）：流收尾时按 code 分档提示
+      let errorCode: string | undefined;
+      let errorMessage: string | undefined;
       for await (const event of streamFollowup(response)) {
         if (bailIfStopped()) return;
         // 每收到一个事件就重置停滞计时：持续产出的慢流永远不会被误杀
@@ -492,6 +529,8 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
           outcome = "complete";
           break;
         } else if (event.type === "error") {
+          errorCode = event.code;
+          errorMessage = event.message;
           outcome = "error";
           break;
         } else if (event.type === "abort") {
@@ -517,17 +556,26 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         return;
       }
       if (outcome === "error") {
-        // 服务端显式报错：无内容撤掉占位气泡补本地提示；已有内容保留不挂脚注
+        // 服务端显式报错：无内容撤掉占位气泡补分档提示；已有内容追加中断
+        // 补注（热修复五轮：此前半截回答静默保留，用户看不到任何出错迹象）
         if (accumulated.trim() === "") {
           setTurns((prev) => prev.filter((turn) => turn.id !== bubbleId));
-          appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+          appendTurn({
+            role: "assistant",
+            text: onlineFailureTipText(mapErrorCode(errorCode), errorMessage),
+          });
+        } else {
+          updateTurnText(bubbleId, `${accumulated}${onlineErrorNote(errorCode)}`);
         }
         return;
       }
       // 流干净收尾但没等到 run:complete：按已收内容兜底；零内容则撤占位气泡
       if (accumulated.trim() === "") {
         setTurns((prev) => prev.filter((turn) => turn.id !== bubbleId));
-        appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+        appendTurn({
+          role: "assistant",
+          text: onlineFailureTipText("NETWORK_OFFLINE"),
+        });
         return;
       }
       updateTurnText(bubbleId, accumulated);
@@ -553,18 +601,29 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       setTurns((prev) =>
         prev.filter((turn) => !(turn.role === "assistant" && turn.text === "" && !turn.note)),
       );
-      appendTurn({ role: "assistant", text: onlineFallbackTipText() });
+      appendTurn({
+        role: "assistant",
+        text: onlineFailureTipText("NETWORK_OFFLINE"),
+      });
     } finally {
       stallTimer.clear();
       if (aliveRef.current) setThinking(null);
     }
   }
 
-  /** 转在线兜底前的最后一道本地闸门：没有账单数据时直接回「先导入账单」 */
-  async function fallToOnline(text: string, deep = false) {
+  /**
+   * 转在线兜底前的最后一道本地闸门：没有账单数据时直接本地作答。
+   * restoreTimedOut（会话恢复在 RESTORE_WAIT_MS 内未落定）时数据集可能
+   * 还在库中、只是没重建完：按「读取异常」提示，不误指「还没有账单数据」
+   */
+  async function fallToOnline(text: string, deep = false, restoreTimedOut = false) {
     if (usePipeline.getState().datasetTxHash === null) {
       setThinking(null);
-      appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
+      appendTurn({
+        role: "assistant",
+        text: restoreTimedOut ? ENGINE_READ_ERROR_TEXT : DATASET_EMPTY_TEXT,
+        note: "local",
+      });
       return;
     }
     await runOnlineFallback(text, deep);
@@ -614,18 +673,22 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
     // 永久卡死，超时后按未恢复口径继续走管线（本地规则答「还没有账单数据」
     // 或在线兜底按空统计处理），恢复任务在后台自行落定。
     setThinking("data");
+    // 记录恢复是否在 RESTORE_WAIT_MS 内落定：超时/异常时数据集可能仍在
+    // 库中只是尚未重建，「还没有账单数据」的本地作答要改按「读取异常」区分
+    let restoreTimedOut = false;
     try {
-      await Promise.race([
-        restorePipelineSnapshot(),
-        new Promise<void>((resolve) => setTimeout(resolve, RESTORE_WAIT_MS)),
+      const restored = await Promise.race([
+        restorePipelineSnapshot().then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), RESTORE_WAIT_MS)),
       ]);
+      restoreTimedOut = !restored;
     } catch {
-      // 恢复模块自身已吞错，这里仅防御未来签名变化
+      restoreTimedOut = true; // 恢复模块自身已吞错，这里仅防御未来签名变化
     }
     if (!aliveRef.current) return;
 
     if (options?.deep) {
-      await fallToOnline(text, true);
+      await fallToOnline(text, true, restoreTimedOut);
       return;
     }
 
@@ -636,17 +699,22 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       intent = null; // 解析异常按未识别处理，转后续路径
     }
     if (intent) {
-      // 数据未导入时直接答「还没有账单数据」，不必为探空初始化 DuckDB-WASM
+      // 数据未导入时直接答「还没有账单数据」，不必为探空初始化 DuckDB-WASM；
+      // 恢复超时则按「读取异常」提示（数据集在库但尚未重建完成）
       if (usePipeline.getState().datasetTxHash === null) {
         setThinking(null);
-        appendTurn({ role: "assistant", text: DATASET_EMPTY_TEXT, note: "local" });
+        appendTurn({
+          role: "assistant",
+          text: restoreTimedOut ? ENGINE_READ_ERROR_TEXT : DATASET_EMPTY_TEXT,
+          note: "local",
+        });
         return;
       }
       try {
         const answer = await answerLocalQuestion(getRunner(), intent, anchor);
         if (!aliveRef.current) return;
         if (answer.kind === "unhandled") {
-          await fallToOnline(text);
+          await fallToOnline(text, false, restoreTimedOut);
         } else {
           setThinking(null);
           appendTurn({ role: "assistant", text: answer.text, note: "local" });
@@ -654,14 +722,17 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         return;
       } catch {
         // 本地查询失败（数据库接线 / 白名单拒绝等）→ 转在线兜底
-        await fallToOnline(text);
+        await fallToOnline(text, false, restoreTimedOut);
         return;
       }
     }
 
     // 本地案例检索（仅智能助理，A12）：账单查询之外的常识/攻略类问题先查
-    // 本地案例库，零 API 调用；未命中或分数不足再转在线
-    if (enableCasePath) {
+    // 本地案例库，零 API 调用；未命中或分数不足再转在线。账单问题信号
+    // 闸门（热修复五轮）：本地规则弃权的账单问法（如「上上上个月花费
+    // 多少费用」超时间窗词表）跳过案例检索直转在线——否则会被 TF-IDF 的
+    // 通用词误中维权案例，用攻略回答账单问题
+    if (enableCasePath && !isBillQuestion(text)) {
       setThinking("cases");
       try {
         const found = searchLocalCases(text);
@@ -679,7 +750,7 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         // 检索异常按未命中处理，转在线兜底
       }
     }
-    await fallToOnline(text);
+    await fallToOnline(text, false, restoreTimedOut);
   }
 
   function reset() {

@@ -6,8 +6,8 @@
  *
  * 对应热修复钉住的三个瞬态：
  * 1. 恢复飞行中提问曾「本地答不了 → 误转在线」→ 现在提问前等待恢复落定
- *    （60s 上限，盖过 DuckDB 冷启动实测约 26s 的恢复耗时），恢复完成后
- *    本地规则正常命中；
+ *    （150s 上限，盖过 DuckDB 冷启动实测约 26s 与慢设备 90s+ 的恢复耗时），
+ *    恢复完成后本地规则正常命中；
  * 2. 「上上月」曾被 WINDOW_WORDS 子串匹配吞成上个月 → 现在词表先声明
  *    two_months_ago 词条，回答标注「上上个月」；
  * 3. 洞察卡断言曾是恢复完成的隐形屏障 → 现在刷新后立即提问，洞察卡
@@ -39,10 +39,12 @@ function collectConsoleErrors(page: Page): string[] {
 }
 
 test("导入账单 → 刷新 → 账本恢复 + 智能助理本地回答（不掉在线兜底）", async ({ page }) => {
-  // 本用例刻意叠加长阶段（导入腿 + 恢复等待上限 60s + 首问 120s 断言窗口），
-  // 总时长接近全局 120s 测试超时的两倍：放宽总预算到 240s，让首问断言窗口
-  // 全额可用——不放宽的话全局超时会与断言窗口共享预算、提前触发
-  test.setTimeout(240_000);
+  // 本用例刻意叠加长阶段（导入腿 + 恢复等待上限 150s + 首问 180s 断言窗口），
+  // 首问窗口必须盖过恢复上限（150s）加本地计算耗时——慢设备上恢复落在
+  // 120–150s 时产品行为正确（恢复后本地命中），窗口过小会先超时挂掉。
+  // 总预算按最坏叠加放宽到 540s，让各断言窗口全额可用：不放宽的话全局
+  // 超时会与断言窗口共享预算、提前触发
+  test.setTimeout(540_000);
 
   const errors = collectConsoleErrors(page);
 
@@ -68,7 +70,7 @@ test("导入账单 → 刷新 → 账本恢复 + 智能助理本地回答（不�
 
   // 3) 打开抽屉，第一问紧跟刷新发出（恢复可能仍在飞行）：提问会先等恢复
   //    落定再走管线，本地引擎按账单数据回答并挂本地脚注。金额只从回答
-  //    气泡正则解析，不写任何固定数字。断言窗口盖过恢复上限（60s）+
+  //    气泡正则解析，不写任何固定数字。断言窗口盖过恢复上限（150s）+
   //    本地计算耗时（刷新后 DuckDB 冷启动 + 行数据重放实测约 26s）
   const drawer = page.locator('section[aria-label="智能助理"]');
   await page.getByRole("button", { name: "打开智能助理" }).click();
@@ -77,7 +79,7 @@ test("导入账单 → 刷新 → 账本恢复 + 智能助理本地回答（不�
   await input.fill("这个月花了多少");
   await input.press("Enter");
   const totalBubble = drawer.getByText(/¥/).last();
-  await expect(totalBubble).toBeVisible({ timeout: 120_000 });
+  await expect(totalBubble).toBeVisible({ timeout: 180_000 });
   const totalText = await totalBubble.innerText();
   expect(totalText).toContain("元");
   expect(Number(totalText.match(/¥([0-9][0-9,.]*)/)?.[1]?.replace(/,/g, ""))).toBeGreaterThan(0);

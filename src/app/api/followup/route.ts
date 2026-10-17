@@ -98,6 +98,18 @@ function argsDigest(args: unknown): string {
   return text.length <= 120 ? text : `${text.slice(0, 117)}...`;
 }
 
+/** AI SDK 401/403（密钥无效或过期）：与「未配置密钥」同归 LLM_EXHAUSTED，不可重试 */
+function isApiAuthError(error: unknown): boolean {
+  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
+  return typeof statusCode === "number" && (statusCode === 401 || statusCode === 403);
+}
+
+/** AI SDK 402（余额不足）/429（限流）：额度类错误，提示稍后再试而非检查网络 */
+function isQuotaError(error: unknown): boolean {
+  const statusCode = (error as { statusCode?: unknown } | null)?.statusCode;
+  return typeof statusCode === "number" && (statusCode === 402 || statusCode === 429);
+}
+
 interface ToolCallTiming {
   startedAt: number;
 }
@@ -111,7 +123,10 @@ export async function POST(request: Request) {
   }
   const parsed = FollowupRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return Response.json({ code: "BAD_REQUEST", message: "参数校验失败" }, { status: 400 });
+    // 校验失败时把 zod 的字段级原因带回客户端（不含请求原文，只含字段名与规则文案）
+    const issue = parsed.error.issues[0];
+    const detail = issue ? `${issue.path.join(".")} ${issue.message}` : "未知原因";
+    return Response.json({ code: "BAD_REQUEST", message: `参数校验失败：${detail}` }, { status: 400 });
   }
   const { question, messages, sessionSchema, datasetSource, analysisMode } = parsed.data;
 
@@ -356,6 +371,17 @@ export async function POST(request: Request) {
             message: "在线服务暂不可用（未配置对应模型密钥）",
             retryable: false,
           });
+        } else if (isApiAuthError(error)) {
+          // 密钥存在但无效/过期：与「未配置密钥」同归 LLM_EXHAUSTED（不可重试），
+          // 不要混进 NETWORK_OFFLINE 让用户误判成断网
+          send({
+            t: "error",
+            ts: now(),
+            runId,
+            code: "LLM_EXHAUSTED",
+            message: "模型密钥无效或已过期，请检查 DEEPSEEK_API_KEY",
+            retryable: false,
+          });
         } else if (error instanceof Error && error.name === "McpTimeoutError") {
           send({
             t: "error",
@@ -363,6 +389,16 @@ export async function POST(request: Request) {
             runId,
             code: "TIMEOUT",
             message: `工具调用超时（${MCP_TOOL_TIMEOUT_MS / 1000}s）`,
+            retryable: true,
+          });
+        } else if (isQuotaError(error)) {
+          // 402/429：上游额度/限流，可重试但不该提示「检查网络」
+          send({
+            t: "error",
+            ts: now(),
+            runId,
+            code: "QUOTA_EXCEEDED",
+            message: "在线模型额度不足或请求过于频繁（402/429）",
             retryable: true,
           });
         } else {

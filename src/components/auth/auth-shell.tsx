@@ -67,6 +67,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
               width={1440}
               height={720}
               className="block w-full"
+              loading="eager"
             />
           </div>
         </div>

@@ -223,6 +223,10 @@ const MONTH_TOTAL_WORDS = ["花了", "总共", "一共", "支出", "花费", "�
 export const DATASET_EMPTY_TEXT =
   "还没有账单数据，先到「上传账单」导入一份账单，我就能回答这些问题了。";
 
+/** 数据集已导入但读取失败的统一文案（区别于「还没有账单数据」：前者提示刷新，后者提示导入） */
+export const ENGINE_READ_ERROR_TEXT =
+  "账单数据读取异常，请刷新页面后重试；若反复出现，可到「上传账单」重新导入。";
+
 /** 时间窗的答案措辞（specific_month 按回答时刻解析年份，如「2026年1月」） */
 function windowLabel(intent: QaIntent, now: Date): string {
   switch (intent.window) {
