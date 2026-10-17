@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Check, PanelBottomOpen, RotateCcw } from "lucide-react";
+import { ArrowRight, Check, PanelBottomOpen } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -390,14 +390,6 @@ export default function CheckupPage() {
                   立即查看
                   <ArrowRight className="size-4" aria-hidden />
                 </Link>
-                <button
-                  type="button"
-                  onClick={restartRun}
-                  className="inline-flex h-11 items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface) px-5 text-sm font-medium text-(--color-ink-secondary) transition hover:border-(--color-border-strong)"
-                >
-                  <RotateCcw className="size-4" aria-hidden />
-                  重新播放
-                </button>
               </div>
             </motion.div>
           ) : null}

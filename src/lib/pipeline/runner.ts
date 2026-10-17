@@ -340,7 +340,7 @@ export function createPipelineRun(
     } catch (err) {
       // 原始报错只留开发者日志，不给用户看内部信息
       console.error("体检装载失败：", err);
-      push("tool", "体检没跑起来 · 请点「重新播放」再试一次");
+      push("tool", "体检没跑起来 · 刷新页面即可重新开始");
       finish();
     }
   };
