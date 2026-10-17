@@ -13,6 +13,7 @@ const QUICK_LINKS: { href: string; label: string }[] = [
 
 /**
  * 页脚（05 §1.1）：品牌 + 快捷链接 + 数据说明三栏。
+ * 数据说明收敛为一行结论，细节统一指向 /privacy，避免全站重复隐私长文。
  * 移动端隐藏：底部 tab bar 已占据导航位，避免双份导航与底部遮挡。
  * 纯静态内容，保持服务端渲染。
  */
@@ -22,23 +23,23 @@ export function Footer() {
       <Container className="py-10">
         <div className="grid gap-8 md:grid-cols-3">
           <div>
-            <p className="flex items-center gap-2 text-lg font-bold tracking-tight">
+            <p className="flex items-center gap-2 text-lg font-bold tracking-tight text-(--color-ink)">
               <HeartPulse className="size-5 text-(--color-health)" aria-hidden />
               消费CT
             </p>
-            <p className="mt-2 max-w-xs text-sm text-slate-600 dark:text-slate-400">
+            <p className="mt-2 max-w-xs text-sm text-(--color-ink-secondary)">
               给你的账单做一次 AI 体检：先体检、你审阅、账单本地处理。
             </p>
           </div>
 
           <nav aria-label="快捷链接">
-            <h3 className="text-sm font-semibold">快捷链接</h3>
+            <h3 className="text-sm font-semibold text-(--color-ink)">快捷链接</h3>
             <ul className="mt-3 space-y-2 text-sm">
               {QUICK_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
                     href={link.href}
-                    className="text-slate-600 transition-colors hover:text-(--color-primary) dark:text-slate-400"
+                    className="text-(--color-ink-secondary) transition-colors hover:text-(--color-primary)"
                   >
                     {link.label}
                   </Link>
@@ -48,18 +49,15 @@ export function Footer() {
           </nav>
 
           <div>
-            <h3 className="text-sm font-semibold">数据说明</h3>
-            <p className="mt-3 flex items-center gap-1.5 text-sm text-slate-600 dark:text-slate-400">
+            <h3 className="text-sm font-semibold text-(--color-ink)">数据说明</h3>
+            <p className="mt-3 flex items-center gap-1.5 text-sm text-(--color-ink-secondary)">
               <Lock className="size-4 text-(--color-health)" aria-hidden />
               账单本地计算 · 服务端零存储
-            </p>
-            <p className="mt-2 text-xs text-slate-500 dark:text-slate-500">
-              账单解析与体检默认都在浏览器里完成；本地答不了的追问会把统计与最近明细快照发给 AI，服务器只转发，不留存。
             </p>
           </div>
         </div>
 
-        <div className="mt-8 border-t border-(--color-border) pt-4 text-xs text-slate-500 dark:text-slate-400">
+        <div className="mt-8 border-t border-(--color-border) pt-4 text-xs text-(--color-ink-muted)">
           © 2026 SpendCT · 参赛作品
         </div>
       </Container>

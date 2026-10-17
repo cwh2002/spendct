@@ -3,11 +3,16 @@
  * 日期范围筛选（近 7/30/90 天、本月、全部）必须同步改变类别 / 商户 / 明细
  * （2026-10-16 修订：真实动线按 date_iso 重查，演示动线按行日期过滤）；
  * 「支出走势（月）」已迁至商户统计视图，本视图不再渲染。
+ * 洞察页受 AuthGuard 保护，每个用例开头先以演示账户登录（helpers.loginDemo，
+ * mock 模式下验证码留空即过），再进入 /insights?view=ledger。
  */
 import { expect, test } from "@playwright/test";
 
+import { loginDemo } from "./helpers";
+
 test.describe("账本汇总视图（/insights?view=ledger）", () => {
   test("页面加载：标题、筛选行与两张图表卡出现，走势图已迁出", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/insights?view=ledger");
     await expect(page.getByRole("heading", { name: "账本汇总" })).toBeVisible();
     // 默认近 90 天选中（范围按钮组 aria-pressed 表达当前档）
@@ -22,6 +27,7 @@ test.describe("账本汇总视图（/insights?view=ledger）", () => {
   });
 
   test("日期范围筛选同步作用于明细表：档位越近行数越少且均非空", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/insights?view=ledger");
     const detailTable = page.locator("div").filter({
       has: page.getByRole("heading", { name: "明细表" }),

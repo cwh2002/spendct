@@ -6,8 +6,10 @@
  * 链路：选择入口（CSV 文件 / 内置账单）→ 文本就绪 →
  * parseBillCsv 嗅探（格式/置信度/字段映射/警告）→ 预览人工确认 →
  * stripDuplicates + buildCleanCsv → getDuckDB + importBillCsv（预览表）→
- * registerImportedBook（账本登记 + 激活键）→ 管线数据集装配
- * （cleanBillRows → hashCleanRows → initDataset → usePipeline.setDataset）→ 跳转体检。
+ * 管线数据集装配（cleanBillRows → 与最近一次导入行 mergeCleanBatches 追加合并去重 →
+ * hashCleanRows → initDataset → usePipeline.setDataset）→
+ * registerImportedBook（账本登记 + 激活键）→ saveImportedDataset（刷新恢复落库）→
+ * 跳转体检。追加导入只增不减：已有行保序在前，重复行跳过并计入成功提示。
  *
  * 两个外部约束：
  * 1. 本文件读 useSearchParams（?sample=1 自动演示、?next= 回跳），
@@ -32,7 +34,6 @@ import {
   Loader2,
   PenLine,
   RefreshCw,
-  ShieldCheck,
   Sparkles,
   TrendingDown,
   TrendingUp,
@@ -40,15 +41,23 @@ import {
 
 import { Container } from "@/components/layout/container";
 import { ResumeBanner } from "@/components/home/resume-banner";
+import { recordProgressEvent, recheckAll, resetRecheckOverrides } from "@/lib/achievements";
+import { getLatestDataset } from "@/lib/account/db";
 import { useAuth } from "@/lib/account/store";
 import { initDataset } from "@/lib/duckdb/dataset";
 import { getDuckDB, importBillCsv } from "@/lib/duckdb/service";
 import { featureFlags } from "@/lib/feature-flags";
 import { registerImportedBook } from "@/lib/import/active-book";
 import { cleanBillRows, hashCleanRows } from "@/lib/import/clean-input";
+import { mergeCleanBatches } from "@/lib/import/merge-batches";
 import { buildCleanCsv, parseBillCsv, stripDuplicates } from "@/lib/import/parse-csv";
+import type { CleanTransaction } from "@/lib/schema/bill";
 import { decodeBillFile } from "@/lib/import/decode-csv";
-import { generateSampleCsv, SAMPLE_BILL_FILE_NAME, SAMPLE_ROW_COUNT } from "@/lib/import/sample-bill";
+import {
+  generateSampleCsv,
+  SAMPLE_BILL_FILE_NAME,
+  SAMPLE_ROW_COUNT,
+} from "@/lib/import/sample-bill";
 import type { ParseResult } from "@/lib/import/types";
 import {
   restorePipelineSnapshot,
@@ -82,8 +91,16 @@ const FORMAT_META = {
 /** 识别质量三色（好=绿 / 一般=黄 / 需留意=橙红），与状态色规范对齐 */
 const CONFIDENCE_META = {
   high: { label: "好", dotClass: "bg-(--color-good)", textClass: "text-(--color-good-ink)" },
-  medium: { label: "一般", dotClass: "bg-(--color-warning)", textClass: "text-(--color-warning-ink)" },
-  low: { label: "需留意", dotClass: "bg-(--color-serious)", textClass: "text-(--color-serious-ink)" },
+  medium: {
+    label: "一般",
+    dotClass: "bg-(--color-warning)",
+    textClass: "text-(--color-warning-ink)",
+  },
+  low: {
+    label: "需留意",
+    dotClass: "bg-(--color-serious)",
+    textClass: "text-(--color-serious-ink)",
+  },
 } as const;
 
 /** 标准字段 → 中文展示名（识别结果确认表用） */
@@ -139,7 +156,10 @@ interface UploadState {
   progressText: string;
   fileName: string;
   result: ParseResult | null;
+  /** 本次导入实际新增的行数（追加合并去重后） */
   importedCount: number;
+  /** 本次导入跳过的疑似重复行数（与已有行/本批已收行同键） */
+  skippedCount: number;
   importStatus: ImportStatus;
   importError: string;
 }
@@ -150,15 +170,14 @@ const INITIAL_STATE: UploadState = {
   fileName: "",
   result: null,
   importedCount: 0,
+  skippedCount: 0,
   importStatus: "idle",
   importError: "",
 };
 
 /** OCR 截图识别动线的相位（与 CSV 的 Stage 互斥：OCR 激活时右栏接管预览区） */
 type OcrPhase =
-  | { phase: "idle" }
-  | { phase: "recognizing" }
-  | { phase: "review"; result: OcrRecognizedResult };
+  { phase: "idle" } | { phase: "recognizing" } | { phase: "review"; result: OcrRecognizedResult };
 
 /* ---------------- 预览区各状态视图（纯展示，无钩子） ---------------- */
 
@@ -184,7 +203,7 @@ function EmptyPreview() {
       </div>
       <p className="font-semibold text-(--color-ink)">还没有账单——从左侧选择一个入口开始</p>
       <p className="max-w-xs text-sm text-(--color-ink-muted)">
-         拖入账单文件，或者点左侧「内置账单」直接体验
+        拖入账单文件，或者点左侧「内置账单」直接体验
       </p>
     </div>
   );
@@ -210,11 +229,11 @@ function OcrRecognizingPreview() {
       <Loader2 className="size-8 animate-spin text-(--color-primary)" aria-hidden />
       <div className="max-w-xs">
         <p className="font-semibold text-(--color-ink)">正在识别截图…</p>
-        <p className="mt-1 text-sm text-(--color-ink-muted)">逐行读取时间、商户与金额，一般几秒内完成</p>
+        <p className="mt-1 text-sm text-(--color-ink-muted)">
+          逐行读取时间、商户与金额，一般几秒内完成
+        </p>
       </div>
-      <p className="text-xs text-(--color-ink-muted)">
-        截图仅本次识别转发至视觉模型，服务端不保存
-      </p>
+      <p className="text-xs text-(--color-ink-muted)">截图仅本次识别转发至视觉模型，服务端不保存</p>
     </div>
   );
 }
@@ -256,7 +275,7 @@ function RejectedPreview({ warnings, onReselect }: { warnings: string[]; onResel
   );
 }
 
-function SuccessPreview({ count }: { count: number }) {
+function SuccessPreview({ count, skipped }: { count: number; skipped: number }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -266,7 +285,8 @@ function SuccessPreview({ count }: { count: number }) {
     >
       <CheckCircle2 className="size-14 text-(--color-good)" aria-hidden />
       <p className="text-lg font-semibold text-(--color-ink)">
-        已导入 {count.toLocaleString("zh-CN")} 笔，开始体检
+        新增 {count.toLocaleString("zh-CN")} 笔、跳过疑似重复 {skipped.toLocaleString("zh-CN")}{" "}
+        笔，开始体检
       </p>
       <p className="flex items-center gap-2 text-sm text-(--color-ink-muted)">
         <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -360,10 +380,16 @@ function ParsedPreview({
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-(--color-border) bg-(--color-surface-2)">
-                <th scope="col" className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)">
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)"
+                >
                   账单文件里的栏目
                 </th>
-                <th scope="col" className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)">
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)"
+                >
                   识别为
                 </th>
               </tr>
@@ -404,16 +430,28 @@ function ParsedPreview({
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b border-(--color-border) bg-(--color-surface-2)">
-                <th scope="col" className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)">
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)"
+                >
                   时间
                 </th>
-                <th scope="col" className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)">
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)"
+                >
                   商户
                 </th>
-                <th scope="col" className="px-3 py-2 text-right font-medium text-(--color-ink-secondary)">
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-right font-medium text-(--color-ink-secondary)"
+                >
                   金额（元）
                 </th>
-                <th scope="col" className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)">
+                <th
+                  scope="col"
+                  className="px-3 py-2 text-left font-medium text-(--color-ink-secondary)"
+                >
                   方向
                 </th>
               </tr>
@@ -422,9 +460,11 @@ function ParsedPreview({
               {previewRows.map((row, index) => (
                 <tr
                   key={`preview-${index}`}
-                  className={index === previewRows.length - 1 ? "" : "border-b border-(--color-border)"}
+                  className={
+                    index === previewRows.length - 1 ? "" : "border-b border-(--color-border)"
+                  }
                 >
-                  <td className="px-3 py-2 whitespace-nowrap font-(--font-mono) text-xs text-(--color-ink-secondary) tabular-nums">
+                  <td className="px-3 py-2 text-xs font-(--font-mono) whitespace-nowrap text-(--color-ink-secondary) tabular-nums">
                     {row.dateIso}
                     {row.timeIso ? ` ${row.timeIso}` : ""}
                   </td>
@@ -432,7 +472,7 @@ function ParsedPreview({
                     {row.merchant || "—"}
                   </td>
                   <td
-                    className={`px-3 py-2 text-right whitespace-nowrap font-(--font-mono) tabular-nums ${
+                    className={`px-3 py-2 text-right font-(--font-mono) whitespace-nowrap tabular-nums ${
                       row.direction === "expense"
                         ? "text-(--color-critical-ink)"
                         : "text-(--color-good-ink)"
@@ -499,10 +539,6 @@ function ParsedPreview({
             </>
           )}
         </button>
-        <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-(--color-ink-muted)">
-          <ShieldCheck className="size-3.5" aria-hidden />
-          导入后数据只在浏览器本地计算，明细不会离开设备
-        </p>
       </div>
     </div>
   );
@@ -629,7 +665,7 @@ export function UploadWorkspace() {
     }
   }, [sampleRequested, handleSample]);
 
-  /** 导入主链路：去重 → 标准 CSV → DuckDB 预览表 → 账本登记 → 管线数据集装配 → 跳转 */
+  /** 导入主链路：单文件去重 → 标准 CSV → DuckDB 预览表 → 追加合并去重 → 数据集装配 → 账本登记 → 跳转 */
   async function startImport() {
     const { result, importStatus, fileName } = state;
     if (!result || result.rows.length === 0 || importStatus === "importing") return;
@@ -646,13 +682,12 @@ export function UploadWorkspace() {
       const auth = useAuth.getState();
       await auth.hydrate().catch(() => {});
       const userId = useAuth.getState().user?.id ?? null;
-      const book = await registerImportedBook({
-        name: fileName || "未命名账单",
-        userId,
-        rowCount: imported.rowCount,
-      });
 
-      // 管线数据集装配（07 §3 完整 schema）。
+      // 新增/跳过计数：装配失败时按预览表导入数兜底（跳过 0），保持成功口径
+      let addedCount = imported.rowCount;
+      let skippedCount = 0;
+
+      // 管线数据集装配（07 §3 完整 schema + WP4 追加合并去重）。
       // 两层导入职责不同、表名相同是设计意图：importBillCsv 用 read_csv_auto
       // 建 6 列 transactions 表，只服务预览与 T3/T4 验收路径；initDataset
       // 内部先 dropDataset 清掉这张同名预览表，再按 18 列 DDL 重建并补齐
@@ -660,12 +695,42 @@ export function UploadWorkspace() {
       // 预览表只是装配前的临时产物，装配完成即被替换。
       try {
         const cleaned = await cleanBillRows(deduped, fileName || "未命名账单");
-        const datasetTxHash = await hashCleanRows(cleaned);
-        await initDataset(conn, cleaned);
+        // 追加合并去重（WP4）：已有行取「最近一次导入的完整行」——getLatestDataset
+        // 是全局最新（不过滤 userId），与「账单数据不随账户切换」口径一致；
+        // existing 保序在前，incoming 逐行比对 (日期|金额|商户) 键，重复跳过、
+        // 新行追加，装配 = 替换整表重建为合并后完整行（旧记录不删，只增不减）。
+        let existingRows: CleanTransaction[] = [];
+        try {
+          existingRows = (await getLatestDataset())?.rows ?? [];
+        } catch {
+          // 边界：IndexedDB 不可用且内存态已有数据时 existing=[] 会覆盖装配。
+          // 与「落库失败只降级」口径一致——持久化不可用本就无法恢复旧数据，
+          // 接受该降级（首次导入时 existing 同样为空，路径无差异）。
+        }
+        const merged = mergeCleanBatches(existingRows, cleaned);
+        addedCount = merged.added;
+        skippedCount = merged.skipped;
+        // 成就联动（WP8 §8c）：本次跳过条数累计进进度并全量校正（cleaner）
+        if (merged.skipped > 0) {
+          recordProgressEvent({ type: "dedupe-skipped", count: merged.skipped });
+          recheckAll();
+        }
+        // 指纹按合并后完整行重算：同批账单重复导入 → 合并结果同键同哈希，
+        // 阶段级缓存与断点键口径不变
+        const datasetTxHash = await hashCleanRows(merged.rows);
+        await initDataset(conn, merged.rows);
         usePipeline.getState().setDataset(datasetTxHash, "upload");
-        // 会话持久化（08 修订案 A18）：行数据与指纹落 IndexedDB，
+        const book = await registerImportedBook({
+          name: fileName || "未命名账单",
+          userId,
+          rowCount: merged.rows.length,
+        });
+        // 会话持久化（08 修订案 A18）：合并后完整行与指纹落 IndexedDB，
         // 刷新后自动恢复；失败只降级，不阻断跳转
-        if (book) await saveImportedDataset({ book, txHash: datasetTxHash, rows: cleaned });
+        if (book) await saveImportedDataset({ book, txHash: datasetTxHash, rows: merged.rows });
+        // 换数据集后旧视图侧成就缓存（预算月表/逐月支出等）作废：不清理的话
+        // 无参 recheckAll 会拿旧数据集的月表继续判定，且解锁集只并集不回退
+        resetRecheckOverrides();
       } catch (assemblyErr) {
         // 降级边界：装配任一步失败都不阻断跳转。检查页侧 verifySchema 会因
         // schema 缺失报错并给出「重新导入」提示，用户重导一次即可恢复；
@@ -677,12 +742,17 @@ export function UploadWorkspace() {
       setState((prev) => ({
         ...prev,
         stage: "success",
-        importedCount: imported.rowCount,
+        importedCount: addedCount,
+        skippedCount,
         importStatus: "idle",
       }));
       navTimerRef.current = setTimeout(() => router.push(nextPath), SUCCESS_NAV_DELAY_MS);
     } catch (err) {
-      setState((prev) => ({ ...prev, importStatus: "failed", importError: describeImportError(err) }));
+      setState((prev) => ({
+        ...prev,
+        importStatus: "failed",
+        importError: describeImportError(err),
+      }));
     }
   }
 
@@ -713,7 +783,16 @@ export function UploadWorkspace() {
     if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
   }
 
-  const { stage, result, fileName, progressText, importedCount, importStatus, importError } = state;
+  const {
+    stage,
+    result,
+    fileName,
+    progressText,
+    importedCount,
+    skippedCount,
+    importStatus,
+    importError,
+  } = state;
   const rejected = result !== null && result.rows.length === 0;
 
   return (
@@ -751,11 +830,10 @@ export function UploadWorkspace() {
                 <Sparkles className="size-5 text-(--color-primary)" aria-hidden />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block font-semibold text-(--color-ink)">
-                  先用内置账单体验
-                </span>
+                <span className="block font-semibold text-(--color-ink)">先用内置账单体验</span>
                 <span className="mt-0.5 block text-sm text-(--color-ink-muted)">
-                  一键生成 {SAMPLE_ROW_COUNT.toLocaleString("zh-CN")} 笔内置账单，走完上传到体检的完整流程
+                  一键生成 {SAMPLE_ROW_COUNT.toLocaleString("zh-CN")}{" "}
+                  笔内置账单，走完上传到体检的完整流程
                 </span>
               </span>
               <ChevronRight className="size-4 shrink-0 text-(--color-ink-muted)" aria-hidden />
@@ -840,7 +918,9 @@ export function UploadWorkspace() {
                   {stage === "parsing" ? (
                     <ParsingPreview text={progressText} fileName={fileName} />
                   ) : null}
-                  {stage === "success" ? <SuccessPreview count={importedCount} /> : null}
+                  {stage === "success" ? (
+                    <SuccessPreview count={importedCount} skipped={skippedCount} />
+                  ) : null}
                   {stage === "preview" && result ? (
                     rejected ? (
                       <RejectedPreview warnings={result.warnings} onReselect={resetToEmpty} />

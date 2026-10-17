@@ -2,11 +2,16 @@
  * 商户统计视图（08 修订案 A13）e2e：DEMO_MODE=mock 下走演示动线——
  * 覆盖视图入口切换、排名图渲染、数据表切换、商户搜索过滤与数据来源脚注，
  * 以及「逐笔明细」页签（A15 第二部分）：时间列带时分秒、深夜徽标与明细搜索。
+ * 洞察页受 AuthGuard 保护，每个用例开头先以演示账户登录（helpers.loginDemo，
+ * mock 模式下验证码留空即过），再进入 /insights 及其视图。
  */
 import { expect, test } from "@playwright/test";
 
+import { loginDemo } from "./helpers";
+
 test.describe("商户统计视图（/insights?view=merchants）", () => {
   test("从洞察页切换商户统计 tab，渲染排名图与数据来源脚注", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/insights");
     await page.getByRole("button", { name: "商户统计" }).click();
     await expect(page).toHaveURL(/view=merchants/);
@@ -23,6 +28,7 @@ test.describe("商户统计视图（/insights?view=merchants）", () => {
   test("切换数据表：展示全量商户行（商户 / 总额 / 笔数 / 占比 / 均笔 / 追问）", async ({
     page,
   }) => {
+    await loginDemo(page);
     await page.goto("/insights?view=merchants");
     // 视图内有两张图表卡（排名 + 走势），切换按钮需限定在排名卡内
     const rankingCard = page.locator("section").filter({
@@ -38,6 +44,7 @@ test.describe("商户统计视图（/insights?view=merchants）", () => {
   });
 
   test("数据表行「追问」按钮与柱子点击同一锚点协议（键盘可达入口）", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/insights?view=merchants");
     const rankingCard = page.locator("section").filter({
       has: page.getByRole("heading", { name: "商户支出排名" }),
@@ -52,6 +59,7 @@ test.describe("商户统计视图（/insights?view=merchants）", () => {
   });
 
   test("商户搜索过滤图表与数据表", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/insights?view=merchants");
     const rankingCard = page.locator("section").filter({
       has: page.getByRole("heading", { name: "商户支出排名" }),
@@ -67,6 +75,7 @@ test.describe("商户统计视图（/insights?view=merchants）", () => {
   });
 
   test("从商户统计切回卡片流，筛选条与快捷键提示恢复", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/insights?view=merchants");
     await page.getByRole("button", { name: "卡片流" }).click();
     await expect(page).toHaveURL(/\/insights$/);
@@ -74,6 +83,7 @@ test.describe("商户统计视图（/insights?view=merchants）", () => {
   });
 
   test("切到「逐笔明细」页签：时间列带时分秒、深夜徽标与数据来源脚注", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/insights?view=merchants");
     await page.getByRole("button", { name: "逐笔明细" }).click();
     await expect(page.getByRole("heading", { name: "逐笔明细" })).toBeVisible();
@@ -92,6 +102,7 @@ test.describe("商户统计视图（/insights?view=merchants）", () => {
   });
 
   test("逐笔明细搜索：关键字过滤后行数减少，无匹配时空态提示", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/insights?view=merchants");
     await page.getByRole("button", { name: "逐笔明细" }).click();
     const detailSection = page.locator("section").filter({

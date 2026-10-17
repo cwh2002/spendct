@@ -13,6 +13,7 @@ import { useEffect, useImperativeHandle, useRef, useState } from "react";
 
 import { ChatBubbles, ThinkingBubbles } from "@/components/assistant/chat-bubbles";
 import { useChatPipeline } from "@/lib/assistant/use-chat-pipeline";
+import { recordProgressEvent, recheckAll } from "@/lib/achievements";
 import { EXAMPLE_QUESTIONS } from "@/lib/chat/qa-engine";
 
 /**
@@ -65,7 +66,15 @@ export function FollowUpPanel({
   const [deepAnalysis, setDeepAnalysis] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const { turns, thinking, submit } = useChatPipeline({ enableCasePath: false });
+  // onSubmitted：每次被管线接受的提问计一次追问并全量校正成就（WP8 §8c questioner）。
+  // 全局助理不传该回调——普通问答不计「对洞察卡追问」。
+  const { turns, thinking, submit } = useChatPipeline({
+    enableCasePath: false,
+    onSubmitted: () => {
+      recordProgressEvent({ type: "followup" });
+      recheckAll();
+    },
+  });
 
   const hasSession = turns.length > 0;
 
@@ -125,13 +134,15 @@ export function FollowUpPanel({
         >
           <MessageSquare className="size-4.5" aria-hidden />
           {turns.length > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 grid min-w-4.5 place-items-center rounded-full bg-(--color-primary) px-1 text-[10px] font-bold leading-4 text-white tabular-nums">
+            <span className="absolute -top-0.5 -right-0.5 grid min-w-4.5 place-items-center rounded-full bg-(--color-primary) px-1 text-[10px] leading-4 font-bold text-white tabular-nums">
               {turns.length}
             </span>
           ) : null}
         </button>
         <span className="w-6 border-t border-(--color-border)" aria-hidden />
-        <span className="mt-1 text-xs text-(--color-ink-muted) [writing-mode:vertical-rl]">追问</span>
+        <span className="mt-1 text-xs text-(--color-ink-muted) [writing-mode:vertical-rl]">
+          追问
+        </span>
       </aside>
     );
   }
@@ -177,7 +188,10 @@ export function FollowUpPanel({
           /* 选中确认条（05 §1.6 AnchorConfirmBar）：追问前可取消选中 */
           <div className="rounded-(--radius-md) border border-(--color-primary)/30 bg-(--color-primary-soft) p-3">
             <div className="flex items-start gap-2">
-              <MousePointerClick className="mt-0.5 size-4 shrink-0 text-(--color-brand-600)" aria-hidden />
+              <MousePointerClick
+                className="mt-0.5 size-4 shrink-0 text-(--color-brand-600)"
+                aria-hidden
+              />
               <p className="min-w-0 flex-1 text-sm leading-relaxed">
                 <span className="font-semibold">已选中：</span>
                 {anchor.label}

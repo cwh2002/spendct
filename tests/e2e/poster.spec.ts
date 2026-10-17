@@ -2,8 +2,12 @@
  * 年度海报分享（A17）端到端动线：演示数据路径下
  * 预览 canvas 绘制 → 三样式切换 → 标语输入计数 → 下载 PNG 文件名校验。
  * 海报全程浏览器本地绘制（poster-canvas），不上传任何数据。
+ * 海报页受 AuthGuard 保护，用例开头先以演示账户登录（helpers.loginDemo，
+ * mock 模式下验证码留空即过），再进入 /poster。
  */
 import { expect, test, type Page } from "@playwright/test";
+
+import { loginDemo } from "./helpers";
 
 function collectConsoleErrors(page: Page): string[] {
   const errors: string[] = [];
@@ -15,6 +19,7 @@ function collectConsoleErrors(page: Page): string[] {
 
 test("年度海报：预览绘制 → 样式切换 → 标语 → 下载", async ({ page }) => {
   const errors = collectConsoleErrors(page);
+  await loginDemo(page);
   await page.goto("/poster");
   await expect(page.getByRole("heading", { name: "年度海报" })).toBeVisible();
 

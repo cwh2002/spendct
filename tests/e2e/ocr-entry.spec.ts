@@ -5,10 +5,14 @@
  * 与 CSV 同一落库路径进入体检。
  *
  * 识别内容断言只锚定 mock 剧本的确定性行（07 §7），不断言「识别结果=
- * 图片内容」——图片是合成条纹图，真实识别评测走 private-benchmark
- * 探针（probe-ocr.mjs）。
+ * 图片内容」——图片是合成条纹图，真实识别评测走仓库外的本地探针脚本
+ * （不进仓库）。
+ * 上传页受 AuthGuard 保护，两个用例开头先以演示账户登录
+ * （helpers.loginDemo，mock 模式下验证码留空即过），再进入 /upload。
  */
 import { expect, test } from "@playwright/test";
+
+import { loginDemo } from "./helpers";
 
 test("OCR 截图识别走通 入口 → 合规确认 → 识别 → 二次复核 → 导入 动线", async ({ page }) => {
   const errors: string[] = [];
@@ -16,6 +20,9 @@ test("OCR 截图识别走通 入口 → 合规确认 → 识别 → 二次复核
     if (msg.type() === "error") errors.push(msg.text());
   });
   page.on("pageerror", (err) => errors.push(String(err)));
+
+  // 0) 上传页受 AuthGuard 保护：先以演示账户登录
+  await loginDemo(page);
 
   // 1) 上传页：截图识别是第一入口（卡片在 CSV 入口之上）
   await page.goto("/upload");
@@ -50,13 +57,17 @@ test("OCR 截图识别走通 入口 → 合规确认 → 识别 → 二次复核
   //    各用例是全新浏览器上下文、无 HTTP 缓存，按 service.ts 的
   //    120s 初始化预算给足断言窗口（与 CSV 路径 pipeline.spec 同口径）
   await page.getByRole("button", { name: "确认导入" }).click();
-  await expect(page.getByText("已导入 8 笔，开始体检")).toBeVisible({ timeout: 120_000 });
+  await expect(
+    page.getByText(/已导入 [\d,]+ 笔，跳过疑似重复 [\d,]+ 笔，开始体检/),
+  ).toBeVisible({ timeout: 120_000 });
   await expect(page).toHaveURL(/\/checkup/, { timeout: 120_000 });
 
   expect(errors).toEqual([]);
 });
 
 test("OCR 合规弹窗可取消：回到空态且不发起识别", async ({ page }) => {
+  // 上传页受 AuthGuard 保护：先以演示账户登录
+  await loginDemo(page);
   await page.goto("/upload");
   await page.getByRole("button", { name: /账单截图识别/ }).click();
   await expect(

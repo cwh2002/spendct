@@ -4,10 +4,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { AlertCircle, ArrowRight, Check, LoaderCircle } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AccountError } from "@/lib/account/types";
 import { getUserByUsername } from "@/lib/account/db";
 import { useAuth } from "@/lib/account/store";
+import { CaptchaField, type CaptchaFieldHandle } from "./captcha-field";
 import { PasswordInput } from "./password-input";
 import { PasswordStrengthMeter, passwordLevelOf } from "./password-strength-meter";
 import { TrustBar } from "./trust-bar";
@@ -29,11 +30,17 @@ function resolveNext(raw: string | null): string {
   return "/me";
 }
 
-export function RegisterForm() {
+interface RegisterFormProps {
+  /** 演示模式放行验证码（DEMO_MODE=mock 时由服务端组件传入） */
+  mockBypass?: boolean;
+}
+
+export function RegisterForm({ mockBypass = false }: RegisterFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const register = useAuth((state) => state.register);
 
+  const captchaRef = useRef<CaptchaFieldHandle>(null);
   const [username, setUsername] = useState("");
   const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
@@ -125,6 +132,10 @@ export function RegisterForm() {
       setFieldErrors(errors);
       return;
     }
+    // 验证码校验：失败时字段内提示并换图，不产生顶部错误横幅
+    if (!captchaRef.current?.verify()) {
+      return;
+    }
 
     setFieldErrors({});
     setFormError(null);
@@ -197,11 +208,7 @@ export function RegisterForm() {
           </div>
         </motion.div>
       ) : (
-        <motion.div
-          key="form"
-          exit={{ opacity: 0, scale: 0.98 }}
-          transition={{ duration: 0.15 }}
-        >
+        <motion.div key="form" exit={{ opacity: 0, scale: 0.98 }} transition={{ duration: 0.15 }}>
           <div className="text-center">
             <h1 className="text-2xl font-bold tracking-tight">创建账户</h1>
             <p className="mt-2 text-sm text-(--color-ink-secondary)">
@@ -231,7 +238,12 @@ export function RegisterForm() {
                   value={username}
                   onChange={(event) => {
                     // 输入即归一化：小写 + 仅字母数字下划线，与存储口径一致
-                    setUsername(event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 20));
+                    setUsername(
+                      event.target.value
+                        .toLowerCase()
+                        .replace(/[^a-z0-9_]/g, "")
+                        .slice(0, 20),
+                    );
                     // 编辑即清除提交阶段留下的旧错误，让校验提示跟随输入
                     if (fieldErrors.username) {
                       setFieldErrors((previous) => ({ ...previous, username: undefined }));
@@ -356,6 +368,20 @@ export function RegisterForm() {
                 ，知晓账单数据仅存储于本机
               </span>
             </label>
+
+            <div>
+              <label htmlFor="register-captcha" className="text-sm font-medium text-(--color-ink)">
+                验证码
+              </label>
+              <div className="mt-1.5">
+                <CaptchaField
+                  ref={captchaRef}
+                  id="register-captcha"
+                  mockBypass={mockBypass}
+                  disabled={submitting}
+                />
+              </div>
+            </div>
 
             <button
               type="submit"

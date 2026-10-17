@@ -22,6 +22,7 @@
  */
 import type { AsyncDuckDBConnection } from "@duckdb/duckdb-wasm";
 
+import { CHECKUP_COUNT_KEY, LAST_CHECKUP_HOUR_KEY, recheckAll } from "@/lib/achievements";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { initDataset, verifySchema } from "@/lib/duckdb/dataset";
 import { runCheckup, type RunCheckupResult } from "@/lib/pipeline/engine";
@@ -77,7 +78,10 @@ const TABLE_SQL: Record<string, string> = Object.fromEntries(
 /** 最近一次运行的状态快照（证据抽屉数据源；demo 与真实两条动线各自的读取函数） */
 interface RunSnapshot {
   stages: Map<StageId, StageState>;
-  evidence: Map<StageId, { sql: string; hits: number; elapsedMs: number; cards: { title: string; ok: boolean }[] }>;
+  evidence: Map<
+    StageId,
+    { sql: string; hits: number; elapsedMs: number; cards: { title: string; ok: boolean }[] }
+  >;
   cards: InsightCard[];
   degraded: string[];
 }
@@ -107,11 +111,36 @@ function makeEventSeq(): () => number {
 }
 
 /**
+ * 体检次数真实化（WP8 §8e）：真实管线完整跑完才计一次（demo 播放器
+ * createDemoRun 不走本模块，不计次数）。次数 JSON 数字自增，最近体检
+ * 小时按完成时刻的小时落盘（0-23），供 first-checkup/early-bird 判定。
+ * 隐私模式不可写时静默降级：仅本次会话不持久化，成就校正不受影响。
+ */
+function bumpCheckupCount(): void {
+  if (typeof localStorage === "undefined") return;
+  try {
+    const raw = localStorage.getItem(CHECKUP_COUNT_KEY);
+    let prev = 0;
+    if (raw) {
+      const parsed = Number(JSON.parse(raw));
+      prev = Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : 0;
+    }
+    localStorage.setItem(CHECKUP_COUNT_KEY, JSON.stringify(prev + 1));
+    localStorage.setItem(LAST_CHECKUP_HOUR_KEY, JSON.stringify(new Date().getHours()));
+  } catch {
+    // 隐私模式不可写：跳过持久化
+  }
+}
+
+/**
  * 创建真实管线运行驱动。
  * sample 模式先加载演示数据集（demoTransactions → initDataset），
  * upload 模式假定上传页已完成 initDataset，只做 schema 完整性校验。
  */
-export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipelineRunOptions): PipelineRun {
+export function createPipelineRun(
+  cb: PipelineRunCallbacks,
+  opts: CreatePipelineRunOptions,
+): PipelineRun {
   let controller: AbortController | null = null;
   let conn: AsyncDuckDBConnection | null = null;
   let running = false;
@@ -182,7 +211,10 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
           stage.cards = event.cards.length;
           cb.onStageChange(stage);
         }
-        push("progress", `「${STAGE_DISPLAY_NAMES[event.stage].name}」完成 · 生成 ${event.cards.length} 条分析结果`);
+        push(
+          "progress",
+          `「${STAGE_DISPLAY_NAMES[event.stage].name}」完成 · 生成 ${event.cards.length} 条分析结果`,
+        );
         break;
       }
       case "stage:skipped": {
@@ -273,7 +305,10 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
       if (opts.source === "sample") {
         const rows = demoTransactions();
         await initDataset(conn, rows);
-        push("progress", `内置账单就绪 · 共 ${rows.length.toLocaleString("zh-CN")} 条，全部在本地处理`);
+        push(
+          "progress",
+          `内置账单就绪 · 共 ${rows.length.toLocaleString("zh-CN")} 条，全部在本地处理`,
+        );
       } else {
         const missing = await verifySchema(conn);
         if (missing.length > 0) {
@@ -298,6 +333,9 @@ export function createPipelineRun(cb: PipelineRunCallbacks, opts: CreatePipeline
         cards: result.cards.filter((card) => card.status === "published"),
         degraded: result.degraded ?? [],
       });
+      // 成就联动（WP8 §8c）：体检次数与最近小时落盘后全量校正（first-checkup/early-bird）
+      bumpCheckupCount();
+      recheckAll();
       finish();
     } catch (err) {
       // 原始报错只留开发者日志，不给用户看内部信息

@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/account/store";
 
@@ -12,7 +12,6 @@ import { useAuth } from "@/lib/account/store";
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const status = useAuth((state) => state.status);
   const hydrate = useAuth((state) => state.hydrate);
-  const pathname = usePathname();
   const router = useRouter();
 
   useEffect(() => {
@@ -23,15 +22,18 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (status === "guest") {
-      router.replace("/login?next=" + encodeURIComponent(pathname));
+      // 取 window.location 而非 usePathname：连查询串一起回跳
+      // （如 /upload?sample=1，登录后演示导入继续生效）
+      const { pathname, search } = window.location;
+      router.replace("/login?next=" + encodeURIComponent(pathname + search));
     }
-  }, [status, pathname, router]);
+  }, [status, router]);
 
   if (status === "loading") {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
         <div className="flex flex-col items-center gap-4" aria-label="正在恢复会话">
-          <div className="size-10 animate-spin rounded-full border-2 border-slate-200 border-t-primary dark:border-slate-800" />
+          <div className="border-t-primary size-10 animate-spin rounded-full border-2 border-slate-200 dark:border-slate-800" />
           <div className="h-3 w-32 animate-pulse rounded-full bg-slate-200 dark:bg-slate-800" />
         </div>
       </div>

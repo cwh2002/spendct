@@ -255,11 +255,7 @@ function NotificationBell() {
       {open ? (
         <>
           {/* 透明遮罩承接外部点击关闭（面板自身点击不冒泡到遮罩） */}
-          <div
-            aria-hidden
-            className="fixed inset-0 z-40"
-            onClick={() => setOpen(false)}
-          />
+          <div aria-hidden className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div className="absolute top-full right-0 z-50 mt-2 w-80 overflow-hidden rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) shadow-lg">
             <div className="flex items-center justify-between border-b border-(--color-border) px-4 py-3">
               <span className="text-sm font-semibold">通知中心</span>
@@ -346,7 +342,7 @@ export function TopNav() {
             >
               <Lock className="size-3.5" aria-hidden />
               {/* 8 项入口后文案只在 xl 断点展示，md/lg 只留图标（宽度预算见 NavLinks 注释） */}
-              <span className="hidden xl:inline">本地计算 · 零存储</span>
+              <span className="hidden xl:inline">隐私说明</span>
             </Link>
             <ThemeToggle />
             <NotificationBell />

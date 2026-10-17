@@ -2,20 +2,16 @@
  * 预算页快速记账反馈闭环端到端：入账后本月总览「已用」与汇总行即时联动，删除后回落。
  * 页面级断言兜底「记了账但图表数字不变」回归（manual-merge 链路：shownMonthManual
  * 聚合 → mergeManualExpenses 并入分类视图 → 总览瓦片/环/柱状图共源）。
+ * 预算页受 AuthGuard 保护，用例开头先以演示账户登录（helpers.loginDemo，
+ * mock 模式下验证码留空即过），再进入 /budget 走记账动线。
  */
 import { expect, test, type Page } from "@playwright/test";
+
+import { loginDemo } from "./helpers";
 
 /** 「¥1,234」 → 1234（瓦片展示为整数元） */
 function parseYuan(text: string): number {
   return Number(text.replace(/[^0-9.]/g, ""));
-}
-
-async function loginDemo(page: Page): Promise<void> {
-  await page.goto("/login");
-  await page.locator('input[placeholder="3-20 位小写字母、数字或下划线"]').fill("demo");
-  await page.locator('input[placeholder="请输入密码"]').fill("demo123");
-  await page.locator('button[type="submit"]').click();
-  await expect(page).toHaveURL(/\/me/, { timeout: 15_000 });
 }
 
 async function usedTileYuan(page: Page): Promise<number> {

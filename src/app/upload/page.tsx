@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
+import { AuthGuard } from "@/components/auth/route-guard";
 import { Container } from "@/components/layout/container";
 import { UploadWorkspace } from "./upload-workspace";
 
@@ -14,12 +15,15 @@ export const metadata: Metadata = {
  * （?sample=1 自动演示、?next= 回跳），预渲染期读 URL 的客户端组件
  * 必须包在 Suspense 内，否则构建报 blocking-prerender-client-hook。
  * fallback 只承担「等待 URL 就绪」的瞬间，路由级加载态由 loading.tsx 负责。
+ * 整页包 AuthGuard：未登录跳登录页，登录后按 next（含查询串）回跳继续操作。
  */
 export default function UploadPage() {
   return (
-    <Suspense fallback={<UploadPageSkeleton />}>
-      <UploadWorkspace />
-    </Suspense>
+    <AuthGuard>
+      <Suspense fallback={<UploadPageSkeleton />}>
+        <UploadWorkspace />
+      </Suspense>
+    </AuthGuard>
   );
 }
 

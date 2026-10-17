@@ -78,7 +78,10 @@ export default function HomePage() {
             给你的账单做一次 <span className="text-(--color-primary)">AI 体检</span>
           </h1>
 
-          <ul aria-label="价值主张" className="mt-6 flex flex-wrap items-center justify-center gap-2">
+          <ul
+            aria-label="价值主张"
+            className="mt-6 flex flex-wrap items-center justify-center gap-2"
+          >
             {VALUE_PROPS.map((item) => (
               <li
                 key={item}
@@ -191,7 +194,7 @@ export default function HomePage() {
                           <Icon className="size-5 text-(--color-primary)" aria-hidden />
                           <span
                             aria-hidden
-                            className="absolute -top-1 -right-1 grid size-5 place-items-center rounded-full bg-(--color-primary) font-mono text-[10px] font-bold text-white"
+                            className="absolute -top-1 -right-1 grid size-6 place-items-center rounded-full bg-(--color-primary) font-mono text-[11px] leading-none font-bold text-white"
                           >
                             {order}
                           </span>

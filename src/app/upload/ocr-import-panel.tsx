@@ -8,9 +8,9 @@
  *    （人工确认兜底，07 §11「仍低置信 → 人工确认」）；
  * 2.〔重新核对低置信行〕：对低置信行按行序截取原图局部条带
  *    （cropImageBand）→ POST /api/ocr（mode=review）→ 复核结果整体替换；
- * 3.〔确认导入〕：时间格式校验 → ocrToCleanTransactions → initDataset
- *    装配（与 CSV 同一条落库路径，02 §12.1）→ setDataset('upload') →
- *    账本登记 → 成功视图，工作台随后跳转体检。
+ * 3.〔确认导入〕：时间格式校验 → ocrToCleanTransactions → 与最近一次导入行
+ *    mergeCleanBatches 追加合并去重 → initDataset 装配（与 CSV 同一条落库路径，
+ *    02 §12.1）→ setDataset('upload') → 账本登记 → 成功视图，工作台随后跳转体检。
  *
  * 全部状态为本地 useState：截图 Blob、识别行都不落任何持久化存储
  * （02 §12.1 / 07 §17 红线）；确认导入后的清洗行按 08 修订案 A18
@@ -20,11 +20,15 @@ import { useCallback, useState } from "react";
 import { CheckCircle2, CircleAlert, Loader2 } from "lucide-react";
 
 import { OcrReviewTable, type EditableOcrField } from "@/components/ocr/ocr-review-table";
+import { recordProgressEvent, recheckAll, resetRecheckOverrides } from "@/lib/achievements";
+import { getLatestDataset } from "@/lib/account/db";
 import { useAuth } from "@/lib/account/store";
 import { initDataset } from "@/lib/duckdb/dataset";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { registerImportedBook } from "@/lib/import/active-book";
 import { hashCleanRows } from "@/lib/import/clean-input";
+import { mergeCleanBatches } from "@/lib/import/merge-batches";
+import type { CleanTransaction } from "@/lib/schema/bill";
 import { cropImageBand } from "@/lib/ocr/compress-image";
 import { OCR_TIME_PATTERN, ocrToCleanTransactions } from "@/lib/ocr/ocr-to-clean";
 import {
@@ -74,6 +78,8 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
   const [importError, setImportError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [importedCount, setImportedCount] = useState(0);
+  /** 跳过疑似重复行数（与已有数据集同键，WP4 追加合并去重） */
+  const [skippedCount, setSkippedCount] = useState(0);
 
   /** 单元格编辑（人工确认）：值合法才落行，行无论如何都标记已确认 */
   const handleEdit = useCallback((rowIndex: number, field: EditableOcrField, value: string) => {
@@ -154,9 +160,7 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
   const handleConfirm = useCallback(async () => {
     const badIndex = rows.findIndex((row) => !OCR_TIME_PATTERN.test(row.time));
     if (badIndex >= 0) {
-      setImportError(
-        `第 ${badIndex + 1} 行的时间格式不正确，请改成「YYYY-MM-DD HH:mm」后重试`,
-      );
+      setImportError(`第 ${badIndex + 1} 行的时间格式不正确，请改成「YYYY-MM-DD HH:mm」后重试`);
       return;
     }
     setConfirming(true);
@@ -169,9 +173,27 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
         setImportError("没有可导入的识别结果，请重新选择截图或改用 CSV 导入");
         return;
       }
-      const datasetTxHash = await hashCleanRows(cleaned);
+      // 追加合并去重（WP4）：与 CSV 路径同款——已有行取「最近一次导入的完整行」
+      // （getLatestDataset 全局最新，不过滤 userId），incoming 逐行比对
+      // (日期|金额|商户) 键，重复跳过、新行追加，装配 = 替换整表重建为
+      // 合并后完整行（旧记录不删，只增不减）。
+      let existingRows: CleanTransaction[] = [];
+      try {
+        existingRows = (await getLatestDataset())?.rows ?? [];
+      } catch {
+        // 边界：IndexedDB 不可用且内存态已有数据时 existing=[] 会覆盖装配，
+        // 与「落库失败只降级」口径一致，接受该降级（首次导入路径无差异）。
+      }
+      const merged = mergeCleanBatches(existingRows, cleaned);
+      // 成就联动（WP8 §8c）：与 CSV 路径同口径，跳过条数累计进进度并全量校正（cleaner）
+      if (merged.skipped > 0) {
+        recordProgressEvent({ type: "dedupe-skipped", count: merged.skipped });
+        recheckAll();
+      }
+      // 指纹按合并后完整行重算：与 CSV 路径同口径
+      const datasetTxHash = await hashCleanRows(merged.rows);
       const conn = await getDuckDB();
-      await initDataset(conn, cleaned);
+      await initDataset(conn, merged.rows);
       // 账本登记与 CSV 导入同路径（游客账本 userId 为空也照常登记）
       const auth = useAuth.getState();
       await auth.hydrate().catch(() => {});
@@ -179,14 +201,17 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
       const book = await registerImportedBook({
         name: fileName || "未命名账单",
         userId,
-        rowCount: cleaned.length,
+        rowCount: merged.rows.length,
       });
       usePipeline.getState().setDataset(datasetTxHash, "upload");
-      // 会话持久化（08 修订案 A18）：行数据与指纹落 IndexedDB，刷新后自动恢复
-      if (book) await saveImportedDataset({ book, txHash: datasetTxHash, rows: cleaned });
-      setImportedCount(cleaned.length);
+      // 会话持久化（08 修订案 A18）：合并后完整行与指纹落 IndexedDB，刷新后自动恢复
+      if (book) await saveImportedDataset({ book, txHash: datasetTxHash, rows: merged.rows });
+      // 换数据集后旧视图侧成就缓存作废：与 CSV 路径同口径（saver 等判定不吃旧月表）
+      resetRecheckOverrides();
+      setImportedCount(merged.added);
+      setSkippedCount(merged.skipped);
       setDone(true);
-      onImported(cleaned.length);
+      onImported(merged.added);
     } catch {
       setImportError("导入失败，请重试；仍失败可改用 CSV 文件导入");
     } finally {
@@ -194,13 +219,14 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
     }
   }, [rows, channel, fileName, onImported]);
 
-  // 成功视图：与 CSV 路径同款「已导入 N 笔」确认感，工作台负责延时跳转
+  // 成功视图：与 CSV 路径同款确认感（新增 + 跳过疑似重复），工作台负责延时跳转
   if (done) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
         <CheckCircle2 className="size-14 text-(--color-good)" aria-hidden />
         <p className="text-lg font-semibold text-(--color-ink)">
-          已导入 {importedCount.toLocaleString("zh-CN")} 笔，开始体检
+          已导入 {importedCount.toLocaleString("zh-CN")} 笔，跳过疑似重复{" "}
+          {skippedCount.toLocaleString("zh-CN")} 笔，开始体检
         </p>
         <p className="flex items-center gap-2 text-sm text-(--color-ink-muted)">
           <Loader2 className="size-4 animate-spin" aria-hidden />
@@ -235,11 +261,6 @@ export function OcrImportPanel({ initial, onCancel, onImported }: OcrImportPanel
           <p className="mt-1 text-sm text-(--color-ink-secondary)">{importError}</p>
         </div>
       ) : null}
-
-      <p className="mt-3 flex items-center justify-center gap-1.5 text-xs text-(--color-ink-muted)">
-        <CheckCircle2 className="size-3.5" aria-hidden />
-        确认导入后，明细只在浏览器本地计算，不再离开设备
-      </p>
     </div>
   );
 }

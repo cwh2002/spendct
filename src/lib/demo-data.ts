@@ -178,7 +178,20 @@ export const DEMO_INSIGHTS: DemoInsight[] = [
       "过去一年有 23 笔消费发生在 23:00–05:00，合计 350 元，占年度支出的 1.7%。其中游戏充值与直播打赏占 84%，深夜外卖 57 元。深夜冲动消费通常与白天的压力水平相关，建议设置夜间支付冷静期。",
     chartKind: "timeseries",
     chartData: [3, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 0],
-    chartLabels: ["10月", "11月", "12月", "1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月"],
+    chartLabels: [
+      "10月",
+      "11月",
+      "12月",
+      "1月",
+      "2月",
+      "3月",
+      "4月",
+      "5月",
+      "6月",
+      "7月",
+      "8月",
+      "9月",
+    ],
     citations: ["sql:anomaly_late_night", "rule:late-night-v1"],
   },
   {
@@ -302,10 +315,43 @@ export const DEMO_FORECAST = {
 export const DEMO_REPORT = {
   healthIndex: 78,
   namedMetrics: [
-    { id: "hidden-subscription", name: "隐形订阅率", value: "3.2%", benchmark: null, delta: "+1.2 个百分点", status: "warn", explain: "订阅支出占总支出的比例（660/20,800）；暂无公开全国基准，重点看取消空间" },
-    { id: "impulse", name: "冲动消费浓度", value: "7.3%", benchmark: null, delta: "-4.7 个百分点", status: "good", explain: "深夜与促销日集中消费占比（1,510/20,800）；暂无公开全国基准，越低越健康" },
-    { id: "dining-share", name: "餐饮占比", value: "41%", benchmark: "29.3%", delta: "+11.7 个百分点", status: "serious", explain: "餐饮支出占总支出比例；全国平均 29.3%（国家统计局 2025 年居民消费构成·食品烟酒）" },
-    { id: "save-rate", name: "结余率", value: "13.3%", benchmark: "32.0%", delta: "+3.3 个百分点", status: "risk", explain: "月均结余占收入的比例（3,200/24,000）；低于 15% 的注意线（与六维明细同口径），全国平均 32.0%（按国家统计局 2025 年人均收支数据推算）" },
+    {
+      id: "hidden-subscription",
+      name: "隐形订阅率",
+      value: "3.2%",
+      benchmark: null,
+      delta: "+1.2 个百分点",
+      status: "warn",
+      explain: "订阅支出占总支出的比例（660/20,800）；暂无公开全国基准，重点看取消空间",
+    },
+    {
+      id: "impulse",
+      name: "冲动消费浓度",
+      value: "7.3%",
+      benchmark: null,
+      delta: "-4.7 个百分点",
+      status: "good",
+      explain: "深夜与促销日集中消费占比（1,510/20,800）；暂无公开全国基准，越低越健康",
+    },
+    {
+      id: "dining-share",
+      name: "餐饮占比",
+      value: "41%",
+      benchmark: "29.3%",
+      delta: "+11.7 个百分点",
+      status: "serious",
+      explain: "餐饮支出占总支出比例；全国平均 29.3%（国家统计局 2025 年居民消费构成·食品烟酒）",
+    },
+    {
+      id: "save-rate",
+      name: "结余率",
+      value: "13.3%",
+      benchmark: "32.0%",
+      delta: "+3.3 个百分点",
+      status: "risk",
+      explain:
+        "月均结余占收入的比例（3,200/24,000）；低于 15% 的注意线（与六维明细同口径），全国平均 32.0%（按国家统计局 2025 年人均收支数据推算）",
+    },
   ],
   /** 六维健康分（0-100，顺序与维度名同 DEMO_REPORT 头注释的六维定义） */
   radarDims: [
@@ -337,34 +383,50 @@ export const DEMO_REPORT = {
    * chartData/chartLabels 与旧版完全一致，只改文案层。
    */
   storySegments: [
-    { headline: "一年 793 笔，花销守住了预算线", chartKind: "timeseries", chartData: [1549, 1439, 1741, 1650, 1668, 1818, 1814, 1702, 2124, 1387, 1751, 2158], chartLabels: ["10月", "11月", "12月", "1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月"], narrative: "全年共花 20,800 元、793 笔，月均 1,733 元，没有超出每月 1,744 元的预算线。花得最多的是 9 月开学季（2,158 元），最少的是 7 月暑期返乡（1,387 元）。" },
-    { headline: "食堂和堂食是吃饭花销的大头", chartKind: "donut", chartData: [78, 22], chartLabels: ["堂食/食堂", "外卖"], narrative: "吃饭的钱大部分花在堂食和食堂（占 78%），外卖只占 22%。其中学校食堂全年 1,111 元，是餐饮第一大商户。" },
-    { headline: "3 个连续订阅，一年悄悄扣走 660 元", chartKind: "bar", chartData: [18000, 18000, 30000], chartLabels: ["哔哩哔哩大会员", "网易云音乐黑胶", "腾讯视频 VIP"], narrative: "最该处理的是腾讯视频 VIP：近 90 天一次都没用，却还在自动扣费。三个订阅一年合计 660 元，取消不用的就能省下这笔固定开销。" },
-    { headline: "你的钱大多花在「体验」上", chartKind: "donut", chartData: [44, 16, 40], chartLabels: ["体验", "实物", "服务"], narrative: "你更愿意为现场感和社交花钱：体验类（娱乐、人情、堂食社交）占 44%，其次是交通、居住、通讯等服务类日常 40%，实物购物最少（16%）。" },
-  ],
-};
-
-/**
- * 成就解锁集校验（新数据口径下逐项复核）：
- * - first-checkup：内置账户已完成一次全流程体检，保持解锁；
- * - sub-hunter：订阅卡命中 1 项沉默订阅（腾讯视频 VIP 近 90 天无使用痕迹），
- *   语义在新订阅口径下仍成立，保持解锁；
- * - streak-7：快速记账是应用内功能（manual 行），其连续打卡不依赖账单数据集
- *   口径，保持解锁。
- * 其余成就均为行为类（海报/预算/早起/采纳建议等），保持锁定。
- */
-export const DEMO_ACHIEVEMENTS = {
-  unlockedIds: ["first-checkup", "sub-hunter", "streak-7"],
-  lockedIds: [
-    "budget-master",
-    "annual-poster",
-    "early-bird",
-    "night-guard",
-    "saver",
-    "scholar",
-    "cleaner",
-    "questioner",
-    "collector",
-    "challenge-streak",
+    {
+      headline: "一年 793 笔，花销守住了预算线",
+      chartKind: "timeseries",
+      chartData: [1549, 1439, 1741, 1650, 1668, 1818, 1814, 1702, 2124, 1387, 1751, 2158],
+      chartLabels: [
+        "10月",
+        "11月",
+        "12月",
+        "1月",
+        "2月",
+        "3月",
+        "4月",
+        "5月",
+        "6月",
+        "7月",
+        "8月",
+        "9月",
+      ],
+      narrative:
+        "全年共花 20,800 元、793 笔，月均 1,733 元，没有超出每月 1,744 元的预算线。花得最多的是 9 月开学季（2,158 元），最少的是 7 月暑期返乡（1,387 元）。",
+    },
+    {
+      headline: "食堂和堂食是吃饭花销的大头",
+      chartKind: "donut",
+      chartData: [78, 22],
+      chartLabels: ["堂食/食堂", "外卖"],
+      narrative:
+        "吃饭的钱大部分花在堂食和食堂（占 78%），外卖只占 22%。其中学校食堂全年 1,111 元，是餐饮第一大商户。",
+    },
+    {
+      headline: "3 个连续订阅，一年悄悄扣走 660 元",
+      chartKind: "bar",
+      chartData: [18000, 18000, 30000],
+      chartLabels: ["哔哩哔哩大会员", "网易云音乐黑胶", "腾讯视频 VIP"],
+      narrative:
+        "最该处理的是腾讯视频 VIP：近 90 天一次都没用，却还在自动扣费。三个订阅一年合计 660 元，取消不用的就能省下这笔固定开销。",
+    },
+    {
+      headline: "你的钱大多花在「体验」上",
+      chartKind: "donut",
+      chartData: [44, 16, 40],
+      chartLabels: ["体验", "实物", "服务"],
+      narrative:
+        "你更愿意为现场感和社交花钱：体验类（娱乐、人情、堂食社交）占 44%，其次是交通、居住、通讯等服务类日常 40%，实物购物最少（16%）。",
+    },
   ],
 };

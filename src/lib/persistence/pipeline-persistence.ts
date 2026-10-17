@@ -23,6 +23,7 @@ import {
   deleteDataset,
   getDatasetByTxHash,
   getLatestDataset,
+  pruneDatasetsExcept,
   putDataset,
 } from "@/lib/account/db";
 import type { BookRecord, PersistedDatasetRecord } from "@/lib/account/types";
@@ -52,6 +53,8 @@ export async function saveImportedDataset(input: {
       lastRun: null,
     };
     await putDataset(record);
+    // 剪枝旧快照：恢复只读最新一条，旧记录全是重复行数据的死重（见 db.pruneDatasetsExcept）
+    await pruneDatasetsExcept(input.book.id);
   } catch {
     // IndexedDB 不可用（隐私模式等）：刷新后恢复不可用，导入不受影响
   }

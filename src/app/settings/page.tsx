@@ -169,16 +169,76 @@ interface ExportCategoryDef {
  * 权重合计 90.9，订阅扣费行单独追加，其余支出占比由订阅补齐。
  */
 const EXPORT_CATEGORY_POOL: readonly ExportCategoryDef[] = [
-  { category: "餐饮", merchants: ["美团外卖", "瑞幸咖啡", "肯德基", "海底捞", "兰州拉面", "喜茶"], minCents: 800, maxCents: 3200, weight: 42 },
-  { category: "购物", merchants: ["淘宝", "京东", "拼多多", "优衣库", "永辉超市"], minCents: 2400, maxCents: 9600, weight: 11.5 },
-  { category: "交通", merchants: ["滴滴出行", "地铁出行", "高德打车", "哈啰单车"], minCents: 400, maxCents: 1600, weight: 6.3 },
-  { category: "娱乐", merchants: ["万达影城", "Steam", "腾讯视频", "网易云音乐"], minCents: 1600, maxCents: 6400, weight: 7 },
-  { category: "居住", merchants: ["国家电网", "燃气缴费", "水费缴纳"], minCents: 6000, maxCents: 24000, weight: 7.2 },
-  { category: "通讯", merchants: ["中国移动", "中国联通"], minCents: 1600, maxCents: 6400, weight: 4.5 },
-  { category: "医疗", merchants: ["益丰药房", "社区诊所"], minCents: 2000, maxCents: 8000, weight: 1.8 },
-  { category: "教育", merchants: ["当当书店", "得到课程", "中国大学MOOC"], minCents: 3200, maxCents: 12800, weight: 5.4 },
-  { category: "人情", merchants: ["微信红包", "生日礼物"], minCents: 1200, maxCents: 4800, weight: 2.6 },
-  { category: "金融", merchants: ["招商银行信用卡", "基金定投", "保险缴费"], minCents: 4000, maxCents: 16000, weight: 0.9 },
+  {
+    category: "餐饮",
+    merchants: ["美团外卖", "瑞幸咖啡", "肯德基", "海底捞", "兰州拉面", "喜茶"],
+    minCents: 800,
+    maxCents: 3200,
+    weight: 42,
+  },
+  {
+    category: "购物",
+    merchants: ["淘宝", "京东", "拼多多", "优衣库", "永辉超市"],
+    minCents: 2400,
+    maxCents: 9600,
+    weight: 11.5,
+  },
+  {
+    category: "交通",
+    merchants: ["滴滴出行", "地铁出行", "高德打车", "哈啰单车"],
+    minCents: 400,
+    maxCents: 1600,
+    weight: 6.3,
+  },
+  {
+    category: "娱乐",
+    merchants: ["万达影城", "Steam", "腾讯视频", "网易云音乐"],
+    minCents: 1600,
+    maxCents: 6400,
+    weight: 7,
+  },
+  {
+    category: "居住",
+    merchants: ["国家电网", "燃气缴费", "水费缴纳"],
+    minCents: 6000,
+    maxCents: 24000,
+    weight: 7.2,
+  },
+  {
+    category: "通讯",
+    merchants: ["中国移动", "中国联通"],
+    minCents: 1600,
+    maxCents: 6400,
+    weight: 4.5,
+  },
+  {
+    category: "医疗",
+    merchants: ["益丰药房", "社区诊所"],
+    minCents: 2000,
+    maxCents: 8000,
+    weight: 1.8,
+  },
+  {
+    category: "教育",
+    merchants: ["当当书店", "得到课程", "中国大学MOOC"],
+    minCents: 3200,
+    maxCents: 12800,
+    weight: 5.4,
+  },
+  {
+    category: "人情",
+    merchants: ["微信红包", "生日礼物"],
+    minCents: 1200,
+    maxCents: 4800,
+    weight: 2.6,
+  },
+  {
+    category: "金融",
+    merchants: ["招商银行信用卡", "基金定投", "保险缴费"],
+    minCents: 4000,
+    maxCents: 16000,
+    weight: 0.9,
+  },
   { category: "其他", merchants: ["便利店", "打印店"], minCents: 600, maxCents: 2400, weight: 1.7 },
 ];
 
@@ -434,7 +494,14 @@ interface ConfirmModalProps {
   onClose: () => void;
 }
 
-function ConfirmModal({ title, description, confirmLabel, busy, onConfirm, onClose }: ConfirmModalProps) {
+function ConfirmModal({
+  title,
+  description,
+  confirmLabel,
+  busy,
+  onConfirm,
+  onClose,
+}: ConfirmModalProps) {
   return (
     <Modal title={title} onClose={onClose}>
       <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">{description}</p>
@@ -471,7 +538,13 @@ interface ExportConfirmModalProps {
 }
 
 /** 导出前隐私提示：文件在本机生成、不经服务端、明确条数 */
-function ExportConfirmModal({ format, rowCount, loading, onConfirm, onClose }: ExportConfirmModalProps) {
+function ExportConfirmModal({
+  format,
+  rowCount,
+  loading,
+  onConfirm,
+  onClose,
+}: ExportConfirmModalProps) {
   return (
     <Modal title={format === "csv" ? "导出表格文件" : "导出备份文件"} onClose={onClose}>
       <ul className="mt-4 space-y-2.5">
@@ -582,10 +655,7 @@ function SettingsContent() {
     };
   }, [datasetTxHash, lastRun]);
 
-  const exportRows = useMemo(
-    () => realExportRows ?? buildDemoExportRows(),
-    [realExportRows],
-  );
+  const exportRows = useMemo(() => realExportRows ?? buildDemoExportRows(), [realExportRows]);
 
   const showToast = useCallback((message: string) => {
     setToast(message);
@@ -651,7 +721,11 @@ function SettingsContent() {
     try {
       if (format === "csv") {
         // BOM 前缀：让 Excel 按 UTF-8 打开中文表头不出现乱码
-        downloadFile(`﻿${buildCleanCsv(exportRows)}`, `spendct-export-${stamp}.csv`, "text/csv;charset=utf-8");
+        downloadFile(
+          `﻿${buildCleanCsv(exportRows)}`,
+          `spendct-export-${stamp}.csv`,
+          "text/csv;charset=utf-8",
+        );
       } else {
         downloadFile(
           JSON.stringify(exportRows, null, 2),
@@ -695,7 +769,7 @@ function SettingsContent() {
           <span className="block truncate text-sm font-medium text-(--color-ink)">
             {user.nickname}
           </span>
-          <span className="block truncate font-(--font-mono) text-xs text-(--color-ink-muted)">
+          <span className="block truncate text-xs font-(--font-mono) text-(--color-ink-muted)">
             @{user.username}
           </span>
         </span>
@@ -764,7 +838,10 @@ function SettingsContent() {
                 <li key={book.id} className="flex min-h-[60px] items-center gap-3 py-2.5">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="truncate text-sm font-medium text-(--color-ink)" title={book.id}>
+                      <p
+                        className="truncate text-sm font-medium text-(--color-ink)"
+                        title={book.id}
+                      >
                         {book.name}
                       </p>
                       {isActive ? (
@@ -927,9 +1004,7 @@ function SettingsContent() {
           <HeartPulse className="size-8 text-(--color-health)" aria-hidden />
           <div>
             <p className="font-bold text-(--color-ink)">SpendCT · 让每一笔账都花得明白</p>
-            <p className="text-xs text-(--color-ink-muted)">
-              账单明细只在你的设备上计算，不上传任何服务器，隐私更安心
-            </p>
+            <p className="text-xs text-(--color-ink-muted)">账单明细只在你的设备上计算</p>
           </div>
         </div>
         <div className="mt-4 flex flex-wrap gap-x-6 gap-y-3 text-sm">
@@ -983,9 +1058,7 @@ function SettingsContent() {
         <ConfirmModal
           title="删除账本？"
           description={
-            <>
-              将删除账本「{deleteBookTarget.name}」，删除后无法恢复。请确认不再需要这份账本。
-            </>
+            <>将删除账本「{deleteBookTarget.name}」，删除后无法恢复。请确认不再需要这份账本。</>
           }
           confirmLabel="确认删除"
           busy={deleteBookBusy}

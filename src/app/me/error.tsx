@@ -19,7 +19,7 @@ export default function MeError({
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6 text-center">
       <h2 className="text-xl font-semibold">页面出了点问题</h2>
       <p className="max-w-md text-sm text-slate-600 dark:text-slate-400">
-        你的账户与账单数据不受影响——数据只保存在浏览器本地。可以重试，或回到首页。
+        你的账户与账单数据不受影响，可以重试，或回到首页。
       </p>
       <div className="flex gap-3">
         <button

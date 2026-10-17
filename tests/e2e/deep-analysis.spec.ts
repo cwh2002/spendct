@@ -2,8 +2,12 @@
  * 追问深度分析（08 修订案 A14）e2e：DEMO_MODE=mock 下走 deep 档演示流。
  * 覆盖：开关默认关闭与开启态提示、深度分析提问挂「深度分析」脚注与演示文案、
  * 开启状态下大促关键词问题仍走 deep 档（deep 优先于 promo 演示档）。
+ * 上传/洞察页受 AuthGuard 保护，每个用例开头先以演示账户登录
+ * （helpers.loginDemo，mock 模式下验证码留空即过），再装配内置账单。
  */
 import { expect, test, type Page } from "@playwright/test";
+
+import { loginDemo } from "./helpers";
 
 // 桌面 1440×900：追问面板是洞察页右侧固定列、直接可见无需点开
 test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "reduce" });
@@ -31,6 +35,7 @@ async function primeInsights(page: Page): Promise<void> {
 test.describe("追问深度分析（A14）", () => {
   test("开关默认关闭（本地规则优先提示），开启后提示切换为发送账单统计与明细", async ({ page }) => {
     const errors = collectConsoleErrors(page);
+    await loginDemo(page);
     await primeInsights(page);
 
     const toggle = page.getByRole("button", { name: "深度分析" });
@@ -47,6 +52,7 @@ test.describe("追问深度分析（A14）", () => {
 
   test("开启深度分析提问：回答挂「深度分析」脚注与演示档文案（mock 深析流）", async ({ page }) => {
     const errors = collectConsoleErrors(page);
+    await loginDemo(page);
     await primeInsights(page);
 
     await page.getByRole("button", { name: "深度分析" }).click();
@@ -55,7 +61,9 @@ test.describe("追问深度分析（A14）", () => {
     await input.press("Enter");
 
     // mock 深析流经 /api/followup（SSE）：回答气泡挂深度分析脚注 + deep 档演示文案
-    await expect(page.getByText("深度分析 · 已发送账单统计与明细")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("深度分析 · 已发送账单统计与明细")).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.getByText(/深度分析演示/)).toBeVisible();
 
     expect(errors).toEqual([]);
@@ -63,6 +71,7 @@ test.describe("追问深度分析（A14）", () => {
 
   test("开启状态下大促关键词问题仍走深度分析档（deep 优先于 promo 演示档）", async ({ page }) => {
     const errors = collectConsoleErrors(page);
+    await loginDemo(page);
     await primeInsights(page);
 
     await page.getByRole("button", { name: "深度分析" }).click();
@@ -71,7 +80,9 @@ test.describe("追问深度分析（A14）", () => {
     await input.press("Enter");
 
     // deep 档优先：回答是深度分析演示文案而非大促日历演示文案
-    await expect(page.getByText("深度分析 · 已发送账单统计与明细")).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText("深度分析 · 已发送账单统计与明细")).toBeVisible({
+      timeout: 15_000,
+    });
     await expect(page.getByText(/深度分析演示/)).toBeVisible();
     await expect(page.getByText(/大促日历显示/)).toHaveCount(0);
 

@@ -2,8 +2,12 @@
  * 攒钱目标中心（A17）端到端动线：演示数据路径下
  * 结余/类目卡 → 创建目标 → 存入一笔 → 进度更新 → 刷新持久。
  * 目标列表持久化在 localStorage（spendct:goals:v1），刷新后仍在。
+ * 攒钱页受 AuthGuard 保护，用例开头先以演示账户登录（helpers.loginDemo，
+ * mock 模式下验证码留空即过），再进入 /goals。
  */
 import { expect, test, type Page } from "@playwright/test";
+
+import { loginDemo } from "./helpers";
 
 function collectConsoleErrors(page: Page): string[] {
   const errors: string[] = [];
@@ -15,6 +19,7 @@ function collectConsoleErrors(page: Page): string[] {
 
 test("攒钱目标：创建 → 存入 → 进度更新 → 刷新持久", async ({ page }) => {
   const errors = collectConsoleErrors(page);
+  await loginDemo(page);
   await page.goto("/goals");
   await expect(page.getByRole("heading", { name: "攒钱目标" })).toBeVisible();
 

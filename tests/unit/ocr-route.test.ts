@@ -3,8 +3,8 @@
  *
  * 覆盖：mock 模式短路（不读图片字节返回确定性剧本，e2e 动线同源）、
  * 协议层校验（mode/file/类型/大小/review 字段）与信封形状。
- * live 网络路径（双网关降级、15s 超时）由 e2e 与 private-benchmark
- * 探针覆盖，单测不 mock fetch 断言实现细节。
+ * live 网络路径（双网关降级、15s 超时）由 e2e 与仓库外本地探针脚本
+ * 覆盖，单测不 mock fetch 断言实现细节。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 

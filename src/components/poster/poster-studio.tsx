@@ -15,24 +15,12 @@
  */
 
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  CircleCheck,
-  Copy,
-  Download,
-  HelpCircle,
-  ImageIcon,
-  Loader2,
-  Share2,
-} from "lucide-react";
+import { CircleCheck, Copy, Download, HelpCircle, ImageIcon, Loader2, Share2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { getDuckDB } from "@/lib/duckdb/service";
 import { usePipeline } from "@/lib/pipeline/store";
-import {
-  demoPosterInput,
-  loadPosterInput,
-  type PosterInput,
-} from "@/lib/report/poster-input";
+import { demoPosterInput, loadPosterInput, type PosterInput } from "@/lib/report/poster-input";
 import {
   drawAnnualPoster,
   POSTER_STYLES,
@@ -230,7 +218,10 @@ export function PosterStudio() {
       </header>
 
       {/* 工作区：左预览、右控制 */}
-      <section aria-label="海报工作区" className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,24rem)_1fr]">
+      <section
+        aria-label="海报工作区"
+        className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,24rem)_1fr]"
+      >
         {/* 预览：居中一张 9:16 海报，暗色底衬托 */}
         <div className="mx-auto w-full max-w-sm">
           <div className="overflow-hidden rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface-2) shadow-(--shadow-sm)">
@@ -301,9 +292,9 @@ export function PosterStudio() {
               value={slogan}
               onChange={(event) => setSlogan(event.target.value)}
               placeholder="例如：少一点冲动，多一点从容"
-              className="mt-3 block w-full rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm outline-none transition-colors focus:border-(--color-primary)"
+              className="mt-3 block w-full rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm transition-colors outline-none focus:border-(--color-primary)"
             />
-            <p className="mt-2 text-right text-xs tabular-nums text-(--color-ink-muted)">
+            <p className="mt-2 text-right text-xs text-(--color-ink-muted) tabular-nums">
               {slogan.length}/16
             </p>
           </div>
@@ -352,8 +343,8 @@ export function PosterStudio() {
               </button>
             </div>
             <p className="mt-3 text-xs leading-relaxed text-(--color-ink-muted)">
-              系统分享在手机上可直接发到微信/QQ；电脑上可「复制图片」后粘贴进聊天窗口，
-              或下载 {filename} 手动发送。
+              系统分享在手机上可直接发到微信/QQ；电脑上可「复制图片」后粘贴进聊天窗口， 或下载{" "}
+              {filename} 手动发送。
             </p>
           </div>
 
@@ -370,7 +361,7 @@ export function PosterStudio() {
                   : "内置演示数据的年度总览、健康指数与四项关键指标（完成体检后自动换成你的数据）"}
                 ；
               </li>
-              <li>生成与下载全程在浏览器本地完成，不上传任何数据；</li>
+              <li>生成与下载全程在浏览器本地完成；</li>
               <li>健康指数低于 60 时，海报会如实展示当前段位——这也是分享的意义。</li>
             </ul>
           </div>

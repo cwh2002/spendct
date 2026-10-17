@@ -160,3 +160,19 @@ export async function deleteDataset(bookId: string): Promise<void> {
   const db = await openDb();
   await db.delete("datasets", bookId);
 }
+
+/**
+ * 剪枝数据集快照：只保留指定账本的记录。
+ * 每次导入落库的都是合并后完整行，恢复只读最新一条（getLatestDataset），
+ * 旧快照全是死重——第 N 次导入会攒下 N 份近似逐份增大的完整行副本，
+ * 大账单多次导入膨胀明显，这里在每次保存后把其余记录清掉。
+ */
+export async function pruneDatasetsExcept(bookId: string): Promise<void> {
+  const db = await openDb();
+  const all = await db.getAll("datasets");
+  for (const record of all) {
+    if (record.bookId !== bookId) {
+      await db.delete("datasets", record.bookId);
+    }
+  }
+}

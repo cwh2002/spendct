@@ -27,6 +27,7 @@ import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { AchievementWall } from "@/components/achievements/achievement-wall";
+import { AuthGuard } from "@/components/auth/route-guard";
 import { chartTokens, cssVar, EChart, type ECOption } from "@/components/charts/e-chart";
 import { Container } from "@/components/layout/container";
 import { RankBadge } from "@/components/report/rank-badge";
@@ -128,7 +129,9 @@ const RATING_TONE_META: Record<HealthRatingTone, { chip: string }> = {
   good: { chip: "bg-(--color-good)/10 text-(--color-good-ink) dark:text-(--color-good)" },
   health: { chip: "bg-(--color-health)/10 text-(--color-health)" },
   warn: { chip: "bg-(--color-warning)/15 text-(--color-warning-ink) dark:text-(--color-warning)" },
-  serious: { chip: "bg-(--color-critical)/10 text-(--color-critical-ink) dark:text-(--color-critical)" },
+  serious: {
+    chip: "bg-(--color-critical)/10 text-(--color-critical-ink) dark:text-(--color-critical)",
+  },
 };
 
 /** hex 色值 → rgba：折线面积渐变需要半透明档，CSS 变量只给 hex */
@@ -903,10 +906,11 @@ export default function ReportPage() {
   }, [showToast, report]);
 
   return (
-    <Container wide className="py-8 print:max-w-none print:px-2 print:py-4">
-      {/* 打印样式：全局壳层（顶栏/页脚/底部 tab）不在本页可改范围内，
+    <AuthGuard>
+      <Container wide className="py-8 print:max-w-none print:px-2 print:py-4">
+        {/* 打印样式：全局壳层（顶栏/页脚/底部 tab）不在本页可改范围内，
           用 style 标签在打印时整体隐藏；页内控件用 Tailwind print: 工具类处理 */}
-      <style>{`
+        <style>{`
         @media print {
           body > header,
           body > footer,
@@ -916,282 +920,285 @@ export default function ReportPage() {
         }
       `}</style>
 
-      {/* 页头 */}
-      <header className="flex flex-wrap items-center gap-3">
-        <span className="grid size-11 shrink-0 place-items-center rounded-(--radius-md) bg-(--color-primary-soft) text-(--color-primary)">
-          <BookOpenText className="size-6" aria-hidden />
-        </span>
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold">{report.meta.year} 年度报告</h1>
-          <p className="text-sm text-(--color-ink-secondary)">
-            六步体检的年度汇总：健康指数、四段数据故事、段位与成就
-          </p>
-        </div>
-        <div className="ml-auto hidden items-center gap-2 sm:flex">
-          <span className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary)">
-            覆盖 {report.meta.monthsCovered} 个月
+        {/* 页头 */}
+        <header className="flex flex-wrap items-center gap-3">
+          <span className="grid size-11 shrink-0 place-items-center rounded-(--radius-md) bg-(--color-primary-soft) text-(--color-primary)">
+            <BookOpenText className="size-6" aria-hidden />
           </span>
-          <span className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary)">
-            {report.meta.totalTransactions.toLocaleString("zh-CN")} 笔
-          </span>
-          {report.isReal ? (
-            <span className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary)">
-              年度支出 ¥{fmtYuan(report.meta.totalExpenseCents)}
-            </span>
-          ) : null}
-          <span className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary)">
-            {report.isReal ? "本地数据" : "内置数据"}
-          </span>
-        </div>
-      </header>
-
-      {/* Hero：健康仪表 + 四具名指标 */}
-      <section
-        aria-label="健康总览"
-        className="mt-6 grid gap-4 lg:grid-cols-5 print:break-inside-avoid"
-      >
-        <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-sm) lg:col-span-2">
-          <EChart
-            option={gaugeOption}
-            height={272}
-            ariaLabel={`消费健康指数仪表盘：${report.healthIndex} 分`}
-          />
-          {/* 评级徽标 + 总分注释：评级只影响展示，不参与段位判定（段位走 rank.ts TIER_BANDS） */}
-          <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
-            <span
-              className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${RATING_TONE_META[healthRating.tone].chip}`}
-            >
-              {healthRating.label}
-            </span>
-            <p className="text-center text-xs text-(--color-ink-muted)">
-              综合六维消费健康分 · 满分 100
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold">{report.meta.year} 年度报告</h1>
+            <p className="text-sm text-(--color-ink-secondary)">
+              六步体检的年度汇总：健康指数、四段数据故事、段位与成就
             </p>
           </div>
-          {/* 六维总评大白话：由六维状态规则生成，结论先行、点到为止 */}
-          <p className="mx-auto mt-2 max-w-72 text-center text-xs leading-relaxed text-(--color-ink-secondary)">
-            {healthComment}
-          </p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:col-span-3">
-          {report.namedMetrics.map((m) => {
-            const meta = STATUS_META[m.status] ?? STATUS_META.warn!;
-            const StatusIcon = meta.icon;
-            const DeltaIcon = m.delta.startsWith("+") ? ArrowUpRight : ArrowDownRight;
-            return (
-              <div
-                key={m.id}
-                className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-sm)"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-(--color-ink-secondary)">{m.name}</p>
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${meta.chip}`}
-                  >
-                    <StatusIcon className="size-3.5" aria-hidden />
-                    {meta.label}
-                  </span>
-                </div>
-                <p className="mt-2 text-3xl font-bold tabular-nums">{m.value}</p>
-                <p className="mt-1 flex items-center gap-2 text-sm">
-                  <span
-                    className={`inline-flex items-center gap-0.5 font-semibold tabular-nums ${meta.text}`}
-                  >
-                    <DeltaIcon className="size-4" aria-hidden />
-                    {m.delta}
-                  </span>
-                  {/* 只渲染有公开来源的基准（2c）：无公开基准的指标不显示基准行 */}
-                  {m.benchmark !== null ? (
-                    <span className="text-(--color-ink-muted)">
-                      全国平均 {m.benchmark} · 国家统计局 2025
-                    </span>
-                  ) : null}
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-(--color-ink-muted)">{m.explain}</p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+          <div className="ml-auto hidden items-center gap-2 sm:flex">
+            <span className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary)">
+              覆盖 {report.meta.monthsCovered} 个月
+            </span>
+            <span className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary)">
+              {report.meta.totalTransactions.toLocaleString("zh-CN")} 笔
+            </span>
+            {report.isReal ? (
+              <span className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary)">
+                年度支出 ¥{fmtYuan(report.meta.totalExpenseCents)}
+              </span>
+            ) : null}
+            <span className="rounded-full border border-(--color-border) px-3 py-1 text-xs text-(--color-ink-secondary)">
+              {report.isReal ? "本地数据" : "内置数据"}
+            </span>
+          </div>
+        </header>
 
-      {/* 六维明细：维度名 + 状态标签（健康/注意/风险）+ 一句大白话，
-          原百分比降为右侧小字（颜色随状态）。状态阈值与句式来自 labels.ts
-          （沿用四指标卡既有阈值），只做展示映射，不影响六维健康分计算 */}
-      <section aria-label="六维健康明细" className="mt-4 print:break-inside-avoid">
-        <h2 className="flex items-center gap-2 text-lg font-bold">
-          <CircleCheck className="size-5 text-(--color-primary)" aria-hidden />
-          六维健康明细
-        </h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {healthDims.map((row) => {
-            const meta = STATUS_META[row.status] ?? STATUS_META.warn!;
-            const StatusIcon = meta.icon;
-            return (
-              <div
-                key={row.key}
-                className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-3 shadow-(--shadow-sm)"
+        {/* Hero：健康仪表 + 四具名指标 */}
+        <section
+          aria-label="健康总览"
+          className="mt-6 grid gap-4 lg:grid-cols-5 print:break-inside-avoid"
+        >
+          <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-sm) lg:col-span-2">
+            <EChart
+              option={gaugeOption}
+              height={272}
+              ariaLabel={`消费健康指数仪表盘：${report.healthIndex} 分`}
+            />
+            {/* 评级徽标 + 总分注释：评级只影响展示，不参与段位判定（段位走 rank.ts TIER_BANDS） */}
+            <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+              <span
+                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold ${RATING_TONE_META[healthRating.tone].chip}`}
               >
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium">{row.name}</p>
-                  <div className="flex items-center gap-2">
-                    {/* 右侧小字：原始比率保留一位小数，颜色随状态 */}
-                    <span className={`text-xs tabular-nums ${meta.text}`}>
-                      {row.ratio.toFixed(1)}%
-                    </span>
+                {healthRating.label}
+              </span>
+              <p className="text-center text-xs text-(--color-ink-muted)">
+                综合六维消费健康分 · 满分 100
+              </p>
+            </div>
+            {/* 六维总评大白话：由六维状态规则生成，结论先行、点到为止 */}
+            <p className="mx-auto mt-2 max-w-72 text-center text-xs leading-relaxed text-(--color-ink-secondary)">
+              {healthComment}
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:col-span-3">
+            {report.namedMetrics.map((m) => {
+              const meta = STATUS_META[m.status] ?? STATUS_META.warn!;
+              const StatusIcon = meta.icon;
+              const DeltaIcon = m.delta.startsWith("+") ? ArrowUpRight : ArrowDownRight;
+              return (
+                <div
+                  key={m.id}
+                  className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-sm)"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-(--color-ink-secondary)">{m.name}</p>
                     <span
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${meta.chip}`}
                     >
                       <StatusIcon className="size-3.5" aria-hidden />
-                      {row.statusLabel}
+                      {meta.label}
                     </span>
                   </div>
-                </div>
-                {/* 大白话短句：按「每 100 元」口径换算取整，数字不再是干巴巴的百分比 */}
-                <p className="mt-1.5 text-xs leading-relaxed text-(--color-ink-secondary)">
-                  {row.plain}
-                </p>
-              </div>
-            );
-          })}
-        </div>
-      </section>
-
-      {/* 滚动式数据故事 */}
-      {featureFlags.reportStory ? (
-        <section aria-label="年度数据故事" className="mt-8">
-          <h2 className="flex items-center gap-2 text-lg font-bold">
-            <BookOpenText className="size-5 text-(--color-primary)" aria-hidden />
-            年度数据故事
-          </h2>
-          <div className="mt-4 flex flex-col gap-4">
-            {report.storySegments.map((seg, i) => (
-              <motion.article
-                key={seg.headline}
-                initial={{ opacity: 0, y: 24 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-60px" }}
-                transition={{ duration: 0.24, ease: "easeOut" }}
-                className="grid gap-4 rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm) md:grid-cols-2 md:p-6 print:break-inside-avoid"
-              >
-                <div className="flex flex-col justify-center">
-                  <span className="w-max rounded-full bg-(--color-primary-soft) px-2.5 py-0.5 text-xs font-semibold text-(--color-brand-600) tabular-nums">
-                    {String(i + 1).padStart(2, "0")} / {report.storySegments.length}
-                  </span>
-                  <h3 className="mt-3 text-lg font-bold">{seg.headline}</h3>
-                  <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
-                    {seg.narrative}
+                  <p className="mt-2 text-3xl font-bold tabular-nums">{m.value}</p>
+                  <p className="mt-1 flex items-center gap-2 text-sm">
+                    <span
+                      className={`inline-flex items-center gap-0.5 font-semibold tabular-nums ${meta.text}`}
+                    >
+                      <DeltaIcon className="size-4" aria-hidden />
+                      {m.delta}
+                    </span>
+                    {/* 只渲染有公开来源的基准（2c）：无公开基准的指标不显示基准行 */}
+                    {m.benchmark !== null ? (
+                      <span className="text-(--color-ink-muted)">
+                        全国平均 {m.benchmark} · 国家统计局 2025
+                      </span>
+                    ) : null}
+                  </p>
+                  <p className="mt-2 text-xs leading-relaxed text-(--color-ink-muted)">
+                    {m.explain}
                   </p>
                 </div>
-                <EChart
-                  option={storyOptions[i] ?? (() => ({}))}
-                  height={260}
-                  ariaLabel={seg.headline}
-                />
-              </motion.article>
-            ))}
+              );
+            })}
           </div>
         </section>
-      ) : null}
 
-      {/* 段位与成就 */}
-      <section
-        aria-label="段位与成就"
-        className="mt-8 grid gap-4 lg:grid-cols-5 print:break-before-page"
-      >
-        <RankBadge tier={rank} className="lg:col-span-2" />
-        <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-sm) lg:col-span-3">
-          <div className="flex items-center justify-between px-1">
-            <h2 className="flex items-center gap-2 text-sm font-semibold">
-              <Trophy className="size-4 text-(--color-primary)" aria-hidden />
-              六维健康雷达
-            </h2>
-            <span className="text-xs text-(--color-ink-muted)">分数越高越健康</span>
+        {/* 六维明细：维度名 + 状态标签（健康/注意/风险）+ 一句大白话，
+          原百分比降为右侧小字（颜色随状态）。状态阈值与句式来自 labels.ts
+          （沿用四指标卡既有阈值），只做展示映射，不影响六维健康分计算 */}
+        <section aria-label="六维健康明细" className="mt-4 print:break-inside-avoid">
+          <h2 className="flex items-center gap-2 text-lg font-bold">
+            <CircleCheck className="size-5 text-(--color-primary)" aria-hidden />
+            六维健康明细
+          </h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {healthDims.map((row) => {
+              const meta = STATUS_META[row.status] ?? STATUS_META.warn!;
+              const StatusIcon = meta.icon;
+              return (
+                <div
+                  key={row.key}
+                  className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-3 shadow-(--shadow-sm)"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium">{row.name}</p>
+                    <div className="flex items-center gap-2">
+                      {/* 右侧小字：原始比率保留一位小数，颜色随状态 */}
+                      <span className={`text-xs tabular-nums ${meta.text}`}>
+                        {row.ratio.toFixed(1)}%
+                      </span>
+                      <span
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${meta.chip}`}
+                      >
+                        <StatusIcon className="size-3.5" aria-hidden />
+                        {row.statusLabel}
+                      </span>
+                    </div>
+                  </div>
+                  {/* 大白话短句：按「每 100 元」口径换算取整，数字不再是干巴巴的百分比 */}
+                  <p className="mt-1.5 text-xs leading-relaxed text-(--color-ink-secondary)">
+                    {row.plain}
+                  </p>
+                </div>
+              );
+            })}
           </div>
-          <EChart
-            option={radarOption}
-            height={300}
-            ariaLabel={`六维健康雷达图：${report.radarDims.map((d) => d.name).join("、")}六个维度的健康分`}
-          />
-        </div>
-      </section>
+        </section>
 
-      {featureFlags.achievements ? (
-        <section aria-label="成就墙" className="mt-4 print:break-inside-avoid">
-          <div className="mb-3">
+        {/* 滚动式数据故事 */}
+        {featureFlags.reportStory ? (
+          <section aria-label="年度数据故事" className="mt-8">
             <h2 className="flex items-center gap-2 text-lg font-bold">
-              <Trophy className="size-5 text-(--color-primary)" aria-hidden />
-              成就徽章
+              <BookOpenText className="size-5 text-(--color-primary)" aria-hidden />
+              年度数据故事
             </h2>
+            <div className="mt-4 flex flex-col gap-4">
+              {report.storySegments.map((seg, i) => (
+                <motion.article
+                  key={seg.headline}
+                  initial={{ opacity: 0, y: 24 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true, margin: "-60px" }}
+                  transition={{ duration: 0.24, ease: "easeOut" }}
+                  className="grid gap-4 rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm) md:grid-cols-2 md:p-6 print:break-inside-avoid"
+                >
+                  <div className="flex flex-col justify-center">
+                    <span className="w-max rounded-full bg-(--color-primary-soft) px-2.5 py-0.5 text-xs font-semibold text-(--color-brand-600) tabular-nums">
+                      {String(i + 1).padStart(2, "0")} / {report.storySegments.length}
+                    </span>
+                    <h3 className="mt-3 text-lg font-bold">{seg.headline}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
+                      {seg.narrative}
+                    </p>
+                  </div>
+                  <EChart
+                    option={storyOptions[i] ?? (() => ({}))}
+                    height={260}
+                    ariaLabel={seg.headline}
+                  />
+                </motion.article>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        {/* 段位与成就 */}
+        <section
+          aria-label="段位与成就"
+          className="mt-8 grid gap-4 lg:grid-cols-5 print:break-before-page"
+        >
+          <RankBadge tier={rank} className="lg:col-span-2" />
+          <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-sm) lg:col-span-3">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="flex items-center gap-2 text-sm font-semibold">
+                <Trophy className="size-4 text-(--color-primary)" aria-hidden />
+                六维健康雷达
+              </h2>
+              <span className="text-xs text-(--color-ink-muted)">分数越高越健康</span>
+            </div>
+            <EChart
+              option={radarOption}
+              height={300}
+              ariaLabel={`六维健康雷达图：${report.radarDims.map((d) => d.name).join("、")}六个维度的健康分`}
+            />
+          </div>
+        </section>
+
+        {featureFlags.achievements ? (
+          <section aria-label="成就墙" className="mt-4 print:break-inside-avoid">
+            <div className="mb-3">
+              <h2 className="flex items-center gap-2 text-lg font-bold">
+                <Trophy className="size-5 text-(--color-primary)" aria-hidden />
+                成就徽章
+              </h2>
+              <p className="mt-1 text-sm text-(--color-ink-secondary)">
+                已解锁 {unlockedIds.length}/{ACHIEVEMENT_DEFS.length} 枚，完成条件即自动解锁
+              </p>
+            </div>
+            <AchievementWall unlockedIds={unlockedIds} compact />
+          </section>
+        ) : null}
+
+        {/* 海报与导出 */}
+        <section aria-label="海报与导出" className="mt-8 print:hidden">
+          <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm) md:p-6">
+            <h2 className="text-lg font-bold">海报与导出</h2>
             <p className="mt-1 text-sm text-(--color-ink-secondary)">
-              已解锁 {unlockedIds.length}/{ACHIEVEMENT_DEFS.length} 枚，完成条件即自动解锁
+              生成一张高清年度海报，长按可分享；海报直接在浏览器里生成。
+            </p>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handlePoster()}
+                disabled={posterBusy}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full bg-(--color-btn-primary) px-5 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover) disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <Download className="size-4" aria-hidden />
+                {posterBusy ? "生成中…" : "生成年度海报"}
+              </button>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-(--color-border) px-5 text-sm font-medium transition-colors hover:border-(--color-border-strong)"
+              >
+                <FileText className="size-4" aria-hidden />
+                导出 PDF
+              </button>
+            </div>
+            <p className="mt-3 flex items-center gap-1.5 text-xs text-(--color-ink-muted)">
+              <CircleCheck className="size-3.5" aria-hidden />
+              生成海报会自动解锁「年度海报」成就；导出 PDF 调用浏览器打印，请在打印窗口选择「另存为
+              PDF」。
             </p>
           </div>
-          <AchievementWall unlockedIds={unlockedIds} compact />
         </section>
-      ) : null}
 
-      {/* 海报与导出 */}
-      <section aria-label="海报与导出" className="mt-8 print:hidden">
-        <div className="rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm) md:p-6">
-          <h2 className="text-lg font-bold">海报与导出</h2>
-          <p className="mt-1 text-sm text-(--color-ink-secondary)">
-            生成一张高清年度海报，长按可分享；海报在你的设备上直接生成，不上传任何数据。
-          </p>
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => void handlePoster()}
-              disabled={posterBusy}
-              className="inline-flex min-h-11 items-center gap-2 rounded-full bg-(--color-btn-primary) px-5 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover) disabled:cursor-not-allowed disabled:opacity-60"
+        {/* 轻提示：底部居中，不打断操作 */}
+        <AnimatePresence>
+          {toast ? (
+            <div
+              key={toast.id}
+              className="pointer-events-none fixed inset-x-0 bottom-20 z-50 flex justify-center px-4 md:bottom-8 print:hidden"
             >
-              <Download className="size-4" aria-hidden />
-              {posterBusy ? "生成中…" : "生成年度海报"}
-            </button>
-            <button
-              type="button"
-              onClick={() => window.print()}
-              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-(--color-border) px-5 text-sm font-medium transition-colors hover:border-(--color-border-strong)"
-            >
-              <FileText className="size-4" aria-hidden />
-              导出 PDF
-            </button>
-          </div>
-          <p className="mt-3 flex items-center gap-1.5 text-xs text-(--color-ink-muted)">
-            <CircleCheck className="size-3.5" aria-hidden />
-            生成海报会自动解锁「年度海报」成就；导出 PDF 调用浏览器打印，请在打印窗口选择「另存为
-            PDF」。
-          </p>
-        </div>
-      </section>
-
-      {/* 轻提示：底部居中，不打断操作 */}
-      <AnimatePresence>
-        {toast ? (
-          <div
-            key={toast.id}
-            className="pointer-events-none fixed inset-x-0 bottom-20 z-50 flex justify-center px-4 md:bottom-8 print:hidden"
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
-              transition={{ duration: 0.18 }}
-              onAnimationComplete={() => {
-                window.setTimeout(() => {
-                  setToast((current) => (current?.id === toast.id ? null : current));
-                }, 2600);
-              }}
-              className="flex items-center gap-2 rounded-full bg-(--color-ink) px-4 py-2.5 text-sm text-(--color-surface) shadow-(--shadow-lg)"
-            >
-              {toast.kind === "ok" ? (
-                <CircleCheck className="size-4 text-(--color-good)" aria-hidden />
-              ) : (
-                <CircleX className="size-4 text-(--color-critical)" aria-hidden />
-              )}
-              {toast.text}
-            </motion.div>
-          </div>
-        ) : null}
-      </AnimatePresence>
-    </Container>
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                transition={{ duration: 0.18 }}
+                onAnimationComplete={() => {
+                  window.setTimeout(() => {
+                    setToast((current) => (current?.id === toast.id ? null : current));
+                  }, 2600);
+                }}
+                className="flex items-center gap-2 rounded-full bg-(--color-ink) px-4 py-2.5 text-sm text-(--color-surface) shadow-(--shadow-lg)"
+              >
+                {toast.kind === "ok" ? (
+                  <CircleCheck className="size-4 text-(--color-good)" aria-hidden />
+                ) : (
+                  <CircleX className="size-4 text-(--color-critical)" aria-hidden />
+                )}
+                {toast.text}
+              </motion.div>
+            </div>
+          ) : null}
+        </AnimatePresence>
+      </Container>
+    </AuthGuard>
   );
 }

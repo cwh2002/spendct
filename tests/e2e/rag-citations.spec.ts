@@ -5,14 +5,22 @@
  * ② 知识课堂搜索按 TF-IDF 语义分数排序：「免费试用」首条为扣费时点案例、
  *    「学生认证」首条为 sb-001 外卖优惠案例；
  * ③ 洞察页省钱贴士按支出 top 类目语义匹配学生权益案例并渲染。
+ * 上传/洞察页受 AuthGuard 保护，全动线用例开头先以演示账户登录
+ * （helpers.loginDemo，mock 模式下验证码留空即过）；知识课堂是公开页，
+ * 其用例不需要登录。
  */
 import { expect, test } from "@playwright/test";
+
+import { loginDemo } from "./helpers";
 
 test("内置账单全动线 → 订阅卡挂 RAG 案例引用 + 省钱贴士渲染", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (msg) => {
     if (msg.type() === "error") errors.push(msg.text());
   });
+
+  // 0) 上传/洞察页受 AuthGuard 保护：先以演示账户登录
+  await loginDemo(page);
 
   // 上传页自动装配内置账单 → 体检 → 洞察（与 pipeline.spec 同动线）
   await page.goto("/upload?sample=1");

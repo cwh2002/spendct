@@ -16,8 +16,12 @@
  * 数据真实性约束：金额不硬编码，一律从回答气泡正则解析后做关系校验；
  * 旧版占位文案按整页断言排除。抽屉容器以 aria 标签为唯一稳定锚点，
  * 所有断言限定在抽屉内，避免与洞察页追问面板（同一页面右侧列）混判。
+ * 洞察/上传页受 AuthGuard 保护，两条动线的用例开头先以演示账户登录
+ * （helpers.loginDemo，mock 模式下验证码留空即过）。
  */
 import { expect, test, type Page } from "@playwright/test";
+
+import { loginDemo } from "./helpers";
 
 // 桌面 1440×900：抽屉在桌面为右下固定面板，直接可见；关闭动画干扰；
 // 时区固定上海：相对月份问法（这个月）按本地时钟换算，跑在不同时区的
@@ -50,6 +54,9 @@ async function openDrawer(page: Page) {
 
 test("空数据集：空态示例问题、本地案例检索、输入闸门与新对话", async ({ page }) => {
   const errors = collectConsoleErrors(page);
+
+  // 0) 洞察页受 AuthGuard 保护：先以演示账户登录
+  await loginDemo(page);
 
   // 1) 未跑体检直接进洞察页，悬浮入口在任意非登录页都可用
   await page.goto("/insights");
@@ -90,8 +97,12 @@ test("真实账单：本地引擎回答 + 在线兜底的思考计划与工具�
 
   // 钉住浏览器时钟到 2026-10-14（只设起始时刻，计时照常推进）：「这个月
   // 花了多少」按本地时钟换算相对月份，内置账单时间锚是 2026-10-13，
-  // 测试日期漂过 2026-10 后当月无数据、金额断言必然挂掉
+  // 测试日期漂过 2026-10 后当月无数据、金额断言必然挂掉。
+  // 钉钟放在登录导航之前：后续每个页面（含登录）走的都是假时钟
   await page.clock.install({ time: new Date("2026-10-14T12:00:00+08:00") });
+
+  // 0) 上传/洞察页受 AuthGuard 保护：先以演示账户登录再装配账单
+  await loginDemo(page);
 
   // 1) 与 pipeline.spec 全动线一致的账单装配：先落库，确保本地引擎有数据
   await page.goto("/upload?sample=1");

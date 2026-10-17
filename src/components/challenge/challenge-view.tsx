@@ -18,6 +18,7 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
   CalendarCheck,
+  CircleAlert,
   CircleCheck,
   Flame,
   HelpCircle,
@@ -28,7 +29,13 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { unlockAchievement } from "@/lib/achievements";
+import { recheckAll } from "@/lib/achievements";
+import { sanitizeManualEntries, type ManualEntry } from "@/lib/budget/manual-merge";
+import {
+  manualDayCents,
+  mergeChallengePoints,
+  upsertManualDayEntry,
+} from "@/lib/challenge/manual-day-merge";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { generateChallengeDemoRows } from "@/lib/insights/challenge-demo";
 import {
@@ -55,6 +62,7 @@ import {
 } from "@/lib/insights/challenge-store";
 import { usePipeline } from "@/lib/pipeline/store";
 import { fmtYuan } from "@/lib/pipeline/stages/spec";
+import { MANUAL_ENTRIES_KEY, readManualEntries } from "@/lib/notifications";
 import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 import { useMounted } from "@/lib/use-mounted";
 
@@ -74,15 +82,46 @@ const CATEGORIES_12 = [
   "其他",
 ] as const;
 
-/** 元输入 → 分：非法输入返回 NaN，由调用方统一判废 */
+/** 累计节省口径脚注（进行中概览与完成回顾共用）：基线 = 挑战开始前 30 天该类目日均支出 */
+const SAVED_BASIS_NOTE =
+  "口径说明：累计节省 = Σ max(0, 基线 − 当日实际支出)；基线为挑战开始前 30 天该类目日均支出。当日支出含手动记录。";
+
+/** 元输入 → 分：非法输入返回 NaN，由调用方统一判废（Number 整体解析，拒绝「12abc」类尾随杂质） */
 function yuanToCents(input: string): number {
-  const parsed = Number.parseFloat(input);
+  const parsed = Number(input);
   if (!Number.isFinite(parsed)) return NaN;
   return Math.round(parsed * 100);
 }
 
+/**
+ * 手动账本写回：与预算页 saveJson 同款兜底（隐私模式不可写时静默降级，
+ * 本次会话内状态照常工作，仅不持久化）。键与预算页手动记账同键同源，
+ * 两边写入互相可见，不另开新键。
+ */
+function saveManualEntries(next: ManualEntry[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(MANUAL_ENTRIES_KEY, JSON.stringify(next));
+  } catch {
+    // 隐私模式不可写：跳过持久化
+  }
+}
+
+/** 分 → 金额输入框字符串：整数元不带小数（15），非整带两位（15.5），「修改」回填用 */
+function centsToYuanInput(cents: number): string {
+  return cents % 100 === 0 ? String(cents / 100) : (cents / 100).toFixed(2);
+}
+
 /** 概览四宫格的小卡：标签 + 大数字，三态页共用 */
-function StatCard({ label, value, icon: Icon }: { label: string; value: string; icon: LucideIcon }) {
+function StatCard({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: string;
+  icon: LucideIcon;
+}) {
   return (
     <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-4 shadow-(--shadow-sm)">
       <p className="flex items-center gap-1.5 text-sm font-medium text-(--color-ink-secondary)">
@@ -104,10 +143,20 @@ export function ChallengeView() {
   // 挑战记录：惰性初始化器在浏览器侧直读本地存储（readChallenge 自带 window 守卫），
   // null = 未开始；挂载前骨架分支不渲染记录相关节点，水合一致
   const [record, setRecord] = useState<ChallengeRecord | null>(() => readChallenge());
+  // 手动账本（与预算页同键同源 spendct:manual-entries）：readManualEntries 自带
+  // try/catch，SSR 首帧读到 []；挂载前骨架分支不渲染任何依赖它的节点，水合一致，
+  // 挂载后的首帧（mounted 翻转）才把本地账本渲染进派生数字
+  const [manualEntries, setManualEntries] = useState<ManualEntry[]>(() =>
+    sanitizeManualEntries(readManualEntries()),
+  );
+  // 「记今日支出」金额输入态：元字符串，保存时统一转分校验
+  const [manualAmountInput, setManualAmountInput] = useState("");
   // 新建表单态：类目选择与预算输入只在「未开始」页使用
   const [pickedCategory, setPickedCategory] = useState<string | null>(null);
   const [quotaInput, setQuotaInput] = useState("");
-  const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const [toast, setToast] = useState<{ id: number; text: string; kind: "ok" | "error" } | null>(
+    null,
+  );
 
   // 挂载前不取系统时钟（服务器与客户端时区可能不同，水合会不一致）
   const todayKey = mounted ? toDateKey(new Date()) : null;
@@ -142,10 +191,18 @@ export function ChallengeView() {
     };
   }, [lastRun]);
 
-  // 逐日状态与汇总：只依赖记录 + 数据 + 今天，纯函数派生
+  // 手动账合并派生层：账单查询点 + 手动账按 (类目, 日期) 叠加，返回新数组；
+  // 演示序列与真实查询都走这里（合并发生在派生层，数据来源分支无需特殊处理），
+  // 手动账从今天起才有记录，挑战开始前的 30 天基线窗口口径无副作用
+  const mergedPoints = useMemo(
+    () => mergeChallengePoints(points, manualEntries),
+    [points, manualEntries],
+  );
+
+  // 逐日状态与汇总：只依赖记录 + 合并后数据 + 今天，纯函数派生
   const days = useMemo(
-    () => (record && todayKey ? buildChallengeDays(record, points, todayKey) : []),
-    [record, points, todayKey],
+    () => (record && todayKey ? buildChallengeDays(record, mergedPoints, todayKey) : []),
+    [record, mergedPoints, todayKey],
   );
   const finished = useMemo(() => {
     if (!record || !todayKey) return false;
@@ -158,22 +215,17 @@ export function ChallengeView() {
     [record, todayKey],
   );
 
-  // 连续打卡 7 天解锁「七日打卡王」成就（unlockAchievement 幂等且持久化）
-  useEffect(() => {
-    if (streak >= 7) unlockAchievement("challenge-streak");
-  }, [streak]);
-
   // 新建表单的基线口径：选类目后按「开始日前 30 天日均」即时给建议
   const baseline = useMemo(() => {
     if (!pickedCategory || !todayKey) return 0;
-    return computeBaselineCents(points, pickedCategory, todayKey);
-  }, [pickedCategory, points, todayKey]);
+    return computeBaselineCents(mergedPoints, pickedCategory, todayKey);
+  }, [pickedCategory, mergedPoints, todayKey]);
   const suggestedCents = quotaSuggestionCents(baseline);
   const quotaCents = yuanToCents(quotaInput);
   const quotaValid = Number.isFinite(quotaCents) && quotaCents > 0;
 
-  const showToast = useCallback((text: string) => {
-    setToast({ id: Date.now(), text });
+  const showToast = useCallback((text: string, kind: "ok" | "error" = "ok") => {
+    setToast({ id: Date.now(), text, kind });
   }, []);
 
   const handleStart = () => {
@@ -181,7 +233,7 @@ export function ChallengeView() {
     const next: ChallengeRecord = {
       category: pickedCategory,
       quotaCents,
-      baselineCents: computeBaselineCents(points, pickedCategory, todayKey),
+      baselineCents: computeBaselineCents(mergedPoints, pickedCategory, todayKey),
       startDate: todayKey,
       checkins: [],
     };
@@ -190,11 +242,42 @@ export function ChallengeView() {
     showToast("挑战开始，今天就来第一卡");
   };
 
+  // 今日该类目手动支出合计：今日卡「含手动记录」小注与「已记 ¥X · 修改」回填共用
+  const todayManualCents =
+    record && todayKey ? manualDayCents(manualEntries, record.category, todayKey) : 0;
+
+  /** 记今日支出：金额校验 → upsert 覆盖/追加 → 写回与预算页同键账本 → 即时联动 */
+  const handleSaveManual = () => {
+    if (!record || !todayKey) return;
+    const cents = yuanToCents(manualAmountInput);
+    if (!Number.isFinite(cents) || cents <= 0) {
+      showToast("请输入大于 0 的金额", "error");
+      return;
+    }
+    if (cents > 1e9) {
+      showToast("金额超出可记录范围", "error");
+      return;
+    }
+    const next = upsertManualDayEntry(manualEntries, {
+      ts: todayKey,
+      category: record.category,
+      amountCents: cents,
+    });
+    setManualEntries(next);
+    saveManualEntries(next);
+    // 成就联动（WP8 §8c）：手动账与预算页同键落盘，全量校正（streak-7）
+    recheckAll();
+    setManualAmountInput("");
+    showToast(todayManualCents > 0 ? "已更新今日手动记录" : "已记下今日支出");
+  };
+
   const handleCheckIn = () => {
     if (!record || !todayKey) return;
     const next = checkIn(record, todayKey);
     saveChallenge(next);
     setRecord(next);
+    // 成就联动（WP8 §8c）：打卡日期已落盘，全量校正（challenge-streak）
+    recheckAll();
     showToast("今日已打卡，明天继续");
   };
 
@@ -203,6 +286,8 @@ export function ChallengeView() {
     const next = uncheck(record, todayKey);
     saveChallenge(next);
     setRecord(next);
+    // 成就联动（WP8 §8c）：撤销打卡后重算连续口径（challenge-streak）
+    recheckAll();
     showToast("已撤销今日打卡");
   };
 
@@ -239,9 +324,7 @@ export function ChallengeView() {
   const todayChecked = todayDay?.checked ?? false;
   const todayPassed = todayDay?.passed ?? true;
   const recentDays = days.slice(-7);
-  const windowMax = record
-    ? Math.max(record.quotaCents, ...recentDays.map((d) => d.cents))
-    : 0;
+  const windowMax = record ? Math.max(record.quotaCents, ...recentDays.map((d) => d.cents)) : 0;
   // 挑战期总支出与基线口径（完成回顾用）
   const periodSpend = days.reduce((sum, d) => sum + d.cents, 0);
   const periodBaseline = record ? record.baselineCents * CHALLENGE_DURATION_DAYS : 0;
@@ -278,20 +361,17 @@ export function ChallengeView() {
               <h2 className="text-lg font-bold">21 天挑战完成</h2>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
-              「{record.category}」21 天总结：打卡 {totals.checkedDays} 天、达标{" "}
-              {totals.passedDays} 天，累计节省 ¥{fmtYuan(totals.savedCents)}
-              {totals.overCents > 0 ? `、超支 ¥${fmtYuan(totals.overCents)}` : ""}。
-              与基线口径（¥{fmtYuan(periodBaseline)}）相比，
+              「{record.category}」21 天总结：打卡 {totals.checkedDays} 天、达标 {totals.passedDays}{" "}
+              天，累计节省 ¥{fmtYuan(totals.savedCents)}
+              {totals.overCents > 0 ? `、超支 ¥${fmtYuan(totals.overCents)}` : ""}。 与基线口径（¥
+              {fmtYuan(periodBaseline)}）相比，
               {totals.savedCents >= totals.overCents
                 ? "这期挑战成功守住了钱包。"
                 : "超支比节省多，下期试试更宽松一点的预算。"}
             </p>
+            <p className="mt-3 text-xs text-(--color-ink-muted)">{SAVED_BASIS_NOTE}</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-3">
-              <StatCard
-                label="挑战期总支出"
-                value={`¥${fmtYuan(periodSpend)}`}
-                icon={Flame}
-              />
+              <StatCard label="挑战期总支出" value={`¥${fmtYuan(periodSpend)}`} icon={Flame} />
               <StatCard
                 label="打卡 / 达标"
                 value={`${totals.checkedDays} / ${totals.passedDays} 天`}
@@ -323,12 +403,9 @@ export function ChallengeView() {
               />
               <StatCard label="连续打卡" value={`${streak} 天`} icon={CalendarCheck} />
               <StatCard label="达标天数" value={`${totals.passedDays} 天`} icon={CircleCheck} />
-              <StatCard
-                label="累计节省"
-                value={`¥${fmtYuan(totals.savedCents)}`}
-                icon={Trophy}
-              />
+              <StatCard label="累计节省" value={`¥${fmtYuan(totals.savedCents)}`} icon={Trophy} />
             </div>
+            <p className="mt-3 text-xs text-(--color-ink-muted)">{SAVED_BASIS_NOTE}</p>
 
             {/* 今日卡：当日支出 vs 预算 + 打卡按钮 */}
             <div className="mt-4 rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)">
@@ -349,9 +426,14 @@ export function ChallengeView() {
                   </h2>
                   <p className="mt-1 text-sm text-(--color-ink-secondary)">
                     今日支出{" "}
-                    <span className="font-semibold tabular-nums">¥{fmtYuan(todayCents)}</span>{" "}
-                    / 预算{" "}
-                    <span className="font-semibold tabular-nums">¥{fmtYuan(record.quotaCents)}</span>
+                    <span className="font-semibold tabular-nums">¥{fmtYuan(todayCents)}</span> /
+                    预算{" "}
+                    <span className="font-semibold tabular-nums">
+                      ¥{fmtYuan(record.quotaCents)}
+                    </span>
+                    {todayCents > 0 && todayManualCents > 0 ? (
+                      <span className="ml-1 text-xs text-(--color-ink-muted)">含手动记录</span>
+                    ) : null}
                   </p>
                 </div>
                 {todayChecked ? (
@@ -389,6 +471,35 @@ export function ChallengeView() {
                   aria-hidden
                 />
               </div>
+
+              {/* 记今日支出：金额输入 + 保存，写入与预算页同键的手动账本（合并发生在派生层） */}
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-(--color-border) pt-4">
+                <input
+                  type="text"
+                  inputMode="decimal"
+                  value={manualAmountInput}
+                  onChange={(event) => setManualAmountInput(event.target.value)}
+                  placeholder="手动记一笔今天的支出"
+                  aria-label="手动记录今日支出金额（元）"
+                  className="h-9 w-44 rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 text-sm tabular-nums transition-colors outline-none focus:border-(--color-primary)"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveManual}
+                  className="h-9 rounded-full bg-(--color-btn-primary) px-4 text-sm font-medium text-white transition-colors hover:bg-(--color-btn-primary-hover)"
+                >
+                  保存
+                </button>
+                {todayManualCents > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setManualAmountInput(centsToYuanInput(todayManualCents))}
+                    className="h-9 rounded-full border border-(--color-border) px-3 text-xs text-(--color-ink-secondary) transition-colors hover:border-(--color-border-strong)"
+                  >
+                    已记 ¥{fmtYuan(todayManualCents)} · 修改
+                  </button>
+                ) : null}
+              </div>
             </div>
 
             {/* 近 7 天条：柱高 = 当日支出，虚线 = 每日预算 */}
@@ -403,11 +514,8 @@ export function ChallengeView() {
                   const quotaPct =
                     windowMax > 0 ? Math.round((record.quotaCents / windowMax) * 100) : 0;
                   return (
-                    <div
-                      key={day.date}
-                      className="flex flex-1 flex-col items-center gap-1.5"
-                    >
-                      <span className="text-[10px] tabular-nums text-(--color-ink-muted)">
+                    <div key={day.date} className="flex flex-1 flex-col items-center gap-1.5">
+                      <span className="text-[10px] text-(--color-ink-muted) tabular-nums">
                         ¥{(day.cents / 100).toFixed(0)}
                       </span>
                       <div className="relative h-16 w-full max-w-9 overflow-hidden rounded-t-md bg-(--color-surface-2)">
@@ -511,7 +619,7 @@ export function ChallengeView() {
               placeholder={
                 pickedCategory ? `建议 ${Math.floor(suggestedCents / 100)} 元/天` : "先选类目"
               }
-              className="mt-2 block w-full max-w-48 rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm outline-none transition-colors focus:border-(--color-primary)"
+              className="mt-2 block w-full max-w-48 rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm transition-colors outline-none focus:border-(--color-primary)"
             />
           </div>
 
@@ -539,12 +647,11 @@ export function ChallengeView() {
         <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm leading-relaxed text-(--color-ink-secondary)">
           <li>选一个常花钱的类目，定一个比近 30 天日均低 20% 的每日预算；</li>
           <li>每天回来看一眼当天支出，点「打卡今日」记录坚持；</li>
-          <li>支出 ≤ 预算算达标，节省额按「基线 − 实际」累计；连续打卡 7 天解锁「七日打卡王」成就；</li>
+          <li>
+            支出 ≤ 预算算达标，节省额按「基线 − 实际」累计；连续打卡 7 天解锁「七日打卡王」成就；
+          </li>
           <li>21 天为一期，结束后自动生成总结。</li>
         </ul>
-        <p className="mt-3 text-xs text-(--color-ink-muted)">
-          金额来自你的本地账单（浏览器内聚合），打卡记录只保存在本机，不上传。
-        </p>
       </section>
 
       {/* 轻提示：底部居中，不打断操作 */}
@@ -566,7 +673,11 @@ export function ChallengeView() {
               }}
               className="flex items-center gap-2 rounded-full bg-(--color-ink) px-4 py-2.5 text-sm text-(--color-surface) shadow-(--shadow-lg)"
             >
-              <CircleCheck className="size-4 text-(--color-good)" aria-hidden />
+              {toast.kind === "error" ? (
+                <CircleAlert className="size-4 text-(--color-critical)" aria-hidden />
+              ) : (
+                <CircleCheck className="size-4 text-(--color-good)" aria-hidden />
+              )}
               {toast.text}
             </motion.div>
           </div>

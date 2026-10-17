@@ -2,11 +2,16 @@
  * 消费日历页（08 修订案 A15 第四部分）e2e：DEMO_MODE=mock 下走演示动线
  * （无体检记录，lastRun 为空）——覆盖页面加载、热力图容器渲染、流水行出现、
  * 搜索过滤、方向筛选与空态提示。
+ * 消费日历页受 AuthGuard 保护，每个用例开头先以演示账户登录
+ * （helpers.loginDemo，mock 模式下验证码留空即过），再进入 /calendar。
  */
 import { expect, test, type Page } from "@playwright/test";
 
+import { loginDemo } from "./helpers";
+
 test.describe("消费日历页（/calendar）", () => {
   test("页面加载：标题、热力图容器、口径说明与流水行出现", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/calendar");
     await expect(page.getByRole("heading", { name: "消费日历", level: 1 })).toBeVisible();
     // 演示动线：热力图按 aria-label 暴露语义（与商户统计视图同口径）
@@ -21,6 +26,7 @@ test.describe("消费日历页（/calendar）", () => {
   });
 
   test("搜索框按商户 / 类目关键字过滤流水（客户端过滤）", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/calendar");
     const search = page.getByRole("searchbox", { name: "搜索流水" });
     await search.fill("美团外卖");
@@ -39,6 +45,7 @@ test.describe("消费日历页（/calendar）", () => {
   });
 
   test("方向筛选：收入档只留收入行，支出档只留支出行", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/calendar");
     const tbody = page.locator("tbody");
     // 收入档：演示流水每 9 笔 1 笔收入，收入商户池确定性存在
@@ -52,6 +59,7 @@ test.describe("消费日历页（/calendar）", () => {
   });
 
   test("热力图数据表切换：按日期列出每日支出与合计", async ({ page }) => {
+    await loginDemo(page);
     await page.goto("/calendar");
     await page.getByRole("button", { name: "切换到数据表视图" }).click();
     await expect(page.getByRole("columnheader", { name: "日期" })).toBeVisible();

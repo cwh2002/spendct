@@ -1,10 +1,11 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { ArrowRight, Check, PanelBottomOpen, RotateCcw, ShieldCheck } from "lucide-react";
+import { ArrowRight, Check, PanelBottomOpen, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AuthGuard } from "@/components/auth/route-guard";
 import {
   CheckpointBar,
   clearCheckpoint,
@@ -46,7 +47,7 @@ const JUMP_ANNUAL_MS = 700;
 
 const PHASE_LABEL: Record<Phase, { chip: string; sub: string }> = {
   boot: { chip: "准备中", sub: "正在准备，稍等几秒…" },
-  playing: { chip: "运行中", sub: "正在检查你的账单，六个步骤依次进行 · 账单不会上传到任何服务器" },
+  playing: { chip: "运行中", sub: "正在检查你的账单，六个步骤依次进行" },
   paused: { chip: "已暂停", sub: "进度在本次会话内保留 · 刷新页面后需重新体检" },
   done: { chip: "已完成", sub: "六项检查全部完成 · 分析结果已就绪" },
 };
@@ -279,7 +280,7 @@ export default function CheckupPage() {
     mode === "sample"
       ? "内置账单 · 793 条交易"
       : mode === "upload"
-        ? "本地账单 · 浏览器内计算"
+        ? "本地账单"
         : "内置账单 · 793 条交易";
 
   const totalCards = stages.reduce((sum, s) => sum + (s.status === "succeeded" ? s.cards : 0), 0);
@@ -294,126 +295,124 @@ export default function CheckupPage() {
           : "bg-(--color-surface-2) text-(--color-ink-secondary)";
 
   return (
-    <Container wide className="py-6 md:py-8">
-      {/* 页头：标题 + 阶段状态 + 数据来源/隐私徽章 */}
-      <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold tracking-tight">账单体检</h1>
-            <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${chipTone}`}>
-              {PHASE_LABEL[phase].chip}
+    <AuthGuard>
+      <Container wide className="py-6 md:py-8">
+        {/* 页头：标题 + 阶段状态 + 数据来源/隐私徽章 */}
+        <header className="mb-6 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold tracking-tight">账单体检</h1>
+              <span className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${chipTone}`}>
+                {PHASE_LABEL[phase].chip}
+              </span>
+            </div>
+            <p className="mt-1 text-sm text-(--color-ink-secondary)">{PHASE_LABEL[phase].sub}</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-(--color-accent)/10 px-2.5 py-1 text-xs font-medium text-(--color-accent)">
+              {badgeText}
             </span>
           </div>
-          <p className="mt-1 text-sm text-(--color-ink-secondary)">{PHASE_LABEL[phase].sub}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-(--color-accent)/10 px-2.5 py-1 text-xs font-medium text-(--color-accent)">
-            {badgeText}
-          </span>
-          <span className="inline-flex items-center gap-1 rounded-full border border-(--color-border) px-2.5 py-1 text-xs text-(--color-ink-secondary)">
-            <ShieldCheck className="size-3.5" aria-hidden />
-            浏览器内计算
-          </span>
-        </div>
-      </header>
+        </header>
 
-      {phase === "boot" ? (
-        <BootSkeleton />
-      ) : (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-          {/* 左 3：体检步骤 + 断点条 */}
-          <section aria-label="体检步骤" className="lg:col-span-3">
-            <PipelineStepper stages={stages} onStageClick={(s) => setDrawerStageId(s.id)} />
-            {phase !== "done" ? (
-              <CheckpointBar
-                paused={phase === "paused"}
-                stageId={currentStage?.id}
-                pausedTs={pausedTs}
-                onPause={pauseRun}
-                onResume={resumeRun}
-                onRestart={restartRun}
-              />
-            ) : null}
-            {/* 移动端思考面板入口：lg 以上右列常驻（05 §1.4 移动端收进 bottom sheet） */}
-            <button
-              type="button"
-              onClick={() => setSheetOpen(true)}
-              className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) text-sm font-medium text-(--color-ink-secondary) shadow-(--shadow-sm) transition hover:border-(--color-border-strong) lg:hidden"
-            >
-              <PanelBottomOpen className="size-4" aria-hidden />
-              查看体检动态
-              <span className="rounded-full bg-(--color-surface-2) px-2 py-0.5 text-xs tabular-nums">
-                {events.length}
-              </span>
-            </button>
-          </section>
-
-          {/* 右 2：体检动态面板（sticky 跟随，顶部让出导航高度） */}
-          <section aria-label="体检动态面板" className="hidden lg:col-span-2 lg:block">
-            <div className="lg:sticky lg:top-20">
-              <ThinkingPanel
-                events={events}
-                stageName={currentStageName}
-                className="h-[calc(100vh-7.5rem)]"
-              />
-            </div>
-          </section>
-        </div>
-      )}
-
-      {/* 完成条：对勾 + 体检完成 + 3 秒倒计时自动跳 /insights（05 §1.4 成功态） */}
-      <AnimatePresence>
-        {phase === "done" ? (
-          <motion.div
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-(--radius-lg) border border-(--color-good)/40 bg-(--color-good)/5 px-5 py-4 shadow-(--shadow-md)"
-          >
-            <div className="flex items-center gap-3">
-              <span className="grid size-10 shrink-0 place-items-center rounded-full bg-(--color-good)">
-                <Check className="size-5 text-white" strokeWidth={3.5} aria-hidden />
-              </span>
-              <div>
-                <p className="font-semibold">体检完成</p>
-                <p className="text-sm text-(--color-ink-secondary)">
-                  六项检查全部完成 · 共生成 <span className="tabular-nums">{totalCards}</span>{" "}
-                  条分析结果 ·{" "}
-                  <span className="text-(--color-primary) tabular-nums">{countdown}</span>{" "}
-                  秒后自动带你查看报告
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link
-                href="/insights"
-                className="inline-flex h-11 items-center gap-1.5 rounded-full bg-(--color-btn-primary) px-5 text-sm font-medium text-white transition hover:bg-(--color-btn-primary-hover)"
-              >
-                立即查看
-                <ArrowRight className="size-4" aria-hidden />
-              </Link>
+        {phase === "boot" ? (
+          <BootSkeleton />
+        ) : (
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
+            {/* 左 3：体检步骤 + 断点条 */}
+            <section aria-label="体检步骤" className="lg:col-span-3">
+              <PipelineStepper stages={stages} onStageClick={(s) => setDrawerStageId(s.id)} />
+              {phase !== "done" ? (
+                <CheckpointBar
+                  paused={phase === "paused"}
+                  stageId={currentStage?.id}
+                  pausedTs={pausedTs}
+                  onPause={pauseRun}
+                  onResume={resumeRun}
+                  onRestart={restartRun}
+                />
+              ) : null}
+              {/* 移动端思考面板入口：lg 以上右列常驻（05 §1.4 移动端收进 bottom sheet） */}
               <button
                 type="button"
-                onClick={restartRun}
-                className="inline-flex h-11 items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface) px-5 text-sm font-medium text-(--color-ink-secondary) transition hover:border-(--color-border-strong)"
+                onClick={() => setSheetOpen(true)}
+                className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) text-sm font-medium text-(--color-ink-secondary) shadow-(--shadow-sm) transition hover:border-(--color-border-strong) lg:hidden"
               >
-                <RotateCcw className="size-4" aria-hidden />
-                重新播放
+                <PanelBottomOpen className="size-4" aria-hidden />
+                查看体检动态
+                <span className="rounded-full bg-(--color-surface-2) px-2 py-0.5 text-xs tabular-nums">
+                  {events.length}
+                </span>
               </button>
-            </div>
-          </motion.div>
-        ) : null}
-      </AnimatePresence>
+            </section>
 
-      {/* 阶段证据抽屉（全尺寸）/ 移动端思考底部抽屉 */}
-      <StageEvidenceDrawer
-        stage={drawerStage}
-        evidence={drawerEvidence}
-        onClose={() => setDrawerStageId(null)}
-      />
-      <ThinkingSheet open={sheetOpen} onClose={() => setSheetOpen(false)}>
-        <ThinkingPanel events={events} stageName={currentStageName} className="min-h-64 flex-1" />
-      </ThinkingSheet>
-    </Container>
+            {/* 右 2：体检动态面板（sticky 跟随，顶部让出导航高度） */}
+            <section aria-label="体检动态面板" className="hidden lg:col-span-2 lg:block">
+              <div className="lg:sticky lg:top-20">
+                <ThinkingPanel
+                  events={events}
+                  stageName={currentStageName}
+                  className="h-[calc(100vh-7.5rem)]"
+                />
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* 完成条：对勾 + 体检完成 + 3 秒倒计时自动跳 /insights（05 §1.4 成功态） */}
+        <AnimatePresence>
+          {phase === "done" ? (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              className="mt-6 flex flex-wrap items-center justify-between gap-4 rounded-(--radius-lg) border border-(--color-good)/40 bg-(--color-good)/5 px-5 py-4 shadow-(--shadow-md)"
+            >
+              <div className="flex items-center gap-3">
+                <span className="grid size-10 shrink-0 place-items-center rounded-full bg-(--color-good)">
+                  <Check className="size-5 text-white" strokeWidth={3.5} aria-hidden />
+                </span>
+                <div>
+                  <p className="font-semibold">体检完成</p>
+                  <p className="text-sm text-(--color-ink-secondary)">
+                    六项检查全部完成 · 共生成 <span className="tabular-nums">{totalCards}</span>{" "}
+                    条分析结果 ·{" "}
+                    <span className="text-(--color-primary) tabular-nums">{countdown}</span>{" "}
+                    秒后自动带你查看报告
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/insights"
+                  className="inline-flex h-11 items-center gap-1.5 rounded-full bg-(--color-btn-primary) px-5 text-sm font-medium text-white transition hover:bg-(--color-btn-primary-hover)"
+                >
+                  立即查看
+                  <ArrowRight className="size-4" aria-hidden />
+                </Link>
+                <button
+                  type="button"
+                  onClick={restartRun}
+                  className="inline-flex h-11 items-center gap-1.5 rounded-full border border-(--color-border) bg-(--color-surface) px-5 text-sm font-medium text-(--color-ink-secondary) transition hover:border-(--color-border-strong)"
+                >
+                  <RotateCcw className="size-4" aria-hidden />
+                  重新播放
+                </button>
+              </div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+
+        {/* 阶段证据抽屉（全尺寸）/ 移动端思考底部抽屉 */}
+        <StageEvidenceDrawer
+          stage={drawerStage}
+          evidence={drawerEvidence}
+          onClose={() => setDrawerStageId(null)}
+        />
+        <ThinkingSheet open={sheetOpen} onClose={() => setSheetOpen(false)}>
+          <ThinkingPanel events={events} stageName={currentStageName} className="min-h-64 flex-1" />
+        </ThinkingSheet>
+      </Container>
+    </AuthGuard>
   );
 }

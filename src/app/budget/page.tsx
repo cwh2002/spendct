@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuthGuard } from "@/components/auth/route-guard";
+import { recheckAll } from "@/lib/achievements";
 import { chartInk, cssVar, EChart } from "@/components/charts/e-chart";
 import type { ECOption } from "@/components/charts/e-chart";
 import { Container } from "@/components/layout/container";
@@ -82,8 +83,16 @@ type Severity = "ok" | "warn" | "over";
 
 const SEVERITY_META: Record<Severity, { label: string; cssVarName: string; textClass: string }> = {
   ok: { label: "预算健康", cssVarName: "--color-good", textClass: "text-(--color-good-ink)" },
-  warn: { label: "接近预算上限", cssVarName: "--color-warning", textClass: "text-(--color-warning-ink)" },
-  over: { label: "已超支", cssVarName: "--color-critical", textClass: "text-(--color-critical-ink)" },
+  warn: {
+    label: "接近预算上限",
+    cssVarName: "--color-warning",
+    textClass: "text-(--color-warning-ink)",
+  },
+  over: {
+    label: "已超支",
+    cssVarName: "--color-critical",
+    textClass: "text-(--color-critical-ink)",
+  },
 };
 
 function severityOf(ratio: number): Severity {
@@ -156,7 +165,8 @@ type ParseOutcome = { ok: true; draft: QuickDraft } | { ok: false; reason: strin
 /** 规则解析结果 → 可编辑草稿：金额从分转输入框字符串，日期已由规则解析填好 */
 function draftFromRule(text: string, todayIso: string): ParseOutcome {
   const result = parseQuickEntryText(text, todayIso);
-  if (!result.parseable) return { ok: false, reason: result.reason ?? "没识别出金额，请补一句数字" };
+  if (!result.parseable)
+    return { ok: false, reason: result.reason ?? "没识别出金额，请补一句数字" };
   return {
     ok: true,
     draft: {
@@ -684,6 +694,34 @@ function BudgetContent() {
     };
   }, [lastRun]);
 
+  // 成就联动（WP8 §8c）：真实月度装载完成后组装快照视图字段传 recheckAll
+  // （budget-master/saver），之后的保存/删除手动账再无参 recheckAll 时由
+  // sync 的 lastOverrides 缓存复用同一份视图数据。
+  // - monthlyExpenses：v_monthly_summary 真实逐月支出（近 12 月）；
+  // - budgetMonths：月度预算取页面「本月预算」同口径（分类预算求和：
+  //   覆盖值 ?? 演示默认 ?? 近 90 天月均基线），历史各月沿用同一套当前预算
+  //   （页面无历史预算存储，口径近似但与页面展示一致）；分类支出查询失败
+  //   时预算记 0，不把演示默认档灌进真实判定。
+  // demo 动线（无体检数据）不组装：演示预算不参与真实判定。
+  useEffect(() => {
+    if (!liveRealData.monthly || liveRealData.monthly.length === 0) return;
+    const categories = liveRealData.category90d
+      ? buildRealCategories(liveRealData.category90d, liveRealData.categoryWindowMonths, overrides)
+      : null;
+    const totalBudgetCents = categories ? categories.reduce((sum, c) => sum + c.budgetCents, 0) : 0;
+    recheckAll({
+      budgetMonths: liveRealData.monthly.map((row) => ({
+        month: row.monthKey,
+        budgetCents: totalBudgetCents,
+        expenseCents: row.expenseCents,
+      })),
+      monthlyExpenses: liveRealData.monthly.map((row) => ({
+        month: row.monthKey,
+        expenseCents: row.expenseCents,
+      })),
+    });
+  }, [liveRealData, overrides]);
+
   // 当前展示月份的手动记账汇总：支出按类目并入图表「实际」列（见 month memo 的
   // mergeManualExpenses），收入不进预算口径，由总览下方汇总行单独展示
   const shownMonthManual = useMemo(() => {
@@ -809,6 +847,8 @@ function BudgetContent() {
     const next = [...entries, entry];
     setEntries(next);
     saveJson(KEY_MANUAL, next);
+    // 成就联动（WP8 §8c）：手动记账日期已落盘，全量校正（streak-7）
+    recheckAll();
     // 入账反馈：绿色横幅 + 下方「最近记账」列表即时出现这笔（替代一闪而过的 toast）
     setLastSaved(entry);
     setDraft(null);
@@ -820,6 +860,8 @@ function BudgetContent() {
     const next = entries.filter((e) => e.id !== id);
     setEntries(next);
     saveJson(KEY_MANUAL, next);
+    // 成就联动（WP8 §8c）：删账后重算连续记账口径（streak-7）
+    recheckAll();
     if (lastSaved?.id === id) setLastSaved(null);
   }
 
@@ -1113,7 +1155,9 @@ function BudgetContent() {
       {/* 页头 */}
       <header className="mb-6">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-2xl font-bold tracking-tight text-(--color-ink) md:text-3xl">预算中心</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-(--color-ink) md:text-3xl">
+            预算中心
+          </h1>
           {/* 数据源徽标：诚实标注真实/演示动线（05 §5.1 不放假数据），真实动线在本次会话内跟随体检结果 */}
           <span className="rounded-full border border-(--color-border) px-2 py-0.5 text-[11px] text-(--color-ink-muted)">
             {lastRun
@@ -1135,7 +1179,9 @@ function BudgetContent() {
                 <Zap className="size-4.5 text-(--color-primary)" aria-hidden />
                 快速记账
               </h2>
-              <span className="text-xs text-(--color-ink-muted)">一句话记一笔，金额、类别和日期会自动识别，记完就出现在下方「最近记账」里</span>
+              <span className="text-xs text-(--color-ink-muted)">
+                一句话记一笔，金额、类别和日期会自动识别，记完就出现在下方「最近记账」里
+              </span>
             </div>
 
             <form
@@ -1156,7 +1202,7 @@ function BudgetContent() {
                 maxLength={200}
                 placeholder="例如「中午食堂花了 15」「兼职赚了 200」"
                 aria-label="记账内容"
-                className="h-11 min-w-0 flex-1 rounded-(--radius-md) border border-(--color-border) bg-(--color-surface-page) px-3.5 text-sm text-(--color-ink) outline-none transition-colors placeholder:text-(--color-ink-muted) focus:border-(--color-primary)"
+                className="h-11 min-w-0 flex-1 rounded-(--radius-md) border border-(--color-border) bg-(--color-surface-page) px-3.5 text-sm text-(--color-ink) transition-colors outline-none placeholder:text-(--color-ink-muted) focus:border-(--color-primary)"
               />
               <button
                 type="submit"
@@ -1216,7 +1262,9 @@ function BudgetContent() {
                         <X className="size-4" aria-hidden />
                       </button>
                     </div>
-                    <p className="mt-0.5 text-xs text-(--color-ink-muted)">识别结果可以直接改，确认后这笔账就算记上了</p>
+                    <p className="mt-0.5 text-xs text-(--color-ink-muted)">
+                      识别结果可以直接改，确认后这笔账就算记上了
+                    </p>
 
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <label className="block">
@@ -1238,7 +1286,11 @@ function BudgetContent() {
 
                       <div>
                         <span className="text-xs text-(--color-ink-secondary)">方向</span>
-                        <div className="mt-1 flex h-11 rounded-(--radius-md) bg-(--color-surface-2) p-1" role="radiogroup" aria-label="收支方向">
+                        <div
+                          className="mt-1 flex h-11 rounded-(--radius-md) bg-(--color-surface-2) p-1"
+                          role="radiogroup"
+                          aria-label="收支方向"
+                        >
                           {(["expense", "income"] as const).map((d) => (
                             <button
                               key={d}
@@ -1331,11 +1383,17 @@ function BudgetContent() {
                   className="mt-3 flex items-start gap-2 rounded-(--radius-md) border border-(--color-good)/40 bg-(--color-good)/10 px-3 py-2.5"
                   role="status"
                 >
-                  <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-(--color-good-ink)" aria-hidden />
+                  <CheckCircle2
+                    className="mt-0.5 size-4 shrink-0 text-(--color-good-ink)"
+                    aria-hidden
+                  />
                   <p className="text-sm text-(--color-ink)">
                     已记一笔：{fmtDateCN(lastSaved.ts)} ·{" "}
-                    <span className={lastSaved.direction === "income" ? "text-(--color-good-ink)" : ""}>
-                      {lastSaved.direction === "income" ? "收入" : "支出"} ¥{fmtYuan(lastSaved.amountCents)}
+                    <span
+                      className={lastSaved.direction === "income" ? "text-(--color-good-ink)" : ""}
+                    >
+                      {lastSaved.direction === "income" ? "收入" : "支出"} ¥
+                      {fmtYuan(lastSaved.amountCents)}
                     </span>{" "}
                     · {lastSaved.category} · {lastSaved.note}
                   </p>
@@ -1348,7 +1406,9 @@ function BudgetContent() {
               <p className="flex items-baseline justify-between gap-2 text-xs text-(--color-ink-muted)">
                 <span>
                   最近记账 · 本月已记{" "}
-                  <span className="font-semibold tabular-nums text-(--color-ink-secondary)">{monthEntryCount}</span>{" "}
+                  <span className="font-semibold text-(--color-ink-secondary) tabular-nums">
+                    {monthEntryCount}
+                  </span>{" "}
                   笔
                 </span>
                 <span>仅保存在这台设备的浏览器里</span>
@@ -1357,12 +1417,14 @@ function BudgetContent() {
                 <ul className="mt-2 divide-y divide-(--color-border)">
                   {recentEntries.map((entry) => (
                     <li key={entry.id} className="flex items-center gap-3 py-2">
-                      <span className="w-16 shrink-0 text-xs tabular-nums text-(--color-ink-muted)">
+                      <span className="w-16 shrink-0 text-xs text-(--color-ink-muted) tabular-nums">
                         {fmtDateCN(entry.ts)}
                       </span>
                       <span
                         className={`w-20 shrink-0 text-sm font-medium tabular-nums ${
-                          entry.direction === "income" ? "text-(--color-good-ink)" : "text-(--color-ink)"
+                          entry.direction === "income"
+                            ? "text-(--color-good-ink)"
+                            : "text-(--color-ink)"
                         }`}
                       >
                         {entry.direction === "income" ? "+" : "-"}¥{fmtYuan(entry.amountCents)}
@@ -1370,7 +1432,9 @@ function BudgetContent() {
                       <span className="shrink-0 rounded-full bg-(--color-surface-2) px-2 py-0.5 text-xs text-(--color-ink-secondary)">
                         {entry.category}
                       </span>
-                      <span className="min-w-0 flex-1 truncate text-xs text-(--color-ink-muted)">{entry.note}</span>
+                      <span className="min-w-0 flex-1 truncate text-xs text-(--color-ink-muted)">
+                        {entry.note}
+                      </span>
                       <button
                         type="button"
                         onClick={() => handleDeleteEntry(entry.id)}
@@ -1397,7 +1461,11 @@ function BudgetContent() {
             <div className="h-full rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm) sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h2 className="font-semibold text-(--color-ink)">本月总览</h2>
-                <div className="flex rounded-full bg-(--color-surface-2) p-1" role="group" aria-label="月份切换">
+                <div
+                  className="flex rounded-full bg-(--color-surface-2) p-1"
+                  role="group"
+                  aria-label="月份切换"
+                >
                   {MONTH_TABS.map((tab) => (
                     <button
                       key={tab.name}
@@ -1440,14 +1508,17 @@ function BudgetContent() {
                   />
                   <div className="pointer-events-none absolute inset-0 grid place-items-center">
                     <div className="text-center">
-                      <p className="text-3xl font-bold tabular-nums text-(--color-ink)">
+                      <p className="text-3xl font-bold text-(--color-ink) tabular-nums">
                         {(ratio * 100).toFixed(1)}%
                       </p>
-                      <p className={`mt-1 text-sm font-medium ${SEVERITY_META[severity].textClass}`}>
+                      <p
+                        className={`mt-1 text-sm font-medium ${SEVERITY_META[severity].textClass}`}
+                      >
                         {SEVERITY_META[severity].label}
                       </p>
-                      <p className="mt-0.5 text-xs tabular-nums text-(--color-ink-muted)">
-                        已用 ¥{fmtYuan(month.totalActualCents, 0)} / ¥{fmtYuan(month.totalBudgetCents, 0)}
+                      <p className="mt-0.5 text-xs text-(--color-ink-muted) tabular-nums">
+                        已用 ¥{fmtYuan(month.totalActualCents, 0)} / ¥
+                        {fmtYuan(month.totalBudgetCents, 0)}
                       </p>
                     </div>
                   </div>
@@ -1467,15 +1538,15 @@ function BudgetContent() {
                     {shownMonthManual.count > 0 ? (
                       <>
                         {monthNumberLabel(monthOffset)}手动记账{" "}
-                        <span className="font-semibold tabular-nums text-(--color-ink-secondary)">
+                        <span className="font-semibold text-(--color-ink-secondary) tabular-nums">
                           {shownMonthManual.count}
                         </span>{" "}
                         笔：支出{" "}
-                        <span className="tabular-nums text-(--color-ink-secondary)">
+                        <span className="text-(--color-ink-secondary) tabular-nums">
                           ¥{fmtYuan(shownMonthManual.expenseCents, 0)}
                         </span>{" "}
                         （已计入上方数字）· 收入{" "}
-                        <span className="tabular-nums text-(--color-good-ink)">
+                        <span className="text-(--color-good-ink) tabular-nums">
                           ¥{fmtYuan(shownMonthManual.incomeCents, 0)}
                         </span>{" "}
                         （仅作记录，不计入预算）{" "}
@@ -1498,9 +1569,11 @@ function BudgetContent() {
                     )}
                   </p>
                   <p className="text-sm leading-relaxed text-(--color-ink-secondary)">
-                    {severity === "ok" && `预算执行健康，剩余 ¥${fmtYuan(remainingCents, 0)} 可灵活支配。`}
+                    {severity === "ok" &&
+                      `预算执行健康，剩余 ¥${fmtYuan(remainingCents, 0)} 可灵活支配。`}
                     {severity === "warn" && `已接近本月预算上限，未来支出建议对照分类预算执行。`}
-                    {severity === "over" && `已超出本月预算 ¥${fmtYuan(-remainingCents, 0)}，建议调整预算或控制支出。`}
+                    {severity === "over" &&
+                      `已超出本月预算 ¥${fmtYuan(-remainingCents, 0)}，建议调整预算或控制支出。`}
                   </p>
                 </div>
               </div>
@@ -1526,7 +1599,8 @@ function BudgetContent() {
               {forecastView.real ? (
                 <>
                   <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">
-                    根据你最近 {forecastView.historyMonths} 个月的实际支出走势估算：未来三个月月均支出约 ¥
+                    根据你最近 {forecastView.historyMonths}{" "}
+                    个月的实际支出走势估算：未来三个月月均支出约 ¥
                     {forecastAvgYuan.toLocaleString("zh-CN")}
                     {forecastView.slopeCentsPerMonth === 0
                       ? "，走势基本持平"
@@ -1544,7 +1618,9 @@ function BudgetContent() {
                     {forecastAvgYuan.toLocaleString("zh-CN")}。10 月开学季固定采购退去后支出回落，
                     11、12 月逐步回到全年月均水平。临时的大额花销没算进去。
                   </p>
-                  <p className="mt-2 text-xs text-(--color-ink-muted)">基于内置账单近 12 个月实际支出自动估算</p>
+                  <p className="mt-2 text-xs text-(--color-ink-muted)">
+                    基于内置账单近 12 个月实际支出自动估算
+                  </p>
                 </>
               )}
             </div>
@@ -1556,7 +1632,9 @@ function BudgetContent() {
           <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) shadow-(--shadow-sm)">
             <div className="flex flex-wrap items-center justify-between gap-2 p-5 pb-3 sm:p-6 sm:pb-3">
               <h2 className="font-semibold text-(--color-ink)">分类预算</h2>
-              <p className="text-xs text-(--color-ink-muted)">点击类别调整预算，保存后对本月至未来两月生效</p>
+              <p className="text-xs text-(--color-ink-muted)">
+                点击类别调整预算，保存后对本月至未来两月生效
+              </p>
             </div>
             <div className="divide-y divide-(--color-border) px-2 pb-2 sm:px-3">
               {month.categories.map((c) => {
@@ -1590,8 +1668,16 @@ function BudgetContent() {
                         ) : null}
                       </span>
                       <span className="flex shrink-0 items-center gap-2 text-sm tabular-nums">
-                        <span className="text-(--color-ink-muted)">已用 ¥{fmtYuan(c.actualCents, 0)}</span>
-                        <span className={isOver ? "font-semibold text-(--color-critical-ink)" : "font-semibold text-(--color-ink)"}>
+                        <span className="text-(--color-ink-muted)">
+                          已用 ¥{fmtYuan(c.actualCents, 0)}
+                        </span>
+                        <span
+                          className={
+                            isOver
+                              ? "font-semibold text-(--color-critical-ink)"
+                              : "font-semibold text-(--color-ink)"
+                          }
+                        >
                           {isOver
                             ? `超支 ¥${fmtYuan(overCents, 0)}`
                             : hasNoBudget
@@ -1615,9 +1701,15 @@ function BudgetContent() {
                         }}
                       />
                     </div>
-                    <div className="mt-1.5 flex justify-between text-xs tabular-nums text-(--color-ink-muted)">
-                      <span>{hasNoBudget ? "预算 未设置" : `预算 ¥${fmtYuan(c.budgetCents, 0)}`}</span>
-                      <span>{hasNoBudget ? "使用率 —" : `使用率 ${fmtPct(c.actualCents, c.budgetCents)}%`}</span>
+                    <div className="mt-1.5 flex justify-between text-xs text-(--color-ink-muted) tabular-nums">
+                      <span>
+                        {hasNoBudget ? "预算 未设置" : `预算 ¥${fmtYuan(c.budgetCents, 0)}`}
+                      </span>
+                      <span>
+                        {hasNoBudget
+                          ? "使用率 —"
+                          : `使用率 ${fmtPct(c.actualCents, c.budgetCents)}%`}
+                      </span>
                     </div>
                   </button>
                 );
@@ -1682,7 +1774,9 @@ function BudgetContent() {
                     </>
                   ) : (
                     <>
-                      <p className="mt-3 text-sm leading-relaxed text-(--color-ink)">正在生成建议…</p>
+                      <p className="mt-3 text-sm leading-relaxed text-(--color-ink)">
+                        正在生成建议…
+                      </p>
                       <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -1697,7 +1791,8 @@ function BudgetContent() {
                 ) : (
                   <>
                     <p className="mt-3 text-sm leading-relaxed text-(--color-ink)">
-                      餐饮类已用 {diningPct}%，主要增量来自外卖。建议将外卖预算拆出单独上限，或启用周五自带餐计划
+                      餐饮类已用 {diningPct}
+                      %，主要增量来自外卖。建议将外卖预算拆出单独上限，或启用周五自带餐计划
                     </p>
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button
@@ -1730,13 +1825,19 @@ function BudgetContent() {
           <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm) sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="font-semibold text-(--color-ink)">预算与实际对比</h2>
-              <div className="flex rounded-full bg-(--color-surface-2) p-1" role="group" aria-label="视图切换">
+              <div
+                className="flex rounded-full bg-(--color-surface-2) p-1"
+                role="group"
+                aria-label="视图切换"
+              >
                 <button
                   type="button"
                   aria-pressed={view === "chart"}
                   onClick={() => setView("chart")}
                   className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors ${
-                    view === "chart" ? "bg-(--color-surface) text-(--color-ink) shadow-(--shadow-sm)" : "text-(--color-ink-muted) hover:text-(--color-ink-secondary)"
+                    view === "chart"
+                      ? "bg-(--color-surface) text-(--color-ink) shadow-(--shadow-sm)"
+                      : "text-(--color-ink-muted) hover:text-(--color-ink-secondary)"
                   }`}
                 >
                   <BarChart3 className="size-3.5" aria-hidden />
@@ -1747,7 +1848,9 @@ function BudgetContent() {
                   aria-pressed={view === "table"}
                   onClick={() => setView("table")}
                   className={`inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-medium transition-colors ${
-                    view === "table" ? "bg-(--color-surface) text-(--color-ink) shadow-(--shadow-sm)" : "text-(--color-ink-muted) hover:text-(--color-ink-secondary)"
+                    view === "table"
+                      ? "bg-(--color-surface) text-(--color-ink) shadow-(--shadow-sm)"
+                      : "text-(--color-ink-muted) hover:text-(--color-ink-secondary)"
                   }`}
                 >
                   <Table className="size-3.5" aria-hidden />
@@ -1758,17 +1861,31 @@ function BudgetContent() {
 
             <div className="mt-4">
               {view === "chart" ? (
-                <EChart option={barOption} height={280} ariaLabel="各分类预算与实际支出对比柱状图" />
+                <EChart
+                  option={barOption}
+                  height={280}
+                  ariaLabel="各分类预算与实际支出对比柱状图"
+                />
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[560px] text-sm">
                     <thead>
                       <tr className="border-b border-(--color-border) text-left text-xs text-(--color-ink-muted)">
-                        <th scope="col" className="py-2 pr-3 font-medium">类别</th>
-                        <th scope="col" className="py-2 pr-3 text-right font-medium">预算</th>
-                        <th scope="col" className="py-2 pr-3 text-right font-medium">实际</th>
-                        <th scope="col" className="py-2 pr-3 text-right font-medium">差额</th>
-                        <th scope="col" className="py-2 text-right font-medium">使用率</th>
+                        <th scope="col" className="py-2 pr-3 font-medium">
+                          类别
+                        </th>
+                        <th scope="col" className="py-2 pr-3 text-right font-medium">
+                          预算
+                        </th>
+                        <th scope="col" className="py-2 pr-3 text-right font-medium">
+                          实际
+                        </th>
+                        <th scope="col" className="py-2 pr-3 text-right font-medium">
+                          差额
+                        </th>
+                        <th scope="col" className="py-2 text-right font-medium">
+                          使用率
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-(--color-border)">
@@ -1777,21 +1894,27 @@ function BudgetContent() {
                         const over = diff > 0;
                         return (
                           <tr key={c.category}>
-                            <td className="py-2.5 pr-3 font-medium text-(--color-ink)">{c.category}</td>
-                            <td className="py-2.5 pr-3 text-right tabular-nums text-(--color-ink-secondary)">
+                            <td className="py-2.5 pr-3 font-medium text-(--color-ink)">
+                              {c.category}
+                            </td>
+                            <td className="py-2.5 pr-3 text-right text-(--color-ink-secondary) tabular-nums">
                               ¥{fmtYuan(c.budgetCents, 0)}
                             </td>
-                            <td className="py-2.5 pr-3 text-right tabular-nums text-(--color-ink-secondary)">
+                            <td className="py-2.5 pr-3 text-right text-(--color-ink-secondary) tabular-nums">
                               ¥{fmtYuan(c.actualCents, 0)}
                             </td>
                             <td
                               className={`py-2.5 pr-3 text-right tabular-nums ${
-                                over ? "font-medium text-(--color-critical-ink)" : "text-(--color-good-ink)"
+                                over
+                                  ? "font-medium text-(--color-critical-ink)"
+                                  : "text-(--color-good-ink)"
                               }`}
                             >
                               {over ? `+¥${fmtYuan(diff, 0)}` : `-¥${fmtYuan(-diff, 0)}`}
                             </td>
-                            <td className={`py-2.5 text-right tabular-nums ${over ? "font-medium text-(--color-critical-ink)" : "text-(--color-ink-secondary)"}`}>
+                            <td
+                              className={`py-2.5 text-right tabular-nums ${over ? "font-medium text-(--color-critical-ink)" : "text-(--color-ink-secondary)"}`}
+                            >
                               {fmtPct(c.actualCents, c.budgetCents)}%
                             </td>
                           </tr>

@@ -17,8 +17,12 @@
  *
  * 数据真实性约束：本文件不硬编码任何金额或笔数——金额一律从回答气泡里
  * 用正则解析，再做关系校验；旧版占位文案按整页断言排除。
+ * 上传/洞察页受 AuthGuard 保护，三条动线的用例开头先以演示账户登录
+ * （helpers.loginDemo，mock 模式下验证码留空即过）。
  */
 import { expect, test, type Page } from "@playwright/test";
+
+import { loginDemo } from "./helpers";
 
 // 桌面 1440×900：追问面板是洞察页右侧固定列、直接可见无需点开；
 // 关闭动画偏好，避免气泡弹跳动画干扰等待断言
@@ -46,6 +50,9 @@ const PANEL = 'aside[aria-label="追问面板"]';
 
 test("真实账单：追问面板按本地账单数据回答且类目支出不超过总支出", async ({ page }) => {
   const errors = collectConsoleErrors(page);
+
+  // 0) 上传/洞察页受 AuthGuard 保护：先以演示账户登录
+  await loginDemo(page);
 
   // 1) 上传页 ?sample=1 自动装配内置账单，点击「开始体检」跑真实管线，
   //    完成后自动跳体检页再跳洞察页（与 pipeline.spec.ts 全动线同一写法）
@@ -104,6 +111,9 @@ test("真实账单：追问面板按本地账单数据回答且类目支出不�
 test("空数据集：示例问题 chips 与闲聊分流动线", async ({ page }) => {
   const errors = collectConsoleErrors(page);
 
+  // 0) 洞察页受 AuthGuard 保护：先以演示账户登录
+  await loginDemo(page);
+
   // 1) 未跑体检直接进洞察页：面板空态展示引导文案与示例问题 chips
   await page.goto("/insights");
   const panel = page.locator(PANEL);
@@ -122,9 +132,9 @@ test("空数据集：示例问题 chips 与闲聊分流动线", async ({ page })
   const input = page.getByLabel("追问输入框");
   await input.fill("你好");
   await input.press("Enter");
-  await expect(
-    panel.getByText("可以围绕你的账单数据回答问题").first(),
-  ).toBeVisible({ timeout: 15_000 });
+  await expect(panel.getByText("可以围绕你的账单数据回答问题").first()).toBeVisible({
+    timeout: 15_000,
+  });
 
   // 4) 无数据 + 本地认识的问法（商户排行）：意图解析后直接本地回引导文案
   await input.fill("我现在的商户排行是有哪些");
@@ -148,6 +158,9 @@ test("空数据集：示例问题 chips 与闲聊分流动线", async ({ page })
 
 test("在线兜底：大促关键词问题挂工具徽章与在线生成脚注（mock 演示流）", async ({ page }) => {
   const errors = collectConsoleErrors(page);
+
+  // 0) 上传/洞察页受 AuthGuard 保护：先以演示账户登录
+  await loginDemo(page);
 
   // 1) 与第一动线相同的真实账单装配：先落库，避免追问转在线时拿不到上下文
   await page.goto("/upload?sample=1");

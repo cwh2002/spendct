@@ -34,8 +34,13 @@ import { AuthGuard } from "@/components/auth/route-guard";
 import { AchievementWall } from "@/components/achievements/achievement-wall";
 import { Container } from "@/components/layout/container";
 import { LocalDataBanner } from "@/components/me/local-data-banner";
-import { ACHIEVEMENT_DEFS, useUnlockedIds } from "@/lib/achievements";
-import { PBKDF2_ITERATIONS, hashPassword, validateNickname, validatePassword } from "@/lib/account/auth";
+import { ACHIEVEMENT_DEFS, CHECKUP_COUNT_KEY, useUnlockedIds } from "@/lib/achievements";
+import {
+  PBKDF2_ITERATIONS,
+  hashPassword,
+  validateNickname,
+  validatePassword,
+} from "@/lib/account/auth";
 import { deleteBook, listBooks, openDb, upsertUser } from "@/lib/account/db";
 import { useAuth } from "@/lib/account/store";
 import type { BookRecord, UserRecord } from "@/lib/account/types";
@@ -50,8 +55,19 @@ import { runWhitelistedAggregate } from "@/lib/sql-guard/whitelist";
 /** 当前激活账本在本机存储中的键，与数据管理页共用 */
 const ACTIVE_BOOK_KEY = "spendct:active-book";
 
-/** 演示口径的累计体检次数：与演示成就解锁状态一致；正式接入后由体检记录统计 */
-const DEMO_CHECKUP_COUNT = 3;
+/** 读本地体检次数：JSON 数字，缺失/损坏按 0（展示用，与同步的计数口径一致） */
+function readStoredCheckupCount(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const raw = window.localStorage.getItem(CHECKUP_COUNT_KEY);
+    if (!raw) return 0;
+    const parsed: unknown = JSON.parse(raw);
+    const n = typeof parsed === "number" ? parsed : Number(parsed);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
 
 /* ---------------- 数据概览真实统计（DuckDB 白名单聚合） ---------------- */
 
@@ -435,7 +451,14 @@ interface ConfirmModalProps {
 }
 
 /** 二次确认弹层：危险操作统一走这里，确认按钮红色 */
-function ConfirmModal({ title, description, confirmLabel, busy, onConfirm, onClose }: ConfirmModalProps) {
+function ConfirmModal({
+  title,
+  description,
+  confirmLabel,
+  busy,
+  onConfirm,
+  onClose,
+}: ConfirmModalProps) {
   return (
     <Modal title={title} onClose={onClose}>
       <p className="mt-3 text-sm leading-relaxed text-(--color-ink-secondary)">{description}</p>
@@ -470,7 +493,12 @@ interface DangerAccountModalProps {
 }
 
 /** 危险操作按商业惯例要求输入昵称确认，避免误触直接清空本地账户 */
-function DangerAccountModal({ expectedNickname, busy, onConfirm, onClose }: DangerAccountModalProps) {
+function DangerAccountModal({
+  expectedNickname,
+  busy,
+  onConfirm,
+  onClose,
+}: DangerAccountModalProps) {
   const [value, setValue] = useState("");
   const confirmed = value.trim() === expectedNickname;
 
@@ -525,17 +553,43 @@ interface QuickLinkDef {
 }
 
 const QUICK_LINKS: readonly QuickLinkDef[] = [
-  { href: "/budget", label: "预算中心", desc: "12 类预算环与超支提醒", icon: Wallet, flag: "budget" },
+  {
+    href: "/budget",
+    label: "预算中心",
+    desc: "12 类预算环与超支提醒",
+    icon: Wallet,
+    flag: "budget",
+  },
   { href: "/settings", label: "数据管理", desc: "账单 · 导出 · 偏好", icon: Database },
-  { href: "/learn", label: "知识课堂", desc: "订阅陷阱与维权案例", icon: GraduationCap, flag: "learn", isNew: true },
+  {
+    href: "/learn",
+    label: "知识课堂",
+    desc: "订阅陷阱与维权案例",
+    icon: GraduationCap,
+    flag: "learn",
+    isNew: true,
+  },
   { href: "/report", label: "年度报告", desc: "消费年报与年度海报", icon: BarChart3 },
-  { href: "/insights?view=subscriptions", label: "订阅雷达", desc: "连续扣费监控与倒计时", icon: BellRing },
+  {
+    href: "/insights?view=subscriptions",
+    label: "订阅雷达",
+    desc: "连续扣费监控与倒计时",
+    icon: BellRing,
+  },
   { href: "/privacy", label: "隐私说明", desc: "数据可见性对照表", icon: ShieldCheck },
 ];
 
 /* ---------------- 页面主体 ---------------- */
 
-function SectionHeading({ icon: Icon, title, sub }: { icon: LucideIcon; title: string; sub: string }) {
+function SectionHeading({
+  icon: Icon,
+  title,
+  sub,
+}: {
+  icon: LucideIcon;
+  title: string;
+  sub: string;
+}) {
   return (
     <div className="flex items-start gap-2.5">
       <Icon className="mt-0.5 size-5 text-(--color-primary)" aria-hidden />
@@ -554,6 +608,8 @@ function MeContent() {
 
   // 页面内容仅在会话恢复后渲染（客户端），懒初始化可直接读本地存储
   const [activeBookId, setActiveBookId] = useState<string | null>(() => readActiveBookId());
+  // 累计体检次数（WP8 §8e）：挂载后读一次本地计数，展示口径与原来一致（次数）
+  const [checkupCount] = useState<number>(() => readStoredCheckupCount());
   // 账本列表走请求态管理：查询自持加载态，删除后失效重取
   const queryClient = useQueryClient();
   const { data: books = [], isLoading: booksLoading } = useQuery({
@@ -615,7 +671,9 @@ function MeContent() {
         }
       };
       const [txCount, monthExpenseCents, surplusCents] = await Promise.all([
-        load(SQL_TOTAL_TX, (rows) => rows.reduce((sum, row) => sum + toCents(Object.values(row)[1]), 0)),
+        load(SQL_TOTAL_TX, (rows) =>
+          rows.reduce((sum, row) => sum + toCents(Object.values(row)[1]), 0),
+        ),
         load(SQL_LATEST_MONTH, (rows) =>
           rows[0] ? toCents(Object.values(rows[0] ?? {})[1]) : null,
         ),
@@ -749,7 +807,7 @@ function MeContent() {
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1.5">
                 <h2 className="truncate text-xl font-bold md:text-2xl">{user.nickname}</h2>
-                <span className="font-(--font-mono) text-sm text-white/70">@{user.username}</span>
+                <span className="text-sm font-(--font-mono) text-white/70">@{user.username}</span>
                 {/* 段位徽章：title 承载段位说明，屏幕阅读器可读 */}
                 <span
                   title={rank.desc}
@@ -767,7 +825,7 @@ function MeContent() {
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Stethoscope className="size-4" aria-hidden />
-                  体检 {DEMO_CHECKUP_COUNT} 次
+                  体检 {checkupCount} 次
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <Trophy className="size-4" aria-hidden />
@@ -1027,14 +1085,19 @@ function MeContent() {
 
       {/* 弹层 */}
       {editOpen ? (
-        <EditProfileModal user={user} onClose={() => setEditOpen(false)} onSaved={handleProfileSaved} />
+        <EditProfileModal
+          user={user}
+          onClose={() => setEditOpen(false)}
+          onSaved={handleProfileSaved}
+        />
       ) : null}
       {deleteBookTarget ? (
         <ConfirmModal
           title="删除账本？"
           description={
             <>
-              将删除账本「{deleteBookTarget.name}」的记录；本地保存的该账本账单数据与体检结果会一并清除。
+              将删除账本「{deleteBookTarget.name}
+              」的记录；本地保存的该账本账单数据与体检结果会一并清除。
             </>
           }
           confirmLabel="确认删除"

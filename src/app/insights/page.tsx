@@ -16,15 +16,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Container } from "@/components/layout/container";
+import { AuthGuard } from "@/components/auth/route-guard";
 import {
   FilterBar,
   applyInsightFilters,
@@ -41,6 +35,7 @@ import { InsightCard, type InsightCardHandle } from "@/components/insights/insig
 import { LedgerView } from "@/components/insights/ledger-view";
 import { MerchantView } from "@/components/insights/merchant-view";
 import { SubscriptionView } from "@/components/insights/subscription-view";
+import { recheckAll } from "@/lib/achievements";
 import { CASES, type CaseRecord } from "@/lib/cases";
 import { DEMO_BUDGET, DEMO_INSIGHTS, DEMO_STAGES, type DemoInsight } from "@/lib/demo-data";
 import tfidfManifest from "@/data/tfidf-manifest.json";
@@ -476,7 +471,10 @@ function InsightsView() {
   // ?view=ledger 为主入口（顶部导航「账本」链接）；?tab=ledger 为旧参数兼容
   const rawView = searchParams.get("view") ?? searchParams.get("tab") ?? "cards";
   const view: ViewMode =
-    rawView === "gallery" || rawView === "ledger" || rawView === "merchants" || rawView === "subscriptions"
+    rawView === "gallery" ||
+    rawView === "ledger" ||
+    rawView === "merchants" ||
+    rawView === "subscriptions"
       ? rawView
       : "cards";
 
@@ -578,7 +576,10 @@ function InsightsView() {
       for (const card of lastRun.cards) {
         if (cancelled) return;
         try {
-          const result = await runWhitelistedAggregate(conn, buildCardChartSql(card.evidence.chart));
+          const result = await runWhitelistedAggregate(
+            conn,
+            buildCardChartSql(card.evidence.chart),
+          );
           applyResult(card.cardId, rowsToChartData(result.rows, card.evidence.chart.dimField));
         } catch {
           // 白名单拒绝/查询超时/数据集缺失：退化到 stats 兜底，图表仍可渲染
@@ -663,7 +664,12 @@ function InsightsView() {
   );
 
   const handleToggleFavorite = useCallback((id: string) => {
-    setFavorites((prev) => toggleFavoriteLocal(prev, id));
+    // 先算好下一份收藏列表（toggleFavoriteLocal 同步落盘），再以返回值更新
+    // 状态：比函数式更新先一步拿到结果，成就校正用的收藏数与状态严格一致
+    const next = toggleFavoriteLocal(readFavorites(), id);
+    setFavorites(next);
+    // 成就联动（WP8 §8c）：收藏数已落盘，全量校正（collector）
+    recheckAll({ favoriteCount: next.length });
   }, []);
 
   // 键盘快捷键（05 §5）：j/k 切卡、Enter 展开、t 数据表、/ 聚焦追问、Esc 取消锚点
@@ -797,7 +803,7 @@ function InsightsView() {
               <div
                 role="dialog"
                 aria-label="收藏夹"
-                className="absolute right-0 top-full z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-3 shadow-(--shadow-lg)"
+                className="absolute top-full right-0 z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-(--radius-xl) border border-(--color-border) bg-(--color-surface) p-3 shadow-(--shadow-lg)"
               >
                 <div className="mb-2 flex items-center justify-between gap-2">
                   <h2 className="text-sm font-semibold">收藏的洞察</h2>
@@ -838,7 +844,10 @@ function InsightsView() {
                           aria-label={`取消收藏：${insight.headline}`}
                           className="grid size-8 shrink-0 place-items-center rounded-full text-(--color-ink-muted) transition-colors hover:text-(--color-critical-ink)"
                         >
-                          <Star className="size-4 fill-(--color-accent) text-(--color-accent)" aria-hidden />
+                          <Star
+                            className="size-4 fill-(--color-accent) text-(--color-accent)"
+                            aria-hidden
+                          />
                         </button>
                       </li>
                     ))}
@@ -852,7 +861,12 @@ function InsightsView() {
 
       {view === "cards" || view === "gallery" ? (
         <div className="mt-3">
-          <FilterBar value={filters} onChange={setFilters} stages={DEMO_STAGES} resultCount={visible.length} />
+          <FilterBar
+            value={filters}
+            onChange={setFilters}
+            stages={DEMO_STAGES}
+            resultCount={visible.length}
+          />
         </div>
       ) : null}
 
@@ -969,7 +983,7 @@ function InsightsView() {
           type="button"
           onClick={() => setPanelOpen(true)}
           aria-label="打开追问面板"
-          className="fixed bottom-24 right-4 z-40 grid size-13 place-items-center rounded-full bg-(--color-primary) text-white shadow-(--shadow-lg) transition-colors hover:bg-(--color-btn-primary-hover) lg:hidden"
+          className="fixed right-4 bottom-24 z-40 grid size-13 place-items-center rounded-full bg-(--color-primary) text-white shadow-(--shadow-lg) transition-colors hover:bg-(--color-btn-primary-hover) lg:hidden"
         >
           <MessageSquare className="size-5" aria-hidden />
         </button>
@@ -980,11 +994,13 @@ function InsightsView() {
 
 export default function InsightsPage() {
   return (
-    <Container wide>
-      {/* useSearchParams 需位于 Suspense 边界内（Next 16 预渲染要求），骨架屏作为 fallback */}
-      <Suspense fallback={<InsightsSkeleton />}>
-        <InsightsView />
-      </Suspense>
-    </Container>
+    <AuthGuard>
+      <Container wide>
+        {/* useSearchParams 需位于 Suspense 边界内（Next 16 预渲染要求），骨架屏作为 fallback */}
+        <Suspense fallback={<InsightsSkeleton />}>
+          <InsightsView />
+        </Suspense>
+      </Container>
+    </AuthGuard>
   );
 }

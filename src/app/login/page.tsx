@@ -11,12 +11,13 @@ export const metadata: Metadata = {
 /**
  * 登录页。表单组件读取 next 回跳参数（useSearchParams），
  * 必须包在 Suspense 里，否则静态预渲染阶段会缺边界而失败。
+ * DEMO_MODE=mock（e2e 与零密钥演示）时放行验证码，生产环境真校验。
  */
 export default function LoginPage() {
   return (
     <AuthShell>
       <Suspense fallback={<AuthCardSkeleton />}>
-        <LoginForm />
+        <LoginForm mockBypass={process.env.DEMO_MODE === "mock"} />
       </Suspense>
     </AuthShell>
   );

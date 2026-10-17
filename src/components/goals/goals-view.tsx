@@ -387,7 +387,7 @@ export function GoalsView() {
                         aria-hidden
                       />
                     </div>
-                    <span className="w-20 shrink-0 text-right text-xs tabular-nums text-(--color-ink-secondary)">
+                    <span className="w-20 shrink-0 text-right text-xs text-(--color-ink-secondary) tabular-nums">
                       ¥{fmtYuan(item.monthlyCents)}/月
                     </span>
                   </div>
@@ -418,7 +418,7 @@ export function GoalsView() {
               value={nameInput}
               onChange={(event) => setNameInput(event.target.value)}
               placeholder="例如：攒一台新键盘"
-              className="mt-2 block w-full rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm outline-none transition-colors focus:border-(--color-primary)"
+              className="mt-2 block w-full rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm transition-colors outline-none focus:border-(--color-primary)"
             />
           </div>
           <div>
@@ -434,7 +434,7 @@ export function GoalsView() {
               value={amountInput}
               onChange={(event) => setAmountInput(event.target.value)}
               placeholder="例如：500"
-              className="mt-2 block w-full rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm outline-none transition-colors focus:border-(--color-primary)"
+              className="mt-2 block w-full rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm transition-colors outline-none focus:border-(--color-primary)"
             />
           </div>
           <div>
@@ -447,7 +447,7 @@ export function GoalsView() {
               min={nowMonth}
               value={deadlineInput}
               onChange={(event) => setDeadlineInput(event.target.value)}
-              className="mt-2 block w-full rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm outline-none transition-colors focus:border-(--color-primary)"
+              className="mt-2 block w-full rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm transition-colors outline-none focus:border-(--color-primary)"
             />
           </div>
         </div>
@@ -531,7 +531,7 @@ export function GoalsView() {
 
                   {/* 进度条 */}
                   <div className="mt-4 flex items-baseline justify-between gap-3">
-                    <p className="text-sm tabular-nums text-(--color-ink-secondary)">
+                    <p className="text-sm text-(--color-ink-secondary) tabular-nums">
                       已存{" "}
                       <span className="text-lg font-bold text-(--color-ink)">
                         ¥{fmtYuan(saved)}
@@ -550,7 +550,10 @@ export function GoalsView() {
 
                   {/* 预计达成 + 加速建议 */}
                   <p className="mt-3 flex items-start gap-1.5 text-sm">
-                    <CalendarClock className="mt-0.5 size-4 shrink-0 text-(--color-ink-muted)" aria-hidden />
+                    <CalendarClock
+                      className="mt-0.5 size-4 shrink-0 text-(--color-ink-muted)"
+                      aria-hidden
+                    />
                     <span>
                       <span className={advice ? ADVICE_STYLE[advice.status] : ""}>
                         {advice?.reachText}
@@ -577,7 +580,7 @@ export function GoalsView() {
                         }))
                       }
                       placeholder="存入金额（元）"
-                      className="w-36 rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm outline-none transition-colors focus:border-(--color-primary)"
+                      className="w-36 rounded-(--radius-md) border border-(--color-border) bg-(--color-surface) px-3 py-2 text-sm transition-colors outline-none focus:border-(--color-primary)"
                     />
                     <button
                       type="button"
@@ -588,9 +591,12 @@ export function GoalsView() {
                       存入
                     </button>
                     {recent.length > 0 ? (
-                      <p className="ml-auto text-xs tabular-nums text-(--color-ink-muted)">
+                      <p className="ml-auto text-xs text-(--color-ink-muted) tabular-nums">
                         {recent
-                          .map((dep) => `${dep.dateIso.slice(5).replace("-", "/")} ¥${fmtYuan(dep.cents)}`)
+                          .map(
+                            (dep) =>
+                              `${dep.dateIso.slice(5).replace("-", "/")} ¥${fmtYuan(dep.cents)}`,
+                          )
                           .join(" · ")}
                       </p>
                     ) : (
@@ -619,9 +625,6 @@ export function GoalsView() {
           <li>页面用「预计月结余」估算还需几个月，并给出从哪个类目省的加速建议；</li>
           <li>没有收入记录时估算不可用，但存入记录照常累计。</li>
         </ul>
-        <p className="mt-3 text-xs text-(--color-ink-muted)">
-          结余估算来自你的本地账单（浏览器内聚合），目标与存入记录只保存在本机，不上传。
-        </p>
       </section>
 
       {/* 轻提示：底部居中，不打断操作 */}

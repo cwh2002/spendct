@@ -4,7 +4,6 @@ import {
   ArrowRight,
   Bot,
   Code2,
-  Coins,
   Database,
   GraduationCap,
   ListChecks,
@@ -116,8 +115,12 @@ export default function PrivacyPage() {
         </p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight md:text-4xl">隐私说明</h1>
         <p className="mt-4 text-lg leading-relaxed text-(--color-ink-secondary)">
-          一句话承诺：<strong className="font-semibold text-(--color-ink)">账单解析与体检默认都在你的浏览器里完成</strong>。
-          本地答不了的追问会把统计与最近 150 笔明细快照交给 AI 分析；服务器只做转发、零存储——我们说到做到，宁可少承诺。
+          一句话承诺：
+          <strong className="font-semibold text-(--color-ink)">
+            账单解析与体检默认都在你的浏览器里完成
+          </strong>
+          。 本地答不了的追问会把统计与最近 150 笔明细快照交给 AI
+          分析；服务器只做转发、零存储——我们说到做到，宁可少承诺。
         </p>
       </header>
 
@@ -151,19 +154,34 @@ export default function PrivacyPage() {
           <table className="w-full min-w-[820px] border-collapse text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-(--color-surface) text-left shadow-(--shadow-sm)">
-                <th scope="col" className="w-12 border-b border-(--color-border) px-4 py-3 font-semibold text-(--color-ink-muted) tabular-nums">
+                <th
+                  scope="col"
+                  className="w-12 border-b border-(--color-border) px-4 py-3 font-semibold text-(--color-ink-muted) tabular-nums"
+                >
                   #
                 </th>
-                <th scope="col" className="min-w-[200px] border-b border-(--color-border) px-4 py-3 font-semibold">
+                <th
+                  scope="col"
+                  className="min-w-[200px] border-b border-(--color-border) px-4 py-3 font-semibold"
+                >
                   数据项
                 </th>
-                <th scope="col" className="min-w-[170px] border-b border-(--color-border) px-4 py-3 font-semibold">
+                <th
+                  scope="col"
+                  className="min-w-[170px] border-b border-(--color-border) px-4 py-3 font-semibold"
+                >
                   你的浏览器
                 </th>
-                <th scope="col" className="min-w-[170px] border-b border-(--color-border) px-4 py-3 font-semibold">
+                <th
+                  scope="col"
+                  className="min-w-[170px] border-b border-(--color-border) px-4 py-3 font-semibold"
+                >
                   AI 大模型
                 </th>
-                <th scope="col" className="min-w-[170px] border-b border-(--color-border) px-4 py-3 font-semibold">
+                <th
+                  scope="col"
+                  className="min-w-[170px] border-b border-(--color-border) px-4 py-3 font-semibold"
+                >
                   云端服务器
                 </th>
               </tr>
@@ -181,11 +199,16 @@ export default function PrivacyPage() {
                     </td>
                     <td className="px-4 py-3 align-top">
                       <span className="flex items-start gap-2 font-medium text-(--color-ink)">
-                        <span className={`mt-1.5 inline-block size-2 shrink-0 rounded-full ${meta.dot}`} aria-hidden />
+                        <span
+                          className={`mt-1.5 inline-block size-2 shrink-0 rounded-full ${meta.dot}`}
+                          aria-hidden
+                        />
                         {row.item}
                       </span>
                       {row.note ? (
-                        <p className="mt-1.5 pl-4 text-xs leading-relaxed text-(--color-ink-muted)">{row.note}</p>
+                        <p className="mt-1.5 pl-4 text-xs leading-relaxed text-(--color-ink-muted)">
+                          {row.note}
+                        </p>
                       ) : null}
                     </td>
                     <td className="px-4 py-3 align-top">
@@ -194,7 +217,9 @@ export default function PrivacyPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 align-top">
-                      <span className={`font-medium ${VALUE_META[row.llm].color}`}>{VALUE_META[row.llm].label}</span>
+                      <span className={`font-medium ${VALUE_META[row.llm].color}`}>
+                        {VALUE_META[row.llm].label}
+                      </span>
                     </td>
                     <td className="px-4 py-3 align-top">
                       <span className={`font-medium ${VALUE_META[row.server].color}`}>
@@ -209,9 +234,9 @@ export default function PrivacyPage() {
         </div>
 
         <p className="mt-3 text-xs leading-relaxed text-(--color-ink-muted)">
-          账单解析与体检默认都在你的浏览器里计算；追问在线兜底时 AI 会收到统计与最近 150 笔明细快照（第 24 行）；
-          其余路径 AI 只看统计结果（含预算与预测汇总，见第 22 行）；服务器只做转发、不留存。
-          表中第 13、19、20、24 行是四处例外，我们都如实列出。
+          账单解析与体检默认都在你的浏览器里计算；追问在线兜底时 AI 会收到统计与最近 150
+          笔明细快照（第 24 行）； 其余路径 AI 只看统计结果（含预算与预测汇总，见第 22
+          行）；服务器只做转发、不留存。 表中第 13、19、20、24 行是四处例外，我们都如实列出。
         </p>
       </section>
 
@@ -220,7 +245,10 @@ export default function PrivacyPage() {
         <h2 className="text-xl font-bold md:text-2xl">三端各看到什么</h2>
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           {PROMISE_CARDS.map(({ icon: Icon, title, body }) => (
-            <div key={title} className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-6 shadow-(--shadow-sm)">
+            <div
+              key={title}
+              className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-6 shadow-(--shadow-sm)"
+            >
               <span className="grid size-10 place-items-center rounded-(--radius-md) bg-(--color-primary-soft)">
                 <Icon className="size-5 text-(--color-primary)" aria-hidden />
               </span>
@@ -231,7 +259,7 @@ export default function PrivacyPage() {
         </div>
       </section>
 
-      {/* ③ 项目介绍 · 团队 · 费用说明 */}
+      {/* ③ 项目介绍 · 团队 */}
       <section aria-label="项目介绍与团队" className="mt-14">
         <h2 className="text-xl font-bold md:text-2xl">关于项目</h2>
         <div className="mt-5 grid gap-4 lg:grid-cols-3">
@@ -241,9 +269,47 @@ export default function PrivacyPage() {
               SpendCT · 消费CT —— 账单体检与消费洞察平台
             </h3>
             <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
-              上传微信/支付宝账单，六步体检（清洗、画像、异常、订阅陷阱、环比归因、年度报告）全部在你自己的浏览器里
-              跑完，AI 只负责把统计结果讲成看得懂的结论。传智杯 AI Web 挑战赛参赛作品。
+              传智杯 AI Web 挑战赛参赛作品。把微信、支付宝导出的账单 CSV 拖进浏览器，
+              六步体检（清洗、画像、异常、订阅陷阱、环比归因、年度报告）自动跑完， AI
+              负责把统计结果讲成看得懂的结论。
             </p>
+            <dl className="mt-4 space-y-3.5 text-sm leading-relaxed">
+              <div>
+                <dt className="font-semibold text-(--color-ink)">面向谁</dt>
+                <dd className="mt-0.5 text-(--color-ink-secondary)">
+                  在意「钱花到哪了」的大学生与年轻上班族，尤其是被自动续费、深夜冲动消费困扰的人。
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-(--color-ink)">核心能力</dt>
+                <dd className="mt-0.5 text-(--color-ink-secondary)">
+                  六步体检之外，还有订阅雷达（自动续费逐笔核对、下次扣费倒计时）、预算中心 （12
+                  类目预算与下月预测）、消费日历（支出热力图与流水）、省钱挑战（今日支出打卡）、
+                  年度报告（健康指数与 1080×1920 海报）、成就体系（13 枚按真实行为解锁的徽章）。
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-(--color-ink)">技术架构</dt>
+                <dd className="mt-0.5 text-(--color-ink-secondary)">
+                  Next.js + React 19 + TypeScript 构建界面；DuckDB-WASM
+                  在浏览器内完成全部账单聚合分析； IndexedDB 本地持久化账户、账本与成就。
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-(--color-ink)">隐私设计</dt>
+                <dd className="mt-0.5 text-(--color-ink-secondary)">
+                  账单解析与体检默认全部在浏览器本地完成；本地答不了的追问按最小必要原则发送统计与
+                  明细快照，服务器只转发、不留存。数据可见性对照表见本页下方。
+                </dd>
+              </div>
+              <div>
+                <dt className="font-semibold text-(--color-ink)">开源与交付</dt>
+                <dd className="mt-0.5 text-(--color-ink-secondary)">
+                  源码随参赛提交公开（MIT 协议），8 份设计文档覆盖架构、隐私、管线、RAG-MCP、UIUX、
+                  路线图与契约，从设计到实现全程可查。
+                </dd>
+              </div>
+            </dl>
           </div>
 
           <div className="flex flex-col gap-4">
@@ -254,20 +320,6 @@ export default function PrivacyPage() {
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
                 由 SpendCT 团队开发与维护，专注大学生的消费健康。
-              </p>
-            </div>
-
-            <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-6 shadow-(--shadow-sm)">
-              <h3 className="flex items-center gap-2 font-semibold">
-                <Coins className="size-5 text-(--color-primary)" aria-hidden />
-                费用说明
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
-                模型调用预算{" "}
-                <span className="font-medium text-(--color-ink) tabular-nums">¥30–100</span>，硬上限{" "}
-                <span className="font-medium text-(--color-ink) tabular-nums">¥150</span>
-                ，费用为估算值、实际以账单为准。账单分析在你自己的浏览器里完成，不产生模型费用；
-                只有截图识别按次数计费。
               </p>
             </div>
           </div>
@@ -309,7 +361,9 @@ export default function PrivacyPage() {
                   </span>
                 </div>
                 <h3 className="mt-3 text-sm font-semibold text-(--color-ink)">{cap.title}</h3>
-                <p className="mt-1 text-xs leading-relaxed text-(--color-ink-secondary)">{cap.desc}</p>
+                <p className="mt-1 text-xs leading-relaxed text-(--color-ink-secondary)">
+                  {cap.desc}
+                </p>
               </li>
             );
           })}

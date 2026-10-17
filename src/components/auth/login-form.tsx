@@ -3,9 +3,10 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, LoaderCircle } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AccountError } from "@/lib/account/types";
 import { useAuth } from "@/lib/account/store";
+import { CaptchaField, type CaptchaFieldHandle } from "./captcha-field";
 import { PasswordInput } from "./password-input";
 import { TrustBar } from "./trust-bar";
 
@@ -26,7 +27,12 @@ function resolveNext(raw: string | null): string {
   return "/me";
 }
 
-export function LoginForm() {
+interface LoginFormProps {
+  /** 演示模式放行验证码（DEMO_MODE=mock 时由服务端组件传入） */
+  mockBypass?: boolean;
+}
+
+export function LoginForm({ mockBypass = false }: LoginFormProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const login = useAuth((state) => state.login);
@@ -36,6 +42,7 @@ export function LoginForm() {
   const [remember, setRemember] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<FormError | null>(null);
+  const captchaRef = useRef<CaptchaFieldHandle>(null);
 
   const next = resolveNext(searchParams.get("next"));
   // 跨页传递回跳参数：注册完成后仍能回到最初想去的页面
@@ -53,6 +60,10 @@ export function LoginForm() {
     }
     if (!password) {
       setFormError({ message: "请输入密码", fields: ["password"] });
+      return;
+    }
+    // 验证码校验：失败时字段内提示并换图，不产生顶部错误横幅
+    if (!captchaRef.current?.verify()) {
       return;
     }
 
@@ -144,6 +155,20 @@ export function LoginForm() {
             记住我
           </label>
           <span className="text-xs text-(--color-ink-muted)">30 天内免登录</span>
+        </div>
+
+        <div>
+          <label htmlFor="login-captcha" className="text-sm font-medium text-(--color-ink)">
+            验证码
+          </label>
+          <div className="mt-1.5">
+            <CaptchaField
+              ref={captchaRef}
+              id="login-captcha"
+              mockBypass={mockBypass}
+              disabled={submitting}
+            />
+          </div>
         </div>
 
         <button

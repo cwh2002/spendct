@@ -20,10 +20,24 @@
  */
 import { useEffect, useRef, useState } from "react";
 
-import { buildCaseRefsText, buildHistoryMessages, computeDetailBudget, DEEP_CONTEXT_PREFIX, DETAIL_CONTEXT_PREFIX, DETAIL_MIN_LENGTH, MESSAGE_BUDGET, ONLINE_CONTEXT_PREFIX, TARGETED_CONTEXT_PREFIX } from "@/lib/assistant/chat-context";
+import {
+  buildCaseRefsText,
+  buildHistoryMessages,
+  computeDetailBudget,
+  DEEP_CONTEXT_PREFIX,
+  DETAIL_CONTEXT_PREFIX,
+  DETAIL_MIN_LENGTH,
+  MESSAGE_BUDGET,
+  ONLINE_CONTEXT_PREFIX,
+  TARGETED_CONTEXT_PREFIX,
+} from "@/lib/assistant/chat-context";
 import { checkChatInput, GUARD_BLOCKED_REPLY } from "@/lib/assistant/input-guard";
 import { isBillQuestion } from "@/lib/assistant/bill-signal";
-import { mapErrorCode, onlineErrorNote, onlineFailureTipText } from "@/lib/assistant/online-failure-text";
+import {
+  mapErrorCode,
+  onlineErrorNote,
+  onlineFailureTipText,
+} from "@/lib/assistant/online-failure-text";
 import { streamFollowup, type FollowupPlanStep } from "@/lib/assistant/stream-followup";
 import {
   analyzeQuestion,
@@ -112,6 +126,12 @@ export interface ChatPipelineOptions {
   enableCasePath?: boolean;
   /** 输入闸门（两个面板都开；关闭仅用于测试诊断） */
   enableGuard?: boolean;
+  /**
+   * 提交成功回调（WP8 §8c）：一次被管线接受的提问只调一次。
+   * 追问面板借此计「对洞察卡追问」次数（questioner）；全局助理不传——
+   * 普通问答不计入追问成就。
+   */
+  onSubmitted?: () => void;
 }
 
 /**
@@ -125,9 +145,7 @@ const TOP_MERCHANT_NAMES_SQL =
 /** 查询支出 Top50 商户名单，取出名字字符串数组供定向明细做可信商户匹配 */
 async function fetchTopMerchantNames(runSql: SqlRunner): Promise<string[]> {
   const rows = asRowList(await runSql(TOP_MERCHANT_NAMES_SQL));
-  return rows
-    .map((row) => String(valAt(row, 0) ?? "").trim())
-    .filter((name) => name.length > 0);
+  return rows.map((row) => String(valAt(row, 0) ?? "").trim()).filter((name) => name.length > 0);
 }
 
 /**
@@ -189,6 +207,7 @@ function caseAnswerText(cases: ChatCaseRef[]): string {
 export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline {
   const enableCasePath = options.enableCasePath ?? false;
   const enableGuard = options.enableGuard ?? true;
+  const onSubmitted = options.onSubmitted;
 
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [thinking, setThinking] = useState<ChatThinkingState | null>(null);
@@ -242,7 +261,12 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
     setTurns((prev) =>
       prev.map((turn) =>
         turn.id === turnId
-          ? { ...turn, note: deep ? "deep" : "live", sentStats: sent.stats, sentDetails: sent.details }
+          ? {
+              ...turn,
+              note: deep ? "deep" : "live",
+              sentStats: sent.stats,
+              sentDetails: sent.details,
+            }
           : turn,
       ),
     );
@@ -333,7 +357,10 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
           const plan = buildTargetedDetailPlan(question, merchantNames);
           const sql = buildTargetedDetailSql(plan);
           if (sql) {
-            const text = await buildTargetedDetailContext(createTargetedDetailRunner(getDuckDB), plan);
+            const text = await buildTargetedDetailContext(
+              createTargetedDetailRunner(getDuckDB),
+              plan,
+            );
             if (text.length > 0) targeted = text;
           }
         } catch {
@@ -428,9 +455,7 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       // 历史预算必须扣掉本轮问题长：buildHistoryMessages 恒在末尾追加问题、
       // 不占预算（用户刚输入的内容不能被裁掉），不在这里先扣就会溢出
       const budget =
-        MESSAGE_BUDGET -
-        messages.reduce((sum, m) => sum + m.content.length, 0) -
-        question.length;
+        MESSAGE_BUDGET - messages.reduce((sum, m) => sum + m.content.length, 0) - question.length;
       messages.push(...buildHistoryMessages(turns, question, budget));
 
       const response = await fetch("/api/followup", {
@@ -486,7 +511,9 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
       let badgeSeq = 0;
       const flushBadges = () => {
         setTurns((prev) =>
-          prev.map((turn) => (turn.id === bubbleId ? { ...turn, toolBadges: [...badges, ...pending] } : turn)),
+          prev.map((turn) =>
+            turn.id === bubbleId ? { ...turn, toolBadges: [...badges, ...pending] } : turn,
+          ),
         );
       };
 
@@ -651,6 +678,9 @@ export function useChatPipeline(options: ChatPipelineOptions = {}): ChatPipeline
         return;
       }
     }
+    // 提交收口（WP8 §8c）：问题被管线接受即回调一次。计数在发起侧——
+    // 后续走闲聊分流 / 本地规则 / 在线兜底哪条路径都不再重复调用。
+    onSubmitted?.();
 
     // 闲聊分流在恢复等待之前：打招呼 / 询问身份是零数据依赖的同步定稿回复，
     // 不需要等会话恢复，也不置位思考态（恢复悬挂时闲聊绝不无谓等待 15s）。

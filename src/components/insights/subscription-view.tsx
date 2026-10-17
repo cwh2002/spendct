@@ -1,19 +1,13 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import {
-  CalendarClock,
-  CircleCheck,
-  CircleX,
-  Database,
-  Radar,
-  ShieldCheck,
-} from "lucide-react";
+import { CalendarClock, CircleCheck, CircleX, Database, Radar, ShieldCheck } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { SubscriptionCard } from "@/components/subscriptions/subscription-card";
 import { useCountUp } from "@/components/subscriptions/use-count-up";
+import { hasSilentSubscription, recheckAll } from "@/lib/achievements";
 import { DEMO_SUBSCRIPTIONS, type DemoSubscription } from "@/lib/demo-data";
 import { getDuckDB } from "@/lib/duckdb/service";
 import { usePipeline, type LastRunSummary } from "@/lib/pipeline/store";
@@ -284,9 +278,7 @@ const MERCHANT_NAME_MARKS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
 function merchantLabelFor(index: number): string {
   const mark =
-    index < MERCHANT_NAME_MARKS.length
-      ? `商户 ${MERCHANT_NAME_MARKS[index]}`
-      : `商户 ${index + 1}`;
+    index < MERCHANT_NAME_MARKS.length ? `商户 ${MERCHANT_NAME_MARKS[index]}` : `商户 ${index + 1}`;
   return `${mark}（已打码）`;
 }
 
@@ -356,7 +348,22 @@ export function SubscriptionView() {
     () => (isDemoMode ? DEMO_SUBSCRIPTIONS : realReady ? realData.subs : []),
     [isDemoMode, realReady, realData],
   );
-  const sharePct = isDemoMode ? DEMO_EXPENSE_SHARE_PCT : (realReady ? realData.sharePct : 0);
+  const sharePct = isDemoMode ? DEMO_EXPENSE_SHARE_PCT : realReady ? realData.sharePct : 0;
+
+  // 成就联动（WP8 §8c）：demo/real 两条动线收敛到 subs 后，逐商户取扣费日期序列
+  // 判沉默订阅（相邻扣费间隔 >90 天），任一商户命中即全量校正（sub-hunter）。
+  // 真实动线扣费轨迹来自周期回填：年付周期天然 >90 天间隔，属正常扣费而非
+  // 「曾经按月扣、后来没动静」，判定前先排除；查询中（subs 为空）跳过，
+  // 不把空数据当「无沉默订阅」写进缓存。
+  useEffect(() => {
+    if (loading) return;
+    const silent = subs.some(
+      (sub) =>
+        sub.cycle !== "yearly" &&
+        hasSilentSubscription(sub.charges.map((charge) => charge.date)),
+    );
+    recheckAll({ silentSubscription: silent });
+  }, [subs, loading]);
 
   // 摘要口径：两条动线都取「单笔均值 × 笔数」求和。演示数据全年均衡扣费，
   // 与滚动 365 天流水求和同值；真实数据为命中商户全窗口合计（近一年近似）
@@ -480,7 +487,8 @@ export function SubscriptionView() {
             我们是怎么认出订阅的
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
-            把同一家商户、金额一致的扣费按时间排开：连续扣费 3 次以上、间隔规律、金额一致，就提醒你核对。每笔扣费时间都留在卡片的时间线里，你可以点开逐笔核对。
+            把同一家商户、金额一致的扣费按时间排开：连续扣费 3
+            次以上、间隔规律、金额一致，就提醒你核对。每笔扣费时间都留在卡片的时间线里，你可以点开逐笔核对。
           </p>
         </div>
         <div className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)">
@@ -489,19 +497,14 @@ export function SubscriptionView() {
             你的反馈会帮我们改进
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-(--color-ink-secondary)">
-            你的每次标记都在帮我们改进识别：点「是订阅」，下次同类扣费会更快被认出；点「误报」，我们会减少对这类扣费的打扰。放心，所有标记只存在你自己的浏览器里，不会上传。
+            你的每次标记都在帮我们改进识别：点「是订阅」，下次同类扣费会更快被认出；点「误报」，我们会减少对这类扣费的打扰。
           </p>
           <ul className="mt-3 flex flex-col gap-2 text-sm text-(--color-ink-secondary)">
             <li className="flex gap-2">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-(--color-good)" aria-hidden />
-              标记只保存在你的浏览器里，不会上传
-            </li>
-            <li className="flex gap-2">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-(--color-primary)" aria-hidden />
-              扣费提醒同样只保存在你的浏览器里，不上传任何数据
-            </li>
-            <li className="flex gap-2">
-              <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-(--color-warning)" aria-hidden />
+              <span
+                className="mt-1.5 size-1.5 shrink-0 rounded-full bg-(--color-warning)"
+                aria-hidden
+              />
               大家的反馈会以匿名方式汇总，用来改进识别，商户名称始终打码
             </li>
           </ul>

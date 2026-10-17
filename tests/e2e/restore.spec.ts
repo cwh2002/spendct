@@ -17,8 +17,12 @@
  * 问法——测试日期漂过 2026-10 后当月无数据、断言必然挂掉，因此用例钉住
  * 浏览器时钟到 2026-10-14（page.clock.install 只设起始时刻、不冻结计时），
  * 并固定时区为 Asia/Shanghai，保证本地引擎的相对月份换算确定。
+ * 上传/洞察页受 AuthGuard 保护，装配账单前先以演示账户登录
+ * （helpers.loginDemo，mock 模式下验证码留空即过）。
  */
 import { expect, test, type Page } from "@playwright/test";
+
+import { loginDemo } from "./helpers";
 
 // 桌面 1440×900：抽屉在桌面为右下固定面板，直接可见（与 assistant.spec 同口径）；
 // 时区固定上海：相对月份（这个月/上上月）按本地时钟换算，跑在不同时区的
@@ -50,8 +54,12 @@ test("导入账单 → 刷新 → 账本恢复 + 智能助理本地回答（不�
 
   // 钉住浏览器时钟到 2026-10-14（只设起始时刻，计时照常推进）：内置账单
   // 时间锚是 2026-10-13，「这个月/上上月」的相对月份换算必须落在数据存在
-  // 的月份，否则测试日期漂移后当月无数据、断言挂掉
+  // 的月份，否则测试日期漂移后当月无数据、断言挂掉。
+  // 钉钟放在登录导航之前：后续每个页面（含登录）走的都是假时钟
   await page.clock.install({ time: new Date("2026-10-14T12:00:00+08:00") });
+
+  // 0) 上传/洞察页受 AuthGuard 保护：先以演示账户登录，再装配账单
+  await loginDemo(page);
 
   // 1) 与 pipeline.spec 全动线一致的账单装配：先落库并持久化到 IndexedDB
   await page.goto("/upload?sample=1");

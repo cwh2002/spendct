@@ -11,13 +11,7 @@ import {
   ThumbsUp,
   TriangleAlert,
 } from "lucide-react";
-import {
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { ECElementEvent } from "echarts/core";
 import { EChart, type ECOption } from "@/components/charts/e-chart";
 import {
@@ -26,6 +20,7 @@ import {
   buildLineOption,
   formatYuan,
 } from "@/components/charts/option-builders";
+import { recordProgressEvent, recheckAll } from "@/lib/achievements";
 import type { DemoInsight } from "@/lib/demo-data";
 
 /** 页面通过 ref 驱动键盘操作（j/k 聚焦、Enter 展开、t 切数据表） */
@@ -114,7 +109,11 @@ function buildTableRows(insight: DemoInsight): { label: string; value: string; n
       // 比率列（%）固定 1 位小数，与图表标签口径一致
       const unit = insight.chartUnit ?? "元";
       const value =
-        unit === "元" ? `${formatYuan(raw)} 元` : unit === "%" ? `${raw.toFixed(1)} ${unit}` : `${raw} ${unit}`;
+        unit === "元"
+          ? `${formatYuan(raw)} 元`
+          : unit === "%"
+            ? `${raw.toFixed(1)} ${unit}`
+            : `${raw} ${unit}`;
       return { label, value };
     }
     if (insight.chartKind === "donut") {
@@ -129,7 +128,11 @@ function buildTableRows(insight: DemoInsight): { label: string; value: string; n
     const unit = insight.chartUnit;
     if (unit) {
       const value =
-        unit === "元" ? `${formatYuan(raw)} 元` : unit === "%" ? `${raw.toFixed(1)} ${unit}` : `${raw} ${unit}`;
+        unit === "元"
+          ? `${formatYuan(raw)} 元`
+          : unit === "%"
+            ? `${raw.toFixed(1)} ${unit}`
+            : `${raw} ${unit}`;
       return { label, value };
     }
     const inferred = insight.chartData.some((v) => v >= 100) ? "元" : "笔";
@@ -207,6 +210,19 @@ export function InsightCard({
     setConfirmed(next);
     setDisputed(false);
     if (next) {
+      // 采纳持久化（WP8 §8c）：进度落盘后全量校正成就（night-guard 判 stage
+      // 为 anomaly 的深夜冲动卡，saver 用采纳月对比月度支出）。stage 取卡上
+      // 归一化阶段值（stageId，与管线六阶段枚举同口径）；卡片没有所属月字段，
+      // month 取当前月 YYYY-MM。同 cardId 去重，重复确认不会重复计数。
+      const now = new Date();
+      const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      recordProgressEvent({
+        type: "adopt",
+        cardId: insight.id,
+        stage: insight.stageId,
+        month,
+      });
+      recheckAll();
       // 主色高亮 800ms 后回落到已确认态
       setConfirmFlash(true);
       flashTimer.current = window.setTimeout(() => setConfirmFlash(false), 800);
@@ -236,15 +252,22 @@ export function InsightCard({
       transition={{ duration: 0.25, delay: Math.min(index * 0.04, 0.24) }}
       className={`rounded-(--radius-lg) border bg-(--color-surface) shadow-(--shadow-sm) transition-shadow ${
         withheld ? "border-(--color-warning)/50" : "border-(--color-border)"
-      } ${focused ? "ring-2 ring-(--color-brand-600) ring-offset-2 ring-offset-(--color-surface-page) shadow-(--shadow-md)" : ""}`}
+      } ${focused ? "shadow-(--shadow-md) ring-2 ring-(--color-brand-600) ring-offset-2 ring-offset-(--color-surface-page)" : ""}`}
     >
       {insight.withheld ? (
         /* 低置信度卡顶部黄条：原因 + 补救动作，整体灰显但不阻断操作 */
         <div className="flex items-start gap-2 rounded-t-(--radius-lg) bg-(--color-warn-soft) px-4 py-2.5 sm:px-5">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0 text-(--color-warning-ink)" aria-hidden />
+          <TriangleAlert
+            className="mt-0.5 size-4 shrink-0 text-(--color-warning-ink)"
+            aria-hidden
+          />
           <div>
-            <p className="text-sm font-medium text-(--color-warning-ink)">{insight.withheld.reason}</p>
-            <p className="mt-0.5 text-xs text-(--color-warning-ink)/80">{insight.withheld.action}</p>
+            <p className="text-sm font-medium text-(--color-warning-ink)">
+              {insight.withheld.reason}
+            </p>
+            <p className="mt-0.5 text-xs text-(--color-warning-ink)/80">
+              {insight.withheld.action}
+            </p>
           </div>
         </div>
       ) : null}
@@ -265,7 +288,9 @@ export function InsightCard({
                 key={dot}
                 aria-hidden
                 className={`size-2 rounded-full ${
-                  dot <= insight.confidence ? "bg-(--color-primary)" : "bg-(--color-border-strong)/70"
+                  dot <= insight.confidence
+                    ? "bg-(--color-primary)"
+                    : "bg-(--color-border-strong)/70"
                 }`}
               />
             ))}
@@ -287,7 +312,7 @@ export function InsightCard({
 
         <h3
           id={`${insight.id}-headline`}
-          className="px-4 pt-2.5 text-base font-semibold leading-snug text-(--color-ink) sm:px-5"
+          className="px-4 pt-2.5 text-base leading-snug font-semibold text-(--color-ink) sm:px-5"
         >
           {insight.headline}
         </h3>

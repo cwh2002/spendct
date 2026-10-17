@@ -27,10 +27,12 @@ import {
 import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import { Container } from "@/components/layout/container";
+import { readProgress, recordProgressEvent, recheckAll } from "@/lib/achievements";
 import { CASES, CATEGORY_LABELS } from "@/lib/cases";
 import tfidfManifest from "@/data/tfidf-manifest.json";
 import { tfidfSearch, type TfidfManifest } from "@/lib/rag/tfidf";
 import { TFIDF_FALLBACK_K } from "@/lib/rag/types";
+import { useMounted } from "@/lib/use-mounted";
 import type { CaseRecord } from "@/lib/cases";
 
 /** 8 类各自的身份图标：徽标与手册卡共用，颜色中性、靠图标区分类别 */
@@ -106,11 +108,16 @@ function CaseCard({
   expanded,
   onToggle,
   query,
+  benefitActivated = false,
+  onActivateBenefit,
 }: {
   item: CaseRecord;
   expanded: boolean;
   onToggle: () => void;
   query: string;
+  /** 学生权益案例卡专用：已激活过任一权益时按钮变「已激活」并禁用（WP8 §8c scholar） */
+  benefitActivated?: boolean;
+  onActivateBenefit?: () => void;
 }) {
   const Icon = CATEGORY_ICONS[item.category] ?? FileText;
   const label = CATEGORY_LABELS[item.category] ?? item.category;
@@ -136,11 +143,13 @@ function CaseCard({
         ) : null}
       </div>
 
-      <h3 className="mt-2.5 text-base font-semibold leading-snug text-(--color-ink)">
+      <h3 className="mt-2.5 text-base leading-snug font-semibold text-(--color-ink)">
         <Highlight text={item.title} query={query} />
       </h3>
 
-      <p className={`mt-1.5 text-sm leading-relaxed text-(--color-ink-secondary) ${expanded ? "" : "line-clamp-2"}`}>
+      <p
+        className={`mt-1.5 text-sm leading-relaxed text-(--color-ink-secondary) ${expanded ? "" : "line-clamp-2"}`}
+      >
         <Highlight text={item.summary} query={query} />
       </p>
 
@@ -151,8 +160,27 @@ function CaseCard({
         className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-(--color-brand-600) transition-colors hover:text-(--color-primary)"
       >
         {expanded ? "收起" : "展开全文"}
-        <ChevronDown className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden />
+        <ChevronDown
+          className={`size-3.5 transition-transform ${expanded ? "rotate-180" : ""}`}
+          aria-hidden
+        />
       </button>
+
+      {item.category === "student_benefits" && onActivateBenefit ? (
+        <button
+          type="button"
+          onClick={onActivateBenefit}
+          disabled={benefitActivated}
+          className={`mt-3 inline-flex h-9 items-center gap-1.5 rounded-full border px-3.5 text-xs font-medium transition-colors ${
+            benefitActivated
+              ? "cursor-default border-(--color-good)/40 bg-(--color-primary-soft) text-(--color-good-ink)"
+              : "border-(--color-border) text-(--color-ink-secondary) hover:border-(--color-primary) hover:text-(--color-brand-600)"
+          }`}
+        >
+          <GraduationCap className="size-3.5" aria-hidden />
+          {benefitActivated ? "已激活" : "标记为已激活"}
+        </button>
+      ) : null}
 
       {item.legalBasis ? (
         <p className="mt-3 flex items-start gap-1.5 rounded-(--radius-md) bg-(--color-surface-page) px-3 py-2 text-xs leading-relaxed text-(--color-ink-secondary)">
@@ -186,6 +214,20 @@ export default function LearnPage() {
   // 手册卡滚动目标：scroll-mt 避开 sticky 顶栏
   const listRef = useRef<HTMLDivElement | null>(null);
 
+  // 学生权益激活态（WP8 §8c scholar）：惰性读本地进度（readProgress 自带 SSR 守卫），
+  // 渲染按 mounted 门控——水合首帧与服务器同渲染「标记为已激活」，挂载后才呈现
+  // 真实进度，不产生水合不一致；激活后即时置位并全局共享（读进度 >0 即整体
+  // 已激活，任何一张学生权益卡都只记一次）
+  const mounted = useMounted();
+  const [benefitActivated, setBenefitActivated] = useState<boolean>(
+    () => readProgress().activatedBenefits > 0,
+  );
+  const handleActivateBenefit = () => {
+    recordProgressEvent({ type: "activate-benefit" });
+    recheckAll();
+    setBenefitActivated(true);
+  };
+
   const q = query.trim().toLowerCase();
 
   // 关键词过滤（类别 chips + 标题/摘要包含）基础上，有搜索词时按 TF-IDF 语义分数
@@ -193,10 +235,15 @@ export default function LearnPage() {
   const filtered = useMemo(() => {
     const byCategory = activeCategory ? CASES.filter((c) => c.category === activeCategory) : CASES;
     if (!q) return byCategory;
-    const keywordMatched = byCategory.filter((c) => `${c.title}\n${c.summary}`.toLowerCase().includes(q));
+    const keywordMatched = byCategory.filter((c) =>
+      `${c.title}\n${c.summary}`.toLowerCase().includes(q),
+    );
     const ranked = tfidfSearch(q, keywordMatched, tfidfManifest as TfidfManifest, TFIDF_FALLBACK_K);
     const rankedIds = new Set(ranked.map((hit) => hit.case.id));
-    return [...ranked.map((hit) => hit.case), ...keywordMatched.filter((c) => !rankedIds.has(c.id))];
+    return [
+      ...ranked.map((hit) => hit.case),
+      ...keywordMatched.filter((c) => !rankedIds.has(c.id)),
+    ];
   }, [q, activeCategory]);
 
   // 每类案例数（chips 角标），与 CASES 单一来源同步计算
@@ -232,7 +279,9 @@ export default function LearnPage() {
     <Container className="py-8 md:py-10">
       {/* 页头 */}
       <header>
-        <h1 className="text-2xl font-bold tracking-tight text-(--color-ink) md:text-3xl">消费知识小课堂</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-(--color-ink) md:text-3xl">
+          消费知识小课堂
+        </h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-(--color-ink-secondary)">
           把可核验案例变成可浏览的产品：订阅陷阱、预付风险、消费维权、学生权益，每条都带可核验来源与法条依据。
         </p>
@@ -255,14 +304,17 @@ export default function LearnPage() {
       {/* 搜索 + 分类 chips（chips 与搜索组合过滤） */}
       <div className="mt-6 space-y-3">
         <div className="relative max-w-xl">
-          <Search className="absolute top-1/2 left-3.5 size-4.5 -translate-y-1/2 text-(--color-ink-muted)" aria-hidden />
+          <Search
+            className="absolute top-1/2 left-3.5 size-4.5 -translate-y-1/2 text-(--color-ink-muted)"
+            aria-hidden
+          />
           <input
             type="search"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="搜索案例标题或内容，如「自动续费」"
             aria-label="搜索案例"
-            className="h-11 w-full rounded-full border border-(--color-border) bg-(--color-surface) pr-11 pl-10 text-sm text-(--color-ink) shadow-(--shadow-sm) outline-none transition-colors placeholder:text-(--color-ink-muted) focus:border-(--color-primary)"
+            className="h-11 w-full rounded-full border border-(--color-border) bg-(--color-surface) pr-11 pl-10 text-sm text-(--color-ink) shadow-(--shadow-sm) transition-colors outline-none placeholder:text-(--color-ink-muted) focus:border-(--color-primary)"
           />
           {query ? (
             <button
@@ -324,13 +376,17 @@ export default function LearnPage() {
                   expanded={expandedId === item.id}
                   onToggle={() => setExpandedId((prev) => (prev === item.id ? null : item.id))}
                   query={query}
+                  benefitActivated={mounted && benefitActivated}
+                  onActivateBenefit={handleActivateBenefit}
                 />
               ))}
             </div>
           ) : (
             <div className="rounded-(--radius-lg) border border-dashed border-(--color-border-strong) py-16 text-center">
               <SearchX className="mx-auto size-8 text-(--color-ink-muted)" aria-hidden />
-              <p className="mt-3 font-medium text-(--color-ink)">没有找到相关案例——换个关键词试试</p>
+              <p className="mt-3 font-medium text-(--color-ink)">
+                没有找到相关案例——换个关键词试试
+              </p>
               <button
                 type="button"
                 onClick={resetFilters}
@@ -344,7 +400,10 @@ export default function LearnPage() {
 
         {/* 侧栏（lg+ 展示，移动端折叠到案例流下方） */}
         <aside className="space-y-6" aria-label="知识侧栏">
-          <section aria-label="金融素养小知识" className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)">
+          <section
+            aria-label="金融素养小知识"
+            className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)"
+          >
             <h2 className="flex items-center gap-2 font-semibold text-(--color-ink)">
               <Lightbulb className="size-4.5 text-(--color-accent)" aria-hidden />
               金融素养小知识
@@ -356,13 +415,18 @@ export default function LearnPage() {
               {KNOWLEDGE_CARDS.map((k) => (
                 <li key={k.title} className="py-2.5">
                   <p className="text-sm font-medium text-(--color-ink)">{k.title}</p>
-                  <p className="mt-0.5 text-xs leading-relaxed text-(--color-ink-secondary)">{k.body}</p>
+                  <p className="mt-0.5 text-xs leading-relaxed text-(--color-ink-secondary)">
+                    {k.body}
+                  </p>
                 </li>
               ))}
             </ul>
           </section>
 
-          <section aria-label="防坑手册" className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)">
+          <section
+            aria-label="防坑手册"
+            className="rounded-(--radius-lg) border border-(--color-border) bg-(--color-surface) p-5 shadow-(--shadow-sm)"
+          >
             <h2 className="flex items-center gap-2 font-semibold text-(--color-ink)">
               <BookOpen className="size-4.5 text-(--color-primary)" aria-hidden />
               防坑手册
@@ -382,10 +446,15 @@ export default function LearnPage() {
                 >
                   <span className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium text-(--color-ink)">{h.title}</span>
-                    <ChevronRight className="size-4 shrink-0 text-(--color-ink-muted) transition-transform group-hover:translate-x-0.5" aria-hidden />
+                    <ChevronRight
+                      className="size-4 shrink-0 text-(--color-ink-muted) transition-transform group-hover:translate-x-0.5"
+                      aria-hidden
+                    />
                   </span>
-                  <span className="mt-1 block text-xs leading-relaxed text-(--color-ink-secondary)">{h.desc}</span>
-                  <span className="mt-1.5 block text-[11px] tabular-nums text-(--color-ink-muted)">
+                  <span className="mt-1 block text-xs leading-relaxed text-(--color-ink-secondary)">
+                    {h.desc}
+                  </span>
+                  <span className="mt-1.5 block text-[11px] text-(--color-ink-muted) tabular-nums">
                     {categoryCounts[h.category] ?? 0} 条案例
                   </span>
                 </button>

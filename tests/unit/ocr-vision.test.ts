@@ -3,7 +3,7 @@
  *
  * 覆盖：容错 JSON 提取（<think> 剥离 / markdown 围栏 / 首尾花括号截取 /
  * 不可解析返回 null）与运行模式判定（mock 的三种触发口径）。
- * 网关调用与 15s 超时走 e2e 与 private-benchmark 探针（live 网络路径，
+ * 网关调用与 15s 超时走 e2e 与仓库外本地探针脚本（live 网络路径，
  * 单测不 mock fetch 断言实现细节）。
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
