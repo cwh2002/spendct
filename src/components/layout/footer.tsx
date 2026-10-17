@@ -13,6 +13,7 @@ const QUICK_LINKS: { href: string; label: string }[] = [
 
 /**
  * 页脚（05 §1.1）：品牌 + 快捷链接 + 数据说明三栏。
+ * 快捷链接两行两列（上传体检/隐私说明、知识课堂/个人中心），竖排过长（用户实机反馈）。
  * 数据说明收敛为一行结论，细节统一指向 /privacy，避免全站重复隐私长文。
  * 移动端隐藏：底部 tab bar 已占据导航位，避免双份导航与底部遮挡。
  * 纯静态内容，保持服务端渲染。
@@ -34,7 +35,8 @@ export function Footer() {
 
           <nav aria-label="快捷链接">
             <h3 className="text-sm font-semibold text-(--color-ink)">快捷链接</h3>
-            <ul className="mt-3 space-y-2 text-sm">
+            {/* 两行两列；learn 关闭时仅剩 3 项，第二行自然只剩 1 项，可接受 */}
+            <ul className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               {QUICK_LINKS.map((link) => (
                 <li key={link.href}>
                   <Link
