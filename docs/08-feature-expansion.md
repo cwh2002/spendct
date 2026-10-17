@@ -469,6 +469,18 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - **零新端点、零新事件、零新 env**；路由与组件注册表零新增（`persistence/pipeline-persistence.ts` 与 `layout/pipeline-restore.tsx` 为既有管线挂载，不立新组件名）。
 理由：三条用户反馈指向同一类缺口——①窗口词覆盖不全 + 「上上个月」子串碰撞导致时间范围解析错乱；②追问与深度分析的上下文/指令链没有把「数据就在上下文里、按日期范围作答」钉死，模型便推诿「不能确定/读不到」；③DuckDB 纯内存 + store 内存态使刷新即丢。全部修复落在既有管线内：解析修复零成本，上下文修复不扩大发送面（同白名单纪律），持久化副本严格限定 upload 源且与 OPFS 同侧——隐私出口与可见性对照表零变化。
 
+**A19 · 修订 07 §3/§12/§14/§17（图形验证码 + 数据页强制登录 + 追加合并去重 + 挑战手动记账 + 成就全真实判定 + 文案收敛，2026-10-17 裁决）**
+新裁决（用户实机使用八项诉求逐条回应）：
+- **登录注册图形验证码（§14）**：手机号 + 短信验证方案整体不做（用户拍板）。登录/注册表单接入 canvas 自绘图形验证码（`src/lib/auth/captcha.ts` + `CaptchaField`，逻辑 120×40 按 dpr 缩放、±25° 随机旋转、干扰曲线 + 噪点、字符集去 0/O/1/I/L）；校验为客户端本机比对——本地账户架构无服务端用户数据，验证码与密码同属浏览器内校验层，拦截误触与无脑填充，不宣称防御真实机器人；校验失败自动换图 + 清空输入（防连续试错），错误提示走字段内 error 行（不产生表单红色横幅）。DEMO_MODE=mock 下留空即过（e2e 与零密钥演示），live dev / Vercel 无该变量即真校验。零网络请求、零新端点、零新 env。
+- **数据功能页强制登录（§14）**：AuthGuard 包裹 11 页（/upload /checkup /insights /calendar /report /challenge /goals /poster /budget /me /settings），游客访问重定向 /login 并带 next 参数，登录后回跳原页；公开页保持 / /login /register /learn /privacy 五页。实现偏差：route-guard 的路径读取由 usePathname 改为 window.location（pathname + search 连查询串回跳——/upload?sample=1 演示导入登录后继续生效；usePathname 不含查询串，不改则回跳丢参，属落实本裁决的必要改动）。
+- **上传追加合并去重（§3/§17）**：CSV 与 OCR 两路径统一 `mergeCleanBatches`——已有行取最近一次导入落库的完整行（getLatestDataset，全局最新不随账户切换），incoming 逐行按 (日期|金额|商户) 键比对，重复计 skipped、新行追加，装配 = 替换整表重建为合并后完整行；成功视图如实报「新增 X 笔、跳过疑似重复 Y 笔」。datasets store 每次保存后剪枝（`pruneDatasetsExcept` 只留最新快照）——每批都存合并后完整行，旧快照全是重复行数据的死重，不剪枝会随导入次数近平方膨胀；账本元数据（books store）不剪，账本历史语义保留。
+- **挑战页手动记今日支出（§14/§17）**：今日卡新增金额输入行（inputMode=decimal + 保存；已有记录显示「已记 ¥X · 修改」），写与预算页同键的 `spendct:manual-entries` 账本（A3 口径，expense 覆盖 / income 不参与）；合并发生在渲染期派生（`mergeChallengePoints`，手动点叠加账单点，不重查 DuckDB）；累计节省两处补口径脚注「累计节省 = Σ max(0, 基线 − 当日实际支出)，基线为挑战开始前 30 天该类目日均支出（当日支出含手动记录）」；保存后 recheckAll（手动账计入 streak-7）。
+- **成就引擎真实化（§17 A1 扩展 + §8e 体检次数）**：13 枚徽章全部按真实行为判定（`src/lib/achievements/` defs/rules/progress/sync 四模块 + storage barrel），演示回退删除——无本地记录一律空集，新访客成就墙全锁是正常初始态。判定口径收口（复审确认后修复）：①sub-hunter 排除年付周期订阅——真实动线扣费轨迹是周期回填，年付天然 >90 天间隔，属正常扣费而非「曾经按月扣、后来没动静」；②saver 基线 = 最早采纳月，账单月表未覆盖时回退到采纳月后第一个有数据的月（采纳后的支出水平近似基线），比较取「不高于基线 95%」整数分运算（恰省 5% 也命中，与徽章文案一致）；③budget-master 文案改「最近 3 个月」（实现口径本为最近 3 条月记录，不要求物理相邻）；④视图侧缓存 `resetRecheckOverrides`——新数据集导入落库后清空，防 saver 等拿旧数据集的预算月表/逐月支出继续判定（解锁集只并集不回退，误命中不可回收）；⑤解锁持久化收敛到 `commitUnlockedIds` 单一落盘路径（unlockAchievement 委托）。体检次数真实化：runner 真实管线完整跑完才自增（demo 播放器不计），落盘键 `spendct:checkup-count:v1` / `spendct:last-checkup-hour:v1`（统一定义于 sync.ts，runner 写入、me 页展示共用），me 页演示计数回退删除。新增行为进度键 `spendct:achievement-progress:v1`（adopt/activate-benefit/dedupe-skipped/followup 四类事件，§17 允许项可重算状态同语义）。
+- **文案收敛（§5 UI）**：首页六步序号徽章 size-6 + text-[11px] + leading-none（20px 容器 10px 字号下 font-mono 行高撑破裁字修复）；/privacy「关于项目」删费用说明卡、项目说明结构化扩写（定位/目标用户/核心能力/技术架构/隐私/开源）；页脚三栏重排（品牌+口号、快捷链接 token 化配色、数据说明收敛一行「账单本地计算 · 服务端零存储」）；「不出浏览器」类隐私语句全站收敛——只留首页 hero/三承诺条/「为什么安全」、登录注册 trust-bar、个人中心账户区与 /privacy 完整页，功能页内分散的「本地计算」「不上传」小注删除或简化（统一为「你的账单数据不受影响，可以重试」式提示）。
+- **实现偏差登记（复审工作流 23 代理逐条对抗核验）**：①登录/注册表单错误类型未加 captcha 字段——验证码失败由 CaptchaField 内部 invalid 态 + 字段错误行表达（行为意图与计划一致，不产生红色横幅），空字段不加死类型；②route-guard 改动（见强制登录条）；③真实账单目录名从 5 处注释/文档移除（ocr-entry.spec / ocr-vision.test / ocr-route.test / 02 §A11 注 / 07 §A11 注）——真实账单目录名本身不进公开仓库，一律改写为「仓库外本地探针脚本」。
+- **零新端点、零新事件、零新 env**；路由与组件注册表零新增（captcha.ts / merge-batches.ts / manual-day-merge.ts 为纯函数模块，不立新组件名；CaptchaField 登记于 05 §2.2 组件总表）。
+理由：八项诉求集中在三条线——①信任（图形验证码替代短信方案、数据页游客重定向、隐私语句全站收敛：说多少做多少）；②数据正确性（追加合并不覆盖、跨批次去重、挑战手动记账与账单点即时合并）；③游戏化真实（成就 13 枚全真实判定，演示回退清零——演示数据只在演示动线里存在，成就墙的数字必须来自真实行为）。全部落地在既有架构内：零新端点零新 env，IndexedDB/localStorage 新增键均为 §17 允许项的可重算状态，隐私出口与可见性对照表零变化。
+
 ## ⑨ 各文档改动索引（逐份列出要改的章节）
 
 | 文档 | 改动章节 | 改动内容 |
@@ -531,6 +543,18 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 | 05-uiux.md | §2.10 全局智能助理 | 问答时间窗口径补八类时间窗（本月/上月/上上个月/今年/最近7天/最近30天/最近90天/指定月份）+ 锚点标签继承口径（A18） |
 | 06-roadmap.md | §6.1/§6.3/§7 | README 功能清单智能助理条目补 A18 注；AI 深度逐条落点表智能助理/追问深度分析两行补 A18 落点（qa-engine 时间窗、deep-analysis 11 组、targeted-detail 显式日期范围、pipeline-persistence 模块）；PDF §4.9 深度分析口径 10 → 11 组；§6.3 智能助理行补弃权转在线口径（热修复二/三/四/五轮：双阶段停滞阈值 + 服务端心跳 + 账单问题信号闸门 + 在线失败提示分档；六轮复审修补：信号闸门六档化 + 失败分档再修 + 历史预算先扣问题长）；测试基线更新：单测 658、e2e 55 |
 | 07-canonical-contract.md | §21 改动索引 | 增补「08 修订案 A18」条目（→§12 时间窗八类、§13 深度上下文/定向明细/指令、§17 datasets store 允许项唯一例外、§21 各文档条目）并指向本文档；§17 允许项/禁止项补 A18 增补；§18 A12 信号闸门条目补六档规则口径；§21 05 条目 12 追加热修复增补说明（弃权规则 + 停滞超时 + SSE 心跳 + deep 闲聊契约 + 五轮：信号闸门/明细预算含 RAG 参考/失败分档/问题恒在/恢复等待 150s + 六轮复审修补：历史预算先扣问题长/静态预留移除/闸门六档化/QUOTA_EXCEEDED 新档/恢复超时按读取异常/单测 658）；文末版本行升 v1.12（含复审修补） |
+| 01-architecture.md | §3 仓库目录树 | 新增 `src/lib/auth/captcha.ts`、`src/components/auth/captcha-field.tsx`（CaptchaField）、`src/lib/import/merge-batches.ts`、`src/lib/challenge/manual-day-merge.ts`、`src/lib/achievements/`（defs/rules/progress/sync 四模块，achievements.ts 为存储层 + barrel）（A19） |
+| | §4 env 规范 | 零新增键（A19 声明） |
+| 02-data-privacy.md | §5.5 持久化红线 / §8 表头注记 | §5.5 红线补 datasets 剪枝注（每次保存后只留最新快照）与 localStorage 可重算状态键补全（挑战/目标 A17、手动记账、成就与行为进度四键 A19）；§8 表头注记补 A19（图形验证码零网络请求、公开页五页、合并去重全程本地、零新网络出口零新 LLM 可见数据面，不新增可见性行）；文首版本注升 v1.9 |
+| 03-agent-pipeline.md | （零改动） | A19 与 Agent 管线零交集：成就 recheckAll 为浏览器内纯函数判定，无新任务、无新提示词、无降级链变更 |
+| 04-rag-mcp.md | （零改动） | A19 与 RAG/MCP 零交集 |
+| 05-uiux.md | §1.1 站点地图/路由表 | 公开页口径收敛为五页（/ /login /register /learn /privacy）；11 个数据功能页 AuthGuard 登录墙（游客重定向 /login 带 next 回跳，登录后回原页）；登录/注册表单补图形验证码字段（canvas 自绘 + 刷新/键盘可达） |
+| | §2.2 组件总表 | 增补 CaptchaField 组件 Props/状态（A19） |
+| | §1.15 挑战页 | 今日卡补手动记账输入行（金额 inputMode=decimal + 保存/「已记 ¥X · 修改」两态）与「含手动记录」小注；累计节省两处口径脚注 |
+| | §1.10 成就墙 | 13 枚全真实行为判定、演示回退删除（无本地记录一律空集、新访客全锁为正常初始态）；体检次数真实落盘展示 |
+| | §1.1 全局 Shell 附注（页脚）/ §1.2 首页 | 页脚三栏重排（品牌+口号、快捷链接 token 化、数据说明一行「账单本地计算 · 服务端零存储」）；首页六步序号徽章 size-6 + text-[11px] + leading-none；「不出浏览器」语句收敛（只留首页 hero/三承诺条/「为什么安全」、登录注册 trust-bar、个人中心账户区与 /privacy 完整页） |
+| 06-roadmap.md | §1.3/§7 | T50 任务说明补 A19 注（13 枚全真实行为判定、演示回退删除）；§7 验收口径成就行补「全真实行为判定、无演示回退」；测试基线更新：单测 742、e2e 60 |
+| 07-canonical-contract.md | §21 改动索引 | 增补「08 修订案 A19」条目（→§3 跨批次合并去重键、§12 零新 env 键、§14 登录墙 + 图形验证码 + 合并去重 + 挑战手动记账 + 成就真实化、§17 三新键 + datasets 剪枝、§21 各文档条目）并指向本文档；§3 权威定义补合并去重键业务规则；§12 env 清单补 A19 零新增注；§14 守卫口径改 11 页登录墙 + A19 裁决块；§17 允许项补 `spendct:checkup-count:v1` / `spendct:last-checkup-hour:v1` / `spendct:achievement-progress:v1` 三键 + A19 裁决块；文末版本行升 v1.13 |
 
 ---
 

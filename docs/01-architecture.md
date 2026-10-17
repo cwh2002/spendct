@@ -2,11 +2,11 @@
 
 | 文档编号 | 01 |
 |---|---|
-| 版本 | v1.6（v1.0 本轮按 07 权威契约文档修订；v1.1 按 08 功能扩展方案落实；v1.2 按 08 修订案 A12（全局智能助理）落实；v1.3 按 08 修订案 A13（商户统计视图）落实；v1.4 按 08 修订案 A14（追问深度分析）落实；v1.5 按 08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）落实；v1.6 按 08 修订案 A17（省钱挑战打卡 / 攒钱目标中心 / 年度海报分享）落实，2026-10-16） |
-| 文档职责 | 全项目技术总纲：技术栈锁定、系统架构、目录结构、环境变量、状态管理、流式架构、全局智能助理（plan 流事件 / assistant-plan 任务 / 聊天输入闸门 / 语音转写 / 聊天案例检索）、商户统计视图（/insights 第 4 视图，08 修订案 A13）、追问深度分析（深度分析开关 / 深度上下文与明细快照 / 本地大模型端点，08 修订案 A14）、08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）、mock 模式、性能预算、部署方案、依赖风险 |
+| 版本 | v1.8（v1.0 本轮按 07 权威契约文档修订；v1.1 按 08 功能扩展方案落实；v1.2 按 08 修订案 A12（全局智能助理）落实；v1.3 按 08 修订案 A13（商户统计视图）落实；v1.4 按 08 修订案 A14（追问深度分析）落实；v1.5 按 08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）落实；v1.6 按 08 修订案 A17（省钱挑战打卡 / 攒钱目标中心 / 年度海报分享）落实，2026-10-16；v1.7 按 08 修订案 A18（问答时间窗修复 + 会话持久化）落实，2026-10-16；v1.8 按 08 修订案 A19（图形验证码 + 数据页强制登录 + 追加合并去重 + 挑战手动记账 + 成就全真实判定 + 文案收敛）落实，2026-10-17） |
+| 文档职责 | 全项目技术总纲：技术栈锁定、系统架构、目录结构、环境变量、状态管理、流式架构、全局智能助理（plan 流事件 / assistant-plan 任务 / 聊天输入闸门 / 语音转写 / 聊天案例检索）、商户统计视图（/insights 第 4 视图，08 修订案 A13）、追问深度分析（深度分析开关 / 深度上下文与明细快照 / 本地大模型端点，08 修订案 A14）、08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）、08 修订案 A17（省钱挑战打卡 / 攒钱目标中心 / 年度海报分享）、08 修订案 A18（问答时间窗修复 + 会话持久化）、08 修订案 A19（图形验证码 + 数据页强制登录 + 追加合并去重 + 挑战手动记账 + 成就全真实判定 + 文案收敛）、mock 模式、性能预算、部署方案、依赖风险 |
 | 读者 | 全体团队成员（前端交互 / 数据管线+AI / 材料）；评委（作为 PDF 技术文档「系统架构设计 + 技术选型理由」章节的素材源） |
-| 上游依据 | 产品定义（2026-10-13 确认版，本文件不推翻任何已确认决策）；**07 权威契约文档（docs/07-canonical-contract.md）为本文件的上位裁决——任何冲突以 07 为准**；08 功能扩展方案（docs/08-feature-expansion.md，2026-10-13 确认版）为增量设计——本文件 v1.1 落实其「各文档改动索引」针对 01 的全部改动与修订案 A1-A7 的镜像条款；v1.2 落实 08 修订案 A12（全局智能助理）的镜像条款；v1.3 落实 08 修订案 A13（商户统计视图）的镜像条款；v1.4 落实 08 修订案 A14（追问深度分析）的镜像条款；v1.5 落实 08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）的镜像条款；v1.6 落实 08 修订案 A17（省钱挑战打卡 / 攒钱目标中心 / 年度海报分享）的镜像条款 |
-| 生效日期 | 2026-10-13，随 W1 建仓落地（v1.1 同日随 08 功能扩展方案生效；v1.2 于 2026-10-15 随 08 修订案 A12 生效；v1.3 于 2026-10-15 随 08 修订案 A13 生效；v1.4 于 2026-10-16 随 08 修订案 A14 生效；v1.5 于 2026-10-16 随 08 修订案 A15 生效；v1.6 于 2026-10-16 随 08 修订案 A17 生效） |
+| 上游依据 | 产品定义（2026-10-13 确认版，本文件不推翻任何已确认决策）；**07 权威契约文档（docs/07-canonical-contract.md）为本文件的上位裁决——任何冲突以 07 为准**；08 功能扩展方案（docs/08-feature-expansion.md，2026-10-13 确认版）为增量设计——本文件 v1.1 落实其「各文档改动索引」针对 01 的全部改动与修订案 A1-A7 的镜像条款；v1.2 落实 08 修订案 A12（全局智能助理）的镜像条款；v1.3 落实 08 修订案 A13（商户统计视图）的镜像条款；v1.4 落实 08 修订案 A14（追问深度分析）的镜像条款；v1.5 落实 08 修订案 A15（消费日历 / 订阅管理视图 / 年度报告通俗化 / 追问定向明细）的镜像条款；v1.6 落实 08 修订案 A17（省钱挑战打卡 / 攒钱目标中心 / 年度海报分享）的镜像条款；v1.7 落实 08 修订案 A18（问答时间窗修复 + 会话持久化）的镜像条款；v1.8 落实 08 修订案 A19（图形验证码 + 数据页强制登录 + 追加合并去重 + 挑战手动记账 + 成就全真实判定 + 文案收敛）的镜像条款 |
+| 生效日期 | 2026-10-13，随 W1 建仓落地（v1.1 同日随 08 功能扩展方案生效；v1.2 于 2026-10-15 随 08 修订案 A12 生效；v1.3 于 2026-10-15 随 08 修订案 A13 生效；v1.4 于 2026-10-16 随 08 修订案 A14 生效；v1.5 于 2026-10-16 随 08 修订案 A15 生效；v1.6 于 2026-10-16 随 08 修订案 A17 生效；v1.7 于 2026-10-16 随 08 修订案 A18 生效；v1.8 于 2026-10-17 随 08 修订案 A19 生效） |
 | 版本核实 | 所有 npm 包版本于 2026-10-13 从 registry.npmjs.org 实时核实（见附录 A） |
 
 > **实现收口（2026-10-15）**：本文为设计总纲。其中嵌入检索（EMBEDDING_PROVIDER）、案例库 150+ 等条目为**设计态**；实际交付口径以 07 §13 A10 收口说明与 README 为准（案例库 60 条 + 本地关键词匹配、6 条 API 路由、MCP 工具链已上线（07 §19 A9，接入层自建 SDK Client）、截图 OCR 已上线（07 §11 A11：DeepSeek deepseek-flash 主 + 智谱 glm-4.6v-flash / SiliconFlow GLM-4.1V-9B 降级，低置信字段条带裁剪二次复核））。全局智能助理已上线（07 §18 A12）：与追问面板共用 `use-chat-pipeline` 问答管线；`plan` 流事件（协议第 21 类）与 assistant-plan 任务（归 DeepSeek，8s 超时静默跳过）；聊天输入闸门 input-guard、Web Speech 语音转写、聊天 TF-IDF 检索阈值 0.15；sanitizeResult 改 async（WebCrypto 异步哈希）。商户统计视图已上线（07 §14 A13）：/insights 第 4 视图 tab「商户统计」（?view=merchants）——当时 4 视图（卡片流 / 图表廊 / 账本汇总 / 商户统计），路由数不变（仍 10 条）；全程浏览器内 DuckDB-WASM 白名单聚合，零新端点、零新 env 键、无新增网络请求。追问深度分析已上线（07 §21 A14；单测 458 / e2e 38，2026-10-16 实测）：追问面板「深度分析」开关（默认关，aria-pressed 两态；开启提示「开启：直接交给大模型分析，并发送账单统计与明细」、关闭提示「本地规则优先，答不了才转在线」）；开启后本轮提问跳过闲聊分流/本地规则/本地案例，直连在线兜底 /api/followup（body 带 analysisMode:"deep"）；深度上下文 src/lib/chat/deep-analysis.ts（10 组代码常量白名单 SQL，零动态拼接、经白名单预检；buildDeepAnalysisContext ≤2400 字、逐组容错、超长整行丢弃）与最近 150 笔明细快照分两条消息（各 ≤4000 字、总 ≤8000、≤20 条；A15 起命中定向条件时增至三条，见下）；气泡脚注「深度分析 · 已发送账单统计与明细」（按实际发送组合标注，缺一段只说发了的那段）；本地大模型端点 LLM_BASE_URL + LLM_MODEL 双配置才生效（仅接管 chat 任务，其余任务路由不变；LLM_API_KEY 可选），解析纯函数 src/lib/llm/endpoint-config.ts（主机白名单校验：仅 loopback/私网网段，越界视为未配置）；mock 下 analysisMode:"deep" 走 deep 档脚本化演示流（不虚构账单数字，deep 优先于 promo 档）；零新端点、零新路由、零新事件（协议仍 21 类）。08 修订案 A15 已上线（单测 540 / e2e 45，2026-10-16 实测）：/insights 第 5 视图「订阅管理」（?view=subscriptions，订阅候选列表/逐笔核对/下次扣费倒计时全保留），原 /subscriptions 独立页降级为静态重定向；新增静态路由 /calendar「消费日历」（日历热力图 + 时间轴流水；CALENDAR_DAILY_SQL 白名单聚合 expense + paid、行数上限 2000；深夜口径 23:00-05:00；演示走确定性生成器每 9 笔 1 收入、深夜约 1/4；全程浏览器内计算零 API），路由条目 11 条（/calendar 入列、/subscriptions 降为静态重定向页；产品页面口径仍 10 个，与 05 §1.1 一致）；deep 档追问新增第三段定向明细检索 src/lib/chat/targeted-detail.ts（五类条件识别：月份/年份/商户 DB 商户 Top50 名单最长匹配/类目 CATEGORY_CODES 枚举/深夜，LIMIT 200、上下文 ≤2500 字、空结果诚实文案「本地账单里没有查到与问题直接相关的明细（范围说明）」、任一段失败静默省略回退两条消息），明细快照升级七列投影含深夜标记（07 §18 A8 口径修订，deep 档三条消息顺序 = 深度统计 → 定向明细 → 明细快照）；年度报告展示层通俗化 src/lib/report/labels.ts（RatioKey 六维阈值、healthRatingLabel；底层计算口径不动，仅文案）；零新端点、零新 env、零新事件。
@@ -285,7 +285,7 @@ spendct/
 │  │  ├─ learn/page.tsx                # 路由 /learn：消费知识小课堂（案例库浏览/知识卡/防坑手册；浏览器 TF-IDF 搜索；chunk <60KB 不引 ECharts/DuckDB；P2 档 F11）
 │  │  ├─ settings/page.tsx             # 路由 /settings：数据管理与导出（数据集列表/切换/删除 + CSV/JSON 本地导出 + 通知开关 + 主题/演示模式入口；chunk <60KB；F12）
 │  │  ├─ loading.tsx / error.tsx / not-found.tsx   # 全站加载态/错误边界/404（评审「错误边界」落点）；/budget /learn /settings 各配路由级 loading.tsx + error.tsx（05 §1.1 约定）
-│  │  └─ api/                          # Route Handlers = AI 接入层全部接口（07 契约 §13 唯一清单 + 08 修订案 A6 第 7 端点；A12 零新端点——智能助理复用 /api/followup；A13 零新端点——商户统计视图浏览器内白名单聚合；前端路由 10 条同 §14/修订案 A7，A13 为视图内切换不改路由数；A15 为路由置换（/subscriptions 静态重定向、/calendar 入列）静态页总数不变）
+│  │  └─ api/                          # Route Handlers = AI 接入层全部接口（07 契约 §13 唯一清单 + 08 修订案 A6 第 7 端点；A12 零新端点——智能助理复用 /api/followup；A13 零新端点——商户统计视图浏览器内白名单聚合；前端路由 10 条同 §14/修订案 A7，A13 为视图内切换不改路由数；A15 为路由置换（/subscriptions 静态重定向、/calendar 入列）静态页总数不变；A17 新增 /challenge /goals /poster 三路由；A18/A19 零新端点——会话恢复与验证码/成就均为浏览器内逻辑）
 │  │     ├─ health/route.ts            # GET：存活探针（模型可用性/密钥配置/DEMO_MODE/版本，降级链入口）
 │  │     ├─ pipeline/stage/route.ts    # POST：六阶段驱动（模板优先，LLM 只写叙事）→ SSE（契约 §2）
 │  │     ├─ followup/route.ts          # POST：共享问答管线（锚点追问 PEO + 全局智能助理在线兜底共用；body 含 sessionSchema 快照与追问上下文；聊天输入经 input-guard 闸门；深度分析 analysisMode:"deep" 跳过本地分流直连在线兜底，08 修订案 A14）→ SSE（契约 §2 + tool 事件 + plan 事件）
@@ -295,7 +295,7 @@ spendct/
 │  │     └─ ai/task/route.ts           # POST：单次 JSON AI 短任务（taskId 判别联合：quick-entry|budget-advice|forecast|tip-personalize；08 修订案 A6/§7）→ {ok:true,data}|{ok:false,error}；annual-story 走 pipeline/stage 零新端点；assistant-plan 不走本端点（承载于 /api/followup SSE 流，08 修订案 A12）
 │  ├─ components/                      # 组件库（shadcn/ui vendored + 业务组件，05 文档详设；注册表 13 → 19：08 修订案 A7 增补 BudgetRing/QuickEntryBar/ForecastChart/CaseCard/DatasetManager/NotificationBell，命名以 07 §14 注册表为准）；08 修订案 A12 增补全局智能助理组件 AssistantDrawer/ChatBubbles/PlanBlock（两级注册：归 05 §2.2 组件总表，不占 19 个注册组件名额）
 │  │  ├─ ui/                           # shadcn/ui 生成的基础组件（button/card/badge/dialog/table/tabs/toast…源码入库）
-│  │  ├─ layout/                       # AppHeader（演示模式横幅挂载位）、Footer、GlobalErrorBoundary
+│  │  ├─ layout/                       # AppHeader（演示模式横幅挂载位）、Footer、GlobalErrorBoundary、pipeline-restore.tsx（刷新会话恢复常驻挂载壳，08 修订案 A18）
 │  │  ├─ charts/                       # EChart.tsx（ECharts 封装壳：init/resize/dispose/主题令牌/事件桥接）
 │  │  │  ├─ spec-renderer.tsx          # ChartSpecSchema（契约 §4）→ 安全 option 的纯函数映射器（图表规格的唯一消费端）
 │  │  │  ├─ CalendarHeatmap.tsx         # 日历热力图（v_daily_expense → ECharts calendar heatmap；格点点击锚定 dim:time_month；页面级静态渲染，不走 ChartSpec，08 §4）
@@ -310,7 +310,8 @@ spendct/
 │  │  ├─ assistant/                    # 全局智能助理（08 修订案 A12，两级注册）：AssistantDrawer（悬浮入口+聊天抽屉）、ChatBubbles、PlanBlock（思考计划块）
 │  │  ├─ insights/                     # /insights 视图组件（08 修订案 A13/A15）：MerchantView 商户统计视图（页面级，按 07 §14 两级注册口径登记于 05 §2.2 组件总表）、SubscriptionView 订阅管理视图（页面级，08 修订案 A15：订阅候选列表/逐笔核对/下次扣费倒计时，内容自原 /subscriptions 迁移）、ChartCard（账本汇总图表卡外壳提取的共享组件，行为不变）；与既有 ledger-view（账本汇总）同目录
 │  │  ├─ subscription-radar/           # 订阅刺客雷达（确定性 SQL 结果）+ 取消攻略 RAG 引用区
-│  │  └─ calendar/                     # 消费日历组件（08 修订案 A15，页面级）：calendar-view / calendar-heatmap（ECharts 注册 HeatmapChart + CalendarComponent + VisualMapComponent）/ calendar-timeline
+│  │  ├─ calendar/                     # 消费日历组件（08 修订案 A15，页面级）：calendar-view / calendar-heatmap（ECharts 注册 HeatmapChart + CalendarComponent + VisualMapComponent）/ calendar-timeline
+│  │  └─ auth/                         # 登录注册表单组件（08 修订案 A19）：captcha-field.tsx（CaptchaField：canvas 自绘验证码 + 刷新按钮 + 字段内错误行；mockBypass 下留空即过；useImperativeHandle 暴露 verify()）
 │  ├─ lib/                             # 纯前端逻辑层（浏览器侧；禁止 import 'server-only' 包）
 │  │  ├─ duckdb/                       # DuckDB-WASM 封装（唯一允许 import @duckdb/duckdb-wasm 的目录）
 │  │  │  ├─ init.ts                    # 单例初始化（单线程 bundle + 自托管 wasm，§1.5）
@@ -347,6 +348,11 @@ spendct/
 │  │  ├─ insights/challenge-store.ts    # 挑战状态纯函数（checkIn/uncheck 幂等、streakOf、buildChallengeDays、summarizeDays、computeBaselineCents；localStorage spendct:challenge:v1；08 修订案 A17）
 │  │  ├─ insights/goals-sql.ts          # 攒钱目标月度聚合映射（parseMonthlyIncomeExpense/estimateMonthlySurplus/parseCategoryMonthly；08 修订案 A17）
 │  │  ├─ insights/goals-store.ts        # 目标状态纯函数（createGoal/addDeposit/removeGoal/totalSaved/monthsToGoal/月份键工具；localStorage spendct:goals:v1；08 修订案 A17）
+│  │  ├─ persistence/pipeline-persistence.ts  # 刷新会话恢复（datasets store 读写 + DuckDB 行数据重放 + 管线内存态重建；账本删除联动；失败静默降级；08 修订案 A18）
+│  │  ├─ auth/captcha.ts                # 图形验证码纯函数（generateCaptchaCode 字符集去 0/O/1/I/L、verifyCaptcha trim+大写全等、drawCaptcha canvas 120×40 按 dpr 缩放 + ±25° 旋转 + 干扰曲线 + 噪点；仅浏览器调用；08 修订案 A19）
+│  │  ├─ import/merge-batches.ts        # 跨批次合并去重纯函数（cleanRowKey = (date_iso|amount_cents|merchant)；mergeCleanBatches 已有行保序在前、incoming 逐行比对键集，重复计 skipped、新行追加；08 修订案 A19）
+│  │  ├─ challenge/manual-day-merge.ts  # 挑战页手动记账合并纯函数（upsertManualDayEntry 当日同类目 expense 覆盖保留 id/note、income 不参与；mergeChallengePoints 按 category+date 叠加账单点；manualDayCents；08 修订案 A19）
+│  │  ├─ achievements/                  # 成就引擎四模块（defs 13 枚定义 / rules 判定纯函数 + recheckAll / progress 行为进度四类事件 / sync 解锁并集落盘 + 订阅通知；08 修订案 A19）
 │  │  ├─ store/                        # Zustand 切片（§5.1：pipeline/cards/anchor/dataset/ui/session）
 │  │  ├─ hooks/                        # useEChart / usePipelineRun / useDuckDBReady / useMediaQuery / useDemoMode（use-chat-pipeline 在 lib/assistant/，08 修订案 A12）
 │  │  ├─ utils/                        # format.ts、time-range.ts
@@ -467,7 +473,7 @@ DEMO_MODE="mock"                                 # mock=零密钥剧本演示（
 | `MCP_SERVER_URL` | `src/server/ai` | 工具传输切换 | 无 |
 | `LLM_BASE_URL`/`LLM_MODEL`/`LLM_API_KEY` | `src/lib/llm/endpoint-config.ts`（resolveLocalEndpoint 纯函数） | 本地大模型端点（08 修订案 A14）：BASE_URL 与 MODEL 双配置才生效、仅接管 chat 任务（其余任务路由不变）；API_KEY 可选 | 无（用户自配端点） |
 
-**08 功能扩展零新增键声明（修订案 A5）**：新增 5 个 LLM 任务（quick-entry/budget-advice/forecast/tip-personalize/annual-story）全部复用上表既有三模型密钥与降级链配置，`.env.example` 不增任何键、Vercel 面板零新增变量——费用面与密钥面零扩张。08 修订案 A12 同口径：assistant-plan 复用 DeepSeek 既有密钥，语音转写为浏览器原生 Web Speech——零新键、零新配置。
+**08 功能扩展零新增键声明（修订案 A5）**：新增 5 个 LLM 任务（quick-entry/budget-advice/forecast/tip-personalize/annual-story）全部复用上表既有三模型密钥与降级链配置，`.env.example` 不增任何键、Vercel 面板零新增变量——费用面与密钥面零扩张。08 修订案 A12 同口径：assistant-plan 复用 DeepSeek 既有密钥，语音转写为浏览器原生 Web Speech——零新键、零新配置。08 修订案 A14 增补 3 个本地端点键（`LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY`，可选、双配置才生效）。08 修订案 A18 零新增键声明：会话恢复为 IndexedDB/localStorage 浏览器内持久层，与 env 无关。**08 修订案 A19 零新增键声明**：图形验证码为客户端本机比对、成就判定与跨批次去重全程浏览器内——零新键、零新配置。
 
 ### 4.3 安全规则（AI 安全 4% 评分点 + 提交物「密钥不得入公开仓库」的硬性合规）
 

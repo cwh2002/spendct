@@ -169,6 +169,8 @@ CREATE TABLE transactions (
 
 **订阅候选业务规则（唯一，写入 02 §5.3 视图定义）**：同一商户 `≥3 笔`、单笔金额 `1–60 元`、相邻间隔 `25–40 天`、金额恒定容差 `±1%`（#24、#48 两份 fixHint 的并集口径）。
 
+**跨批次合并去重键（唯一，08 修订案 A19）**：`(date_iso | amount_cents | merchant)` 三字段拼接——与单文件去重键（parse-csv duplicateKey）同口径；CSV/OCR 两路径重复导入时 incoming 行与已入库行按此键比对，重复计 skipped、新行追加，装配 = 替换整表重建为合并后完整行（不覆盖已有行，§14 A19）。
+
 ### 08 修订案 A3（2026-10-13）：transactions 语义值扩展（快速记账）
 
 **新裁决**：`source` 语义值扩展为 `wechat|alipay|ocr|sample|manual`；`channel` 增加 `manual`；manual 行的 `raw_ref = 'M#<自增序号>'`（M# 摘要 = sha256 前 8 位 hex，§0.3）；`direction` 允许 manual 行的 `income`（如「收到红包 200」）。DDL 列集与 12 类目枚举不变。
@@ -469,7 +471,7 @@ GROUP BY b.ym, b.category;
 
 > **08 修订案 A11（2026-10-15）：主供应商改为 DeepSeek deepseek-flash（原生多模态）**
 >
-> **新裁决**：OCR 降级链改为 **deepseek-flash（主）→ glm-4.6v-flash（智谱）→ THUDM/GLM-4.1V-9B-Thinking（SiliconFlow）** → 三败返回 `ok:false`。依据：DeepSeek 于 2026-09-10 发布 deepseek-flash（V4.1 Flash，CED 架构，DocVQA 95.6），原生支持视觉、OpenAI 兼容接口 + base64 内联（单图 ≤32MiB），与 DEEPSEEK_API_KEY **共用同一把密钥**（零新增供应商注册）；2026-10-15 本地实测合成账单卡三行文字逐行全对（probe 脚本 `private-benchmark/probe-deepseek-vision.mjs`，同日实测 deepseek-v4-pro 无视觉、deepseek-chat 文本别名仍可用）。env 补 `DEEPSEEK_VISION_MODEL`（默认 deepseek-flash，§12 同步）；`resolveOcrMode` 的 live 判定扩展为三网关任一有 key（DEEPSEEK/GLM/SILICONFLOW）。
+> **新裁决**：OCR 降级链改为 **deepseek-flash（主）→ glm-4.6v-flash（智谱）→ THUDM/GLM-4.1V-9B-Thinking（SiliconFlow）** → 三败返回 `ok:false`。依据：DeepSeek 于 2026-09-10 发布 deepseek-flash（V4.1 Flash，CED 架构，DocVQA 95.6），原生支持视觉、OpenAI 兼容接口 + base64 内联（单图 ≤32MiB），与 DEEPSEEK_API_KEY **共用同一把密钥**（零新增供应商注册）；2026-10-15 本地实测合成账单卡三行文字逐行全对（仓库外本地探针脚本，不进仓库，同日实测 deepseek-v4-pro 无视觉、deepseek-chat 文本别名仍可用）。env 补 `DEEPSEEK_VISION_MODEL`（默认 deepseek-flash，§12 同步）；`resolveOcrMode` 的 live 判定扩展为三网关任一有 key（DEEPSEEK/GLM/SILICONFLOW）。
 >
 > **理由**：用户主推「用既有 DeepSeek key 做图文解析」；实测证据确凿（视觉通道 + OCR 文字提取均通过）；flash 档费用纪律与既有文本任务同源。智谱/SiliconFlow 降级保留，「双供应商互备」产品定义不破（变为三供应商互备）。
 
@@ -505,7 +507,7 @@ GROUP BY b.ym, b.category;
 | annual-story 年度故事分段（A5，并入 annual 阶段任务） | deepseek | qwen → 固定 6 段模板兜底 |
 | assistant-plan 智能助理规划（A12） | deepseek | 生成超时 8s / 失败一律静默跳过（不阻塞回答，仅不展示思考计划块；mock 走脚本化演示流） |
 
-- env 唯一清单（#69 fixHint 补全，08 修订案 A10/A11 补 3 个视觉模型覆盖键，A14 补 3 个本地端点键）：`DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL(可选) / DEEPSEEK_VISION_MODEL(可选) / SILICONFLOW_API_KEY / SILICONFLOW_BASE_URL(可选) / SILICONFLOW_VISION_MODEL(可选) / GLM_API_KEY / GLM_BASE_URL(可选) / GLM_VISION_MODEL(可选) / QWEATHER_API_KEY / MCP_SERVER_URL / AI_TEXT_FALLBACK_ORDER="deepseek,siliconflow" / SQL_MAX_RESULT_ROWS=50 / AGG_MAX_ROWS=200 / AGG_AMOUNT_BUCKETS="[0,5,10,20,50,100,200,500]" / EMBEDDING_PROVIDER=tfidf-only|local-onnx / LLM_BASE_URL(可选) / LLM_MODEL(可选) / LLM_API_KEY(可选)`。密钥**只存服务端 env**，公开仓库只有 `.env.example`。
+- env 唯一清单（#69 fixHint 补全，08 修订案 A10/A11 补 3 个视觉模型覆盖键，A14 补 3 个本地端点键；A19 零新 env 键——图形验证码客户端本机比对、成就判定与跨批次去重全程浏览器内，均不经任何 LLM 任务路由）：`DEEPSEEK_API_KEY / DEEPSEEK_BASE_URL(可选) / DEEPSEEK_VISION_MODEL(可选) / SILICONFLOW_API_KEY / SILICONFLOW_BASE_URL(可选) / SILICONFLOW_VISION_MODEL(可选) / GLM_API_KEY / GLM_BASE_URL(可选) / GLM_VISION_MODEL(可选) / QWEATHER_API_KEY / MCP_SERVER_URL / AI_TEXT_FALLBACK_ORDER="deepseek,siliconflow" / SQL_MAX_RESULT_ROWS=50 / AGG_MAX_ROWS=200 / AGG_AMOUNT_BUCKETS="[0,5,10,20,50,100,200,500]" / EMBEDDING_PROVIDER=tfidf-only|local-onnx / LLM_BASE_URL(可选) / LLM_MODEL(可选) / LLM_API_KEY(可选)`。密钥**只存服务端 env**，公开仓库只有 `.env.example`。
 - 本地大模型端点（A14）：`LLM_BASE_URL` + `LLM_MODEL` **同时配置才生效**——生效时仅接管 chat 任务（追问在线兜底与深度分析上下文改发该 OpenAI 兼容端点，账单数据不出本机），其余任务（叙事/OCR/轻任务）路由不变；`LLM_API_KEY` 可选（多数本地端点免鉴权）。解析纯函数 `src/lib/llm/endpoint-config.ts`（resolveLocalEndpoint，读 process.env，空白值视为未配置），计入 resolveLlmMode 的 live 判定。resolveLocalEndpoint 内置主机白名单校验（2026-10-16 收口审查补）：baseURL 必须解析为 http/https URL 且主机名仅限 loopback（localhost、127.0.0.0/8、::1）或私网网段（10.0.0.0/8、172.16.0.0/12、192.168.0.0/16），否则视为未配置——配置错误宁可回落内置兜底，账单数据不出本机。
 - 商户分类批处理 key = **原始商户名**（入参：名称列表；出参：名称→12 类映射；raw_ref 仅作行内引用，#68 fixHint）。
 
@@ -705,7 +707,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 | `/learn` | 消费知识小课堂：案例库浏览（分类/搜索）/ 金融素养知识卡 / 防坑手册（P2，A7） |
 | `/settings` | 数据管理与导出：数据集列表/切换/删除、CSV/JSON 导出、通知开关、主题与演示模式入口（P1，A7） |
 
-- 新增 3 条路由懒加载（`dynamic()`）+ 每路由 `loading.tsx` + `error.tsx`（与 05 §1.1 既有约定一致）。守卫：`/budget` 无账单数据 → `redirect('/upload?next=/budget')`；`/learn`、`/settings` 无守卫。chunk 预算（gzip）：`/budget` 含 ECharts core < 300KB（同 /insights 口径）；`/learn`、`/settings` < 60KB。移动端底部 tab bar 不变：「我的」指向 `/settings`，`/learn` 与 `/budget` 从首页能力卡与 `/settings` 链接进入，不新增 tab 项。
+- 新增 3 条路由懒加载（`dynamic()`）+ 每路由 `loading.tsx` + `error.tsx`（与 05 §1.1 既有约定一致）。守卫：**A19 起 11 个数据功能页全部 AuthGuard 登录墙**（/upload /checkup /insights /calendar /report /challenge /goals /poster /budget /me /settings）——游客访问重定向 `/login?next=<原路径含查询串>`，登录后回跳原页；公开页仅 / /login /register /learn /privacy 五页；登录墙之下 `/budget` 已登录但无账单数据 → `redirect('/upload?next=/budget')`（两层守卫：先登录墙、后数据守卫，A19）。chunk 预算（gzip）：`/budget` 含 ECharts core < 300KB（同 /insights 口径）；`/learn`、`/settings` < 60KB。移动端底部 tab bar 不变：「我的」指向 `/settings`，`/learn` 与 `/budget` 从首页能力卡与 `/settings` 链接进入，不新增 tab 项。
 - `RouteGuard` 用 **next/navigation** 的 `redirect()`/`router.replace`（05 §1.1 的 react-router `<Navigate>` 是 bug，删除，#22）。
 - **目录布局：src/ 唯一**（#63 fixHint）——`src/app`、`src/lib`（sql-guard/csv-parse/pipeline/schema/sanitize/protocol/rag/tools）、`src/server/ai`、`src/components`；`mcp-server/` 独立子包（Node 20 镜像）；根级 `data/ scripts/ tests/ public/ docs/`。01 §3 根级 `lib//server//mcp/` 目录树作废；01 的 `mcp/rerank.ts` 删除（重排器在 MCP 容器进程，§16）。
 - 状态管理（#51 fixHint：01 的 6 slice 唯一）：`pipeline / cards / anchor / dataset / ui / session` 六个 Zustand slice；05 的 4 store 与 02 的单一 BillStore 均映射为 slice 别名，不再各自定义。
@@ -760,6 +762,19 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 - **测试**：单测 `tests/unit/challenge-sql.test.ts`、`challenge-demo.test.ts`、`challenge-store.test.ts`、`goals-store.test.ts`、`goals-sql.test.ts`、`poster-input.test.ts`；e2e `tests/e2e/challenge.spec.ts`、`goals.spec.ts`、`poster.spec.ts` + smoke.spec 游客清单与顶栏跳转断言。
 
 **理由**：用户反馈④要求两个特色实用功能点（实用、可用），多选三项「省钱挑战打卡/年度海报分享/攒钱目标中心」全部落地，放导航「报告」之后；三页均为本地计算 + 可持久化状态，复用既有 SQL 白名单与演示兜底纪律，隐私出口零新增，把得分点落在「实用性」与「社会价值」上（06 §6.3 评分口径落点同步）。
+
+### 08 修订案 A19（2026-10-17）：数据页登录墙 + 图形验证码 + 跨批次合并去重 + 挑战手动记账 + 成就全真实判定
+
+- **路由与守卫**：见上守卫口径——AuthGuard 登录墙覆盖 11 个数据功能页，游客重定向 `/login?next=`（next 连查询串，`/upload?sample=1` 登录后继续生效；实现为 window.location 读取 pathname+search，usePathname 不含查询串，属落实本裁决的必要改动）；公开页仅 / /login /register /learn /privacy 五页。路由数不变（仍 11 条静态路由口径，§13 收口注记）。
+- **图形验证码（登录/注册表单）**：canvas 自绘（`src/lib/auth/captcha.ts` 纯函数 + `CaptchaField` 组件，逻辑 120×40 按 dpr 缩放、±25° 随机旋转、干扰曲线 + 噪点、字符集去 0/O/1/I/L）；校验为客户端本机比对——本地账户架构无服务端用户数据，验证码与密码同属浏览器内校验层，拦截误触与无脑填充，不宣称防御真实机器人；失败自动换图 + 清空输入，错误走字段内 error 行（不产生表单红色横幅）；DEMO_MODE=mock 留空即过（e2e 与零密钥演示），live dev / Vercel 无该变量即真校验。零网络请求、零新端点、零新 env。
+- **跨批次合并去重（上传两路径）**：CSV 与 OCR 路径统一 `mergeCleanBatches`——已有行取最近一次导入落库的完整行（getLatestDataset），incoming 逐行按 `(date_iso | amount_cents | merchant)` 键比对（与 parse-csv duplicateKey 同口径），重复计 skipped、新行追加，装配 = 替换整表重建为合并后完整行（不覆盖已有行）；成功视图如实报「新增 X 笔、跳过疑似重复 Y 笔」。datasets store（A18）每次保存后剪枝只留最新快照（旧快照为全量重复行数据的死重，不剪枝随导入次数近平方膨胀；books store 账本元数据不剪，账本历史语义保留）。
+- **挑战页手动记今日支出**：今日卡金额输入行（inputMode=decimal + 保存；已有记录显示「已记 ¥X · 修改」），写与预算页同键的 `spendct:manual-entries` 账本（A3 口径：expense 覆盖 / income 不参与）；合并发生在渲染期派生（`mergeChallengePoints` 手动点叠加账单点，不重查 DuckDB）；累计节省两处补口径脚注「累计节省 = Σ max(0, 基线 − 当日实际支出)，基线为挑战开始前 30 天该类目日均支出（当日支出含手动记录）」。
+- **成就引擎真实化**：13 枚徽章全部按真实行为判定（`src/lib/achievements/` defs/rules/progress/sync 四模块 + storage barrel），演示回退删除——无本地记录一律空集，新访客成就墙全锁是正常初始态。判定口径（复审收口后）：sub-hunter 排除年付周期订阅（年付回填天然 >90 天间隔属正常扣费）；saver 基线 = 最早采纳月，账单月表未覆盖时回退到采纳月后第一个有数据月，比较取不高于基线 95% 整数分运算；budget-master 文案改「最近 3 个月」（实现口径本为最近 3 条月记录，不要求物理相邻）；视图侧缓存换数据集失效（resetRecheckOverrides，防旧数据集月表继续判定）；解锁持久化收敛 commitUnlockedIds 单一落盘路径。体检次数真实化：真实管线完整跑完才自增（demo 播放器不计），键 `spendct:checkup-count:v1` / `spendct:last-checkup-hour:v1`。
+- **模块登记**：`src/lib/auth/captcha.ts`、`src/components/auth/captcha-field.tsx`（CaptchaField，可复用组件，登记进 05 §2.2 组件总表）、`src/lib/import/merge-batches.ts`、`src/lib/challenge/manual-day-merge.ts`、`src/lib/achievements/`（defs/rules/progress/sync 四模块，achievements.ts 为存储层 + barrel）；行为进度键 `spendct:achievement-progress:v1`（adopt/activate-benefit/dedupe-skipped/followup 四类事件，§17 A19 允许项）。
+- **隐私与端点**：**零新端点、零新事件、零新 env 键、零新网络请求**（协议仍 21 类；图形验证码与成就判定全程浏览器内）。
+- **测试**：单测 `tests/unit/captcha.test.ts`、`merge-batches.test.ts`、`challenge-manual-merge.test.ts`、`achievements-rules.test.ts`、`achievements-progress.test.ts`；e2e `tests/e2e/achievements.spec.ts`、`tests/e2e/merge-import.spec.ts` + smoke.spec 验证码冒烟与 11 页游客重定向断言、challenge.spec 手动记账断言。
+
+**理由**：八项用户诉求分三条线——信任（图形验证码替代短信方案、数据页游客重定向、隐私语句收敛：说多少做多少）、数据正确性（追加合并不覆盖、跨批次去重、挑战手动记账即时合并）、游戏化真实（成就 13 枚全真实判定，演示回退清零——演示数据只在演示动线里存在，成就墙的数字必须来自真实行为）。全部落地在既有架构内：零新端点零新 env，IndexedDB/localStorage 新增键均为 §17 允许项的可重算状态，隐私出口与 02 §8 可见性对照表零变化。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -821,7 +836,7 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 **允许**：
 - DuckDB-WASM 数据库（OPFS）：导入明细的**唯一持久层**（浏览器内计算引擎自身存储，不出浏览器）；用户自建配置表 `budgets`（§6 A2，非账单明细、不出浏览器；写入路径限制「当月 + 未来 2 月」共 ≤3 月 × 13 行可编辑，历史月份只读）。
 - IndexedDB：`spendct:table:${runId}:${tableId}`（脱敏后阶段聚合产物）、`spendct:llmcache:${cacheKey}`（LLM 输出缓存）；**A18 增补**：账户库 `spendct` 的 `datasets` store（bookId 主键 + by-txHash 索引：最近一次导入的账本 id/名、数据集指纹、清洗后行数据、体检结果，刷新会话恢复用——见 A18 裁决）。
-- localStorage：`spendct:run:latest`（运行元数据：runId/datasetTxHash/阶段状态/卡列表——**不含任何行数据**）、UI 偏好、隐私开关；**A1 增补可重算状态与偏好键（不含任何行数据）**：`spendct:achievements:v1`（已解锁成就 ID + 解锁时间，≤2KB）、`spendct:fav:v1`（收藏卡 ID 列表，≤2KB）、`spendct:notif:v1`（通知文案缓存 + 已读状态，≤20KB）；**A17 增补**：`spendct:challenge:v1`（省钱挑战记录：类目/预算/起止日/打卡日期集，≤20KB）、`spendct:goals:v1`（攒钱目标列表：目标+存入记录，≤20KB）。
+- localStorage：`spendct:run:latest`（运行元数据：runId/datasetTxHash/阶段状态/卡列表——**不含任何行数据**）、UI 偏好、隐私开关；**A1 增补可重算状态与偏好键（不含任何行数据）**：`spendct:achievements:v1`（已解锁成就 ID + 解锁时间，≤2KB）、`spendct:fav:v1`（收藏卡 ID 列表，≤2KB）、`spendct:notif:v1`（通知文案缓存 + 已读状态，≤20KB）；**A17 增补**：`spendct:challenge:v1`（省钱挑战记录：类目/预算/起止日/打卡日期集，≤20KB）、`spendct:goals:v1`（攒钱目标列表：目标+存入记录，≤20KB）；**A19 增补**：`spendct:checkup-count:v1`（体检完成次数计数，≤1KB）、`spendct:last-checkup-hour:v1`（末次体检完成小时，≤1KB）、`spendct:achievement-progress:v1`（成就行为进度四类事件聚合，≤4KB）。
 - sessionStorage：`spendct:salt`（本次运行盐，会话结束即弃）。
 
 **禁止**：
@@ -851,6 +866,12 @@ const AiTaskRequestSchema = z.discriminatedUnion("taskId", [
 **新裁决**：允许项增加——账户库 `spendct`（与 books/sessions/users 同库同源）新建 `datasets` store（bookId 主键 + by-txHash 索引），存**最近一次导入**的 {账本 id/名、数据集指纹、清洗后行数据、体检结果 lastRun}；页面加载时由布局常驻组件恢复 DuckDB 数据集与管线内存态，体检结果经 zustand 订阅增量同步；账本删除联动清除该账本记录。约束：只经浏览器 IndexedDB（任何网络通道接触不到）；只存 upload 源导入（sample 演示维持内存态口径）；恢复只在内存态无数据时发生，绝不覆盖本会话新导入；任何写入/恢复失败静默降级（回到修复前的内存态行为）。**其余允许/禁止项不变**。
 
 **理由**：用户反馈「刷新网址后个人中心我的账本数据不能使用、所有功能数据都不能显示」——根因是 DuckDB 内存库与管线内存态在刷新后归零、账本只剩元数据。IndexedDB 与 DuckDB OPFS 同属浏览器内持久层，写入零网络泄露面；A18 只解决「刷新后会话恢复」这一可用性缺陷，不推翻「明细唯一持久层 = DuckDB OPFS、逐阶段中间产物不落库」的红线本意。
+
+### 08 修订案 A19（2026-10-17）：可重算状态键增补 + datasets 快照剪枝 + 数据页强制登录
+
+**新裁决**：① 允许项再增三键——`spendct:checkup-count:v1`（体检完成次数计数）、`spendct:last-checkup-hour:v1`（末次体检完成小时）、`spendct:achievement-progress:v1`（成就行为进度：adopt/activate-benefit/dedupe-skipped/followup 四类事件聚合），均 ≤4KB、**不含任何行数据**（计数与事件聚合，删了都能由真实行为重建）；挑战页手动记账复用 A3 既有 `spendct:manual-entries` 键，零新增键。② datasets store（A18）每次保存后剪枝只留最新快照——每批都存合并后完整行，旧快照全是重复行数据的死重，不剪枝随导入次数近平方膨胀；账本元数据（books store）不剪，账本历史语义保留。③ 数据功能页强制登录：AuthGuard 包裹 11 页（/upload /checkup /insights /calendar /report /challenge /goals /poster /budget /me /settings），游客访问重定向 /login 带 next 参数（连查询串），登录后回跳原页；公开页保持 / /login /register /learn /privacy 五页。④ 登录/注册表单接入 canvas 自绘图形验证码（客户端本机比对，DEMO_MODE=mock 留空即过，零网络请求、零新端点、零新 env）——本地账户架构无服务端用户数据，验证码与密码同属浏览器内校验层，拦截误触与无脑填充，不宣称防御真实机器人。**其余允许/禁止项不变（清洗后交易行仍禁止进入 localStorage；逐阶段中间产物仍不落库）**。
+
+**理由**：八项用户诉求分三条线——信任（图形验证码替代短信方案、数据页游客重定向、隐私语句收敛：说多少做多少）、数据正确性（追加合并不覆盖、跨批次去重、挑战手动记账即时合并）、游戏化真实（成就 13 枚全真实判定，演示回退清零）。全部落地在既有架构内：零新端点零新 env，新增键均为 §17 允许项的可重算状态语义，隐私出口与 02 §8 可见性对照表零变化。
 
 ### 原 01/02/03/04/05/06 的分歧点与裁决理由
 
@@ -1154,10 +1175,11 @@ export const FollowUpPlanSchema = z.object({ answerable: z.boolean(), steps: z.a
 | A15 | §13/§14/§18 | 追问定向明细检索 + 明细快照升级：deep 档第三段「定向明细」上下文（月份/年份/商户 Top50 名单/类目枚举/深夜五类可信条件，LIMIT 200、≤2500 字）；明细快照七列投影（时分秒 + 深夜标记）；/subscriptions 降级为洞察页第 5 视图（内容全保留）+ 新路由 /calendar 消费日历（热力图 + 流水）；年度报告展示层通俗化（六维健康明细 + 大白话总评）；零新端点、零新路由、零新事件 |
 | A17 | §13/§14/§17 | 省钱挑战打卡 + 攒钱目标中心 + 年度海报分享：三新路由 /challenge /goals /poster（静态页 13 → 16、顶栏 8 项、能力墙 12 卡）；挑战/目标存 localStorage 两新键（不含任何行数据）；poster-input 报告/海报共享口径 + dimScore 结余率修复；成就 13 枚（challenge-streak）；零新端点、零新事件、零新 env |
 | A18 | §17/§18 | 问答时间窗修复 + 会话持久化：时间窗八类（整年/整个账单→今年、上上个月独立成窗、最近7天、指定月份 monthRef）；洞察页锚点标签时间窗口径 + 深度分析类目起止日期并入排行行 + 定向明细显式日期范围；IndexedDB datasets store 刷新恢复（DuckDB 内存库 + 管线内存态重建，账本删除联动）；零新端点、零新事件、零新 env |
+| A19 | §3/§12/§14/§17 | 图形验证码 + 数据页强制登录 + 追加合并去重 + 挑战手动记账 + 成就全真实判定：canvas 自绘验证码（客户端本机校验、mock 留空即过、零网络请求）；AuthGuard 包裹 11 个数据页（公开 / /login /register /learn /privacy，next 带查询串回跳）；CSV/OCR 两路径 mergeCleanBatches 追加合并不覆盖（(日期|金额|商户) 键、datasets 快照剪枝）；挑战页手动记今日支出（与预算页同键账本、渲染期合并、口径脚注）；成就 13 枚全真实判定（演示回退删除、体检次数真实落盘、sub-hunter 排除年付、saver 基线回退 + ≤95%、视图缓存换数据集失效）；「不出浏览器」语句全站收敛；零新端点、零新事件、零新 env |
 | — | §4 | ChartSpec 枚举不扩展；四大静态图表组件裁决（08 §④ 补记） |
 
-- **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）；修订案清单登记 A12（全局智能助理，2026-10-15），§11.2 工作量口径按 A12 补智能助理组件与语音输入；修订案清单登记 A13（商户统计视图，2026-10-15），§11.2 工作量口径按 A13 补 MerchantView 页面级组件；修订案清单登记 A14（追问深度分析，2026-10-16），§11.2 工作量口径按 A14 补面板开关 + 全期聚合上下文 + 本地端点 env（零新端点/零新路由）；修订案清单登记 A15（定向明细检索 + 消费日历 + 订阅降级 + 报告通俗化，2026-10-16），§11.2 工作量口径按 A15 补日历页组件（CalendarView/CalendarHeatmap/CalendarTimeline）、订阅视图迁入组件（SubscriptionView）、定向检索模块（targeted-detail.ts）与报告通俗化模块（report/labels.ts）。修订案清单登记 A17（省钱挑战打卡 + 攒钱目标中心 + 年度海报分享，2026-10-16），§11.2 工作量口径按 A17 补三页面级组件（ChallengeView/GoalsView/PosterStudio）、挑战/目标数据模块（challenge-sql/challenge-demo/challenge-store/goals-sql/goals-store）与报告海报共享口径模块（report/poster-input.ts）——A17 三功能已直接落地，不占用 W3-W5 负载账本行和。修订案清单登记 A18（问答时间窗修复 + 会话持久化，2026-10-16），§11.2 工作量口径按 A18 补会话持久化模块（persistence/pipeline-persistence.ts + layout 恢复组件）与 qa-engine 时间窗扩展——A18 为缺陷修复与可用性增补，不占用 W3-W5 负载账本行和。
+- **08 文档自身需同步的修改**：§11.2「工作量体现口径」的「19 个注册组件」改为「19 个注册组件 + 页面级组件按 05 §2.2 表单列（约 16 个）」，与本文 §14 A7 两级注册口径对齐（PDF/README 数字与代码一一对应）；修订案清单登记 A12（全局智能助理，2026-10-15），§11.2 工作量口径按 A12 补智能助理组件与语音输入；修订案清单登记 A13（商户统计视图，2026-10-15），§11.2 工作量口径按 A13 补 MerchantView 页面级组件；修订案清单登记 A14（追问深度分析，2026-10-16），§11.2 工作量口径按 A14 补面板开关 + 全期聚合上下文 + 本地端点 env（零新端点/零新路由）；修订案清单登记 A15（定向明细检索 + 消费日历 + 订阅降级 + 报告通俗化，2026-10-16），§11.2 工作量口径按 A15 补日历页组件（CalendarView/CalendarHeatmap/CalendarTimeline）、订阅视图迁入组件（SubscriptionView）、定向检索模块（targeted-detail.ts）与报告通俗化模块（report/labels.ts）。修订案清单登记 A17（省钱挑战打卡 + 攒钱目标中心 + 年度海报分享，2026-10-16），§11.2 工作量口径按 A17 补三页面级组件（ChallengeView/GoalsView/PosterStudio）、挑战/目标数据模块（challenge-sql/challenge-demo/challenge-store/goals-sql/goals-store）与报告海报共享口径模块（report/poster-input.ts）——A17 三功能已直接落地，不占用 W3-W5 负载账本行和。修订案清单登记 A18（问答时间窗修复 + 会话持久化，2026-10-16），§11.2 工作量口径按 A18 补会话持久化模块（persistence/pipeline-persistence.ts + layout 恢复组件）与 qa-engine 时间窗扩展——A18 为缺陷修复与可用性增补，不占用 W3-W5 负载账本行和。修订案清单登记 A19（图形验证码 + 强制登录 + 合并去重 + 挑战手动记账 + 成就全真实判定 + 文案收敛，2026-10-17），§11.2 工作量口径按 A19 补图形验证码模块（auth/captcha.ts + CaptchaField 组件）、合并去重模块（import/merge-batches.ts）、挑战手动合并模块（challenge/manual-day-merge.ts）与成就引擎四模块（achievements/defs/rules/progress/sync）——A19 为八项用户诉求的落地与成就口径收口，不占用 W3-W5 负载账本行和。
 
 ---
 
-*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6（2026-10-15）起并入修订案 A12（全局智能助理上线收口：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18），v1.7（2026-10-15）起并入修订案 A13（商户统计视图上线收口：/insights 第 4 视图 tab、全账单商户聚合、追问锚点 merchant-view，§14），v1.8（2026-10-16）起并入修订案 A14（追问深度分析上线收口：面板显式同意开关、全期白名单聚合上下文 + 明细两条消息、analysisMode 字段、本地大模型端点 env、气泡深度分析脚注，§12/§13），v1.9（2026-10-16）起并入修订案 A15（追问定向明细检索 + 明细快照升级 + /subscriptions 降级为洞察页第 5 视图 + 新路由 /calendar 消费日历 + 年度报告通俗化，§13/§14/§18），v1.10（2026-10-16）起并入修订案 A17（省钱挑战打卡 + 攒钱目标中心 + 年度海报分享：三新路由 /challenge /goals /poster、poster-input 报告/海报共享口径与 dimScore 结余率修复、成就 13 枚、能力墙 12 卡、localStorage 两新键，§13/§14/§17），v1.11（2026-10-16）起并入修订案 A18（问答时间窗修复 + 会话持久化：时间窗八类 + 指定月份、洞察页锚点标签时间窗口径、深度分析类目起止日期、定向明细显式日期范围、IndexedDB datasets store 刷新恢复，§17/§18），v1.12（2026-10-17）起并入修订案 A18 热修复五轮（账单问题信号闸门、深度档明细预算纳入 RAG 案例参考、在线失败提示分档、历史装配问题恒在、恢复等待 150s，§18）与同案复审修补（历史预算先扣本轮问题长、信号闸门六档化、失败分档再修含 QUOTA_EXCEEDED 新档、恢复超时按读取异常降级、单测 658，§18）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
+*本文档完。本文档为 01-06 的仲裁结果；v1.1（2026-10-13）起并入 08《功能扩展方案》修订案 A1-A7，v1.2（2026-10-14）起并入修订案 A8（追问在线兜底明细出口，§18），v1.3（2026-10-15）起并入修订案 A9（MCP 工具链上线收口，§13/§18/§19），v1.4（2026-10-15）起并入修订案 A10（OCR 上线收口，§11/§12/§13），v1.5（2026-10-15）起并入修订案 A11（OCR 主供应商改为 deepseek-flash，§11/§12），v1.6（2026-10-15）起并入修订案 A12（全局智能助理上线收口：plan 事件第 21 类、assistant-plan 任务、输入闸门、语音输入、聊天案例路径与共享问答管线，§2/§5/§12/§13/§18），v1.7（2026-10-15）起并入修订案 A13（商户统计视图上线收口：/insights 第 4 视图 tab、全账单商户聚合、追问锚点 merchant-view，§14），v1.8（2026-10-16）起并入修订案 A14（追问深度分析上线收口：面板显式同意开关、全期白名单聚合上下文 + 明细两条消息、analysisMode 字段、本地大模型端点 env、气泡深度分析脚注，§12/§13），v1.9（2026-10-16）起并入修订案 A15（追问定向明细检索 + 明细快照升级 + /subscriptions 降级为洞察页第 5 视图 + 新路由 /calendar 消费日历 + 年度报告通俗化，§13/§14/§18），v1.10（2026-10-16）起并入修订案 A17（省钱挑战打卡 + 攒钱目标中心 + 年度海报分享：三新路由 /challenge /goals /poster、poster-input 报告/海报共享口径与 dimScore 结余率修复、成就 13 枚、能力墙 12 卡、localStorage 两新键，§13/§14/§17），v1.11（2026-10-16）起并入修订案 A18（问答时间窗修复 + 会话持久化：时间窗八类 + 指定月份、洞察页锚点标签时间窗口径、深度分析类目起止日期、定向明细显式日期范围、IndexedDB datasets store 刷新恢复，§17/§18），v1.12（2026-10-17）起并入修订案 A18 热修复五轮（账单问题信号闸门、深度档明细预算纳入 RAG 案例参考、在线失败提示分档、历史装配问题恒在、恢复等待 150s，§18）与同案复审修补（历史预算先扣本轮问题长、信号闸门六档化、失败分档再修含 QUOTA_EXCEEDED 新档、恢复超时按读取异常降级、单测 658，§18），v1.13（2026-10-17）起并入修订案 A19（图形验证码 + 数据页强制登录 + 追加合并去重 + 挑战手动记账 + 成就全真实判定 + 文案收敛：canvas 自绘验证码客户端本机校验、AuthGuard 11 页包裹游客重定向带 next、CSV/OCR 两路径 mergeCleanBatches 追加合并不覆盖、datasets 快照剪枝、挑战手动记账与预算页同键、成就 13 枚全真实判定演示回退删除、体检次数真实落盘、localStorage 三新键，§3/§12/§14/§17）。任何后续修改必须同时更新本文档、受影响文档，并重跑对应回归（白名单单测 / 事件 round-trip / 金标评测）。*
